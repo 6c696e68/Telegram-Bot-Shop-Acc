@@ -106,6 +106,14 @@ const SCHEMA_STATEMENTS = [
     product_id INTEGER NOT NULL REFERENCES products(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
+  `CREATE TABLE IF NOT EXISTS product_type_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_type_id INTEGER NOT NULL REFERENCES product_types(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    success_template TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(product_type_id, lang)
+  )`,
 ]
 
 async function applySchema(db: D1Database) {

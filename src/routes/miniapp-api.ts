@@ -27,6 +27,8 @@ import type {
   ProductTypeDetailDto,
   PurchaseResultDto,
   DepositCreatedDto,
+  CryptoDepositCreatedDto,
+  DepositMethodDto,
   DepositStatusDto,
   OrderListItemDto,
   OrderDetailDto,
@@ -34,15 +36,19 @@ import type {
 import { miniAppAuth, type MiniAppVariables } from '../middleware/miniapp-auth'
 import { formatCurrency } from '../utils/format'
 import { transactionService } from '../services/transaction'
-import { renderSuccessMessage, escapeHtml } from '../utils/telegram-template'
+import { renderSuccessMessage } from '../utils/telegram-template'
+import { loadProductTypeTemplates } from '../services/product-template'
+import { resolveLang, setRegion, setLanguage } from '../services/user-locale'
+import { isSupportedLang, type Region } from '../i18n/locales'
+import { t } from '../bot/i18n'
 import { sendMessage, sendPhoto } from '../bot/telegram-api'
 import { consumeToken, PURCHASE_RULE } from '../bot/rate-limit'
-import { checkDepositPolicy, depositPolicyMessage } from '../services/deposit-policy'
-import { readDepositLimits } from '../services/deposit-limits'
-import { resolveBankConfig } from '../services/bank-config'
+import { depositPolicyMessage } from '../services/deposit-policy'
 import { resolveBotToken } from '../services/telegram-config'
-import { generateTransferCode } from '../utils/transfer-code'
-import { generateVietQRUrl } from '../utils/vietqr'
+import { sePayProvider, buildDepositCaption } from '../services/payments/sepay-provider'
+import { cryptoPayProvider } from '../services/payments/cryptopay-provider'
+import { isMethodAllowedForRegion, enabledMethodsForRegion, isProviderEnabled } from '../services/payments/registry'
+import type { ProviderId } from '../services/payments/types'
 
 type MiniAppEnv = {
   Bindings: Bindings
@@ -109,6 +115,8 @@ miniAppApi.get('/me', (c) => {
       first_name: user.first_name,
       balance: user.balance,
       balance_display: formatCurrency(user.balance),
+      region: user.region,
+      language: user.language,
     },
     error: null,
   }
@@ -135,6 +143,110 @@ miniAppApi.get('/home', (c) => {
     error: null,
   }
 
+  return c.json(body)
+})
+
+/**
+ * POST /region — đặt/đổi vùng của người mua (R2.3, R2.4, R5.2).
+ *
+ * Body `{ region: 'vietnam' | 'international' }`. Cập nhật `setRegion` (set ngôn ngữ
+ * khởi tạo nếu user chưa tự đổi). Trả `MeDto` đã cập nhật để frontend đồng bộ ngay.
+ */
+miniAppApi.post('/region', async (c) => {
+  const user = c.get('user')
+
+  let payload: { region?: unknown } = {}
+  try {
+    payload = await c.req.json()
+  } catch {
+    // payload rỗng → region không hợp lệ bên dưới.
+  }
+
+  const region = payload.region
+  if (region !== 'vietnam' && region !== 'international') {
+    const bad: ApiResponse<null> = { success: false, data: null, error: 'invalid_region' }
+    return c.json(bad, 400)
+  }
+
+  await setRegion(c.env.DB, user.id, region as Region)
+
+  // Đọc lại bản ghi để phản ánh region + language (có thể vừa set theo vùng).
+  const updated = await c.env.DB.prepare(
+    'SELECT region, language, balance FROM users WHERE id = ?'
+  )
+    .bind(user.id)
+    .first<{ region: 'vietnam' | 'international' | null; language: string | null; balance: number }>()
+
+  const body: ApiResponse<MeDto> = {
+    success: true,
+    data: {
+      telegram_id: user.telegram_id,
+      username: user.username,
+      first_name: user.first_name,
+      balance: updated?.balance ?? user.balance,
+      balance_display: formatCurrency(updated?.balance ?? user.balance),
+      region: updated?.region ?? region,
+      language: updated?.language ?? user.language,
+    },
+    error: null,
+  }
+  return c.json(body)
+})
+
+/**
+ * PUT /language — đổi ngôn ngữ hiển thị, độc lập với vùng (R6.2, R6.3, R6.4).
+ *
+ * Body `{ language: <mã locale> }`. Validate theo registry `SUPPORTED_LANGUAGES`;
+ * `setLanguage` đặt `language_locked=1` để đổi vùng sau không ghi đè.
+ */
+miniAppApi.put('/language', async (c) => {
+  const user = c.get('user')
+
+  let payload: { language?: unknown } = {}
+  try {
+    payload = await c.req.json()
+  } catch {
+    // payload rỗng → language không hợp lệ bên dưới.
+  }
+
+  const language = payload.language
+  if (typeof language !== 'string' || !isSupportedLang(language)) {
+    const bad: ApiResponse<null> = { success: false, data: null, error: 'invalid_language' }
+    return c.json(bad, 400)
+  }
+
+  await setLanguage(c.env.DB, user.id, language)
+
+  const body: ApiResponse<{ language: string }> = {
+    success: true,
+    data: { language },
+    error: null,
+  }
+  return c.json(body)
+})
+
+/**
+ * GET /deposit-methods — phương thức nạp khả dụng theo vùng hiện tại (R8.3).
+ *
+ * Region chưa xác định → trả mảng rỗng (frontend sẽ điều hướng onboarding).
+ */
+miniAppApi.get('/deposit-methods', async (c) => {
+  const user = c.get('user')
+
+  const amountUnitByProvider: Record<ProviderId, 'vnd' | 'usdt'> = {
+    sepay: 'vnd',
+    cryptobot: 'usdt',
+  }
+
+  // Chỉ provider đã được bật (R7.6) + thuộc vùng (R8.3).
+  const ids = user.region === null ? [] : await enabledMethodsForRegion(c.env.DB, user.region)
+  const methods: DepositMethodDto[] = ids.map((id) => ({ id, amount_unit: amountUnitByProvider[id] }))
+
+  const body: ApiResponse<DepositMethodDto[]> = {
+    success: true,
+    data: methods,
+    error: null,
+  }
   return c.json(body)
 })
 
@@ -314,14 +426,20 @@ miniAppApi.post('/purchase', async (c) => {
 
   // Đồng bộ bot SAU commit (Req 7) — fire-and-forget, lỗi gửi tin KHÔNG rollback (Req 7.5).
   // renderSuccessMessage tự escape giá trị động (content/name) (Req 7.4, 15.1).
-  const html = renderSuccessMessage(pt.success_template, {
-    emoji: pt.emoji,
-    name: pt.name,
-    quantity,
-    totalAmount,
-    balanceAfter,
-    contents,
-  })
+  const templatesByLang = await loadProductTypeTemplates(c.env.DB, pt.id)
+  const lang = await resolveLang(c.env.DB, user)
+  const html = renderSuccessMessage(
+    templatesByLang,
+    {
+      emoji: pt.emoji,
+      name: pt.name,
+      quantity,
+      totalAmount,
+      balanceAfter,
+      contents,
+    },
+    lang
+  )
   const notify = sendMessage(await resolveBotToken(c.env.DB, c.env), user.telegram_id, html, { parse_mode: 'HTML' }).catch(
     (err) => console.error('[MiniApp] notify purchase failed:', err)
   )
@@ -346,40 +464,6 @@ miniAppApi.post('/purchase', async (c) => {
   return c.json(body)
 })
 
-/** Tham số dựng caption tin nhắn VietQR cho yêu cầu nạp. */
-interface DepositCaptionParams {
-  bank: string
-  account: string
-  owner: string
-  amount: number
-  transferCode: string
-}
-
-/**
- * Dựng caption HTML cho ảnh VietQR gửi qua bot khi tạo yêu cầu nạp (Req 10.1).
- *
- * Mirror nội dung "Thông tin chuyển khoản" của flow bot (`handleDepositAmount`).
- * ESCAPE HTML cho mọi giá trị động (`bank`, `account`, `owner`, `transferCode`) vì nay
- * thông tin ngân hàng lấy từ `system_config` (admin nhập qua CMS) — ký tự đặc biệt không
- * được phá vỡ HTML/khỏi rủi ro injection (Req 10.3, 15.1). `amount` là số nguyên đã
- * `formatCurrency`.
- */
-function buildDepositCaption(params: DepositCaptionParams): string {
-  const { bank, account, owner, amount, transferCode } = params
-  return [
-    '💸 <b>Thông tin chuyển khoản</b>',
-    '',
-    `🏦 Ngân hàng: <b>${escapeHtml(bank)}</b>`,
-    `💳 Số TK: <code>${escapeHtml(account)}</code>`,
-    `👤 Chủ TK: <b>${escapeHtml(owner)}</b>`,
-    `💰 Số tiền: <b>${formatCurrency(amount)}</b>`,
-    `📝 Nội dung CK: <code>${escapeHtml(transferCode)}</code>`,
-    '',
-    '⚠️ <b>QUAN TRỌNG: Gõ đúng y chang nội dung CK!</b>',
-    '🤖 Hệ thống tự động duyệt khi CK đúng nội dung (1-3 phút).',
-  ].join('\n')
-}
-
 /**
  * POST /deposits — Tạo yêu cầu nạp + VietQR (Req 8.1, 8.2, 8.3, 8.4, 8.5, 10.1, 10.3, 10.4).
  *
@@ -403,81 +487,144 @@ function buildDepositCaption(params: DepositCaptionParams): string {
 miniAppApi.post('/deposits', async (c) => {
   const user = c.get('user')
 
-  // Đọc body — guard JSON hỏng → coi là input không hợp lệ (Req 8.2).
-  let payload: { amount?: unknown }
+  // Đọc body — guard JSON hỏng → coi như amount không hợp lệ (provider trả lỗi `limit`).
+  let payload: { amount?: unknown; method?: unknown } = {}
   try {
     payload = await c.req.json()
   } catch {
-    const limits = await readDepositLimits(c.env.DB)
-    return c.json(depositRangeError(limits), 400)
+    // Giữ payload rỗng → amount = NaN → provider trả lỗi hạn mức (KHÔNG tạo deposit — Req 8.2).
   }
 
   const amount = Number(payload.amount)
+  // method mặc định 'sepay' để giữ tương thích client cũ (chỉ gửi {amount}).
+  const method: ProviderId = payload.method === 'cryptobot' ? 'cryptobot' : 'sepay'
 
-  // Validate khoảng số tiền theo system_config (Req 8.2) — ngoài khoảng → 400, KHÔNG tạo deposit.
-  const limits = await readDepositLimits(c.env.DB)
-  if (!Number.isInteger(amount) || amount < limits.min || amount > limits.max) {
-    return c.json(depositRangeError(limits), 400)
+  // Enforce phương thức theo vùng (R8.4). Region chưa xác định → bắt onboarding.
+  if (user.region === null) {
+    const need: ApiResponse<null> = { success: false, data: null, error: 'region_required' }
+    return c.json(need, 400)
   }
-
-  // Luật nạp dùng chung với bot (D1-backed): cooldown 5 phút + tối đa 3 deposit pending
-  // còn hiệu lực → 429 kèm message cụ thể (Req 8.3). Key nghiệp vụ theo users.id.
-  const verdict = await checkDepositPolicy(c.env.DB, user.id)
-  if (!verdict.allowed) {
-    const limited: ApiResponse<null> = {
+  if (!isMethodAllowedForRegion(user.region, method)) {
+    const unavailable: ApiResponse<null> = {
       success: false,
       data: null,
-      error: depositPolicyMessage(verdict),
+      error: 'method_unavailable',
     }
-    return c.json(limited, 429)
+    return c.json(unavailable, 400)
   }
 
-  // transfer_code sinh theo telegram_id để khớp flow bot (Req 8.3).
-  const transferCode = generateTransferCode(user.telegram_id)
-  const now = new Date().toISOString()
-  const inserted = await c.env.DB.prepare(
-    "INSERT INTO deposits (user_id, transfer_code, amount, status, created_at) VALUES (?, ?, ?, 'pending', ?) RETURNING id"
-  )
-    .bind(user.id, transferCode, amount, now)
-    .first<{ id: number }>()
+  // Enforce cờ bật provider (R7.6): provider mới chưa được admin mở → từ chối.
+  if (!(await isProviderEnabled(c.env.DB, method))) {
+    const unavailable: ApiResponse<null> = {
+      success: false,
+      data: null,
+      error: 'method_unavailable',
+    }
+    return c.json(unavailable, 400)
+  }
 
-  // Thông tin ngân hàng: DB (system_config) ưu tiên, fallback env Worker (Req 8.4).
-  const bank = await resolveBankConfig(c.env.DB, c.env)
+  const provider = method === 'cryptobot' ? cryptoPayProvider : sePayProvider
 
-  // Dựng VietQR URL (Req 8.4) — addInfo = transfer_code để SePay đối soát.
-  const qrUrl = generateVietQRUrl({
-    bankId: bank.bankName,
-    accountNo: bank.bankAccount,
-    accountName: bank.bankOwner,
-    amount,
-    description: transferCode,
+  // Ngôn ngữ hiển thị của user (đã resolve) — message lỗi/hạn mức trả về theo lang (R4.2).
+  const depositLang = await resolveLang(c.env.DB, user)
+
+  const result = await provider.createDeposit({
+    db: c.env.DB,
+    env: c.env,
+    userId: user.id,
+    telegramId: user.telegram_id,
+    rawAmount: amount,
+    lang: depositLang,
+    channel: 'miniapp',
   })
+
+  if (!result.success) {
+    const err = result.error
+    if (err.type === 'policy') {
+      // Vi phạm luật nạp dùng chung → 429 kèm message theo lang (Req 8.3).
+      const limited: ApiResponse<null> = {
+        success: false,
+        data: null,
+        error: depositPolicyMessage(
+          {
+            allowed: false,
+            reason: err.reason,
+            retryAfterMs: err.retryAfterMs,
+          },
+          depositLang
+        ),
+      }
+      return c.json(limited, 429)
+    }
+    if (err.type === 'limit') {
+      // Số tiền ngoài khoảng → 400, message nêu rõ giới hạn, KHÔNG tạo deposit (Req 8.2, 13.4).
+      const invalid: ApiResponse<null> = { success: false, data: null, error: err.message }
+      return c.json(invalid, 400)
+    }
+    // provider_error: lỗi tạo bản ghi nạp / createInvoice thất bại (R10.4).
+    const failed: ApiResponse<null> = { success: false, data: null, error: err.message }
+    return c.json(failed, 500)
+  }
+
+  // --- Nhánh CryptoBot: trả pay_url (Req 10.1, 10.3) ---
+  if (method === 'cryptobot') {
+    const { depositId, crypto } = result.output
+    if (!crypto) {
+      const failed: ApiResponse<null> = {
+        success: false,
+        data: null,
+        error: t(depositLang, 'deposit.generic_error'),
+      }
+      return c.json(failed, 500)
+    }
+    const data: CryptoDepositCreatedDto = {
+      deposit_id: depositId,
+      method: 'cryptobot',
+      pay_url: crypto.payUrl,
+      usdt_amount: crypto.usdtAmount,
+      invoice_id: crypto.invoiceId,
+      status: 'pending',
+    }
+    const body: ApiResponse<CryptoDepositCreatedDto> = { success: true, data, error: null }
+    return c.json(body)
+  }
+
+  // --- Nhánh SePay: VietQR (giữ nguyên shape DepositCreatedDto) ---
+  const { depositId, vietqr } = result.output
+  if (!vietqr) {
+    const failed: ApiResponse<null> = {
+      success: false,
+      data: null,
+      error: t(depositLang, 'deposit.generic_error'),
+    }
+    return c.json(failed, 500)
+  }
 
   // Đồng bộ bot SAU commit (Req 10.1) — gửi ảnh VietQR + caption fire-and-forget,
   // lỗi gửi tin chỉ log, KHÔNG rollback yêu cầu nạp đã tạo (Req 10.4).
-  const caption = buildDepositCaption({
-    bank: bank.bankName,
-    account: bank.bankAccount,
-    owner: bank.bankOwner,
-    amount,
-    transferCode,
-  })
-  const notify = sendPhoto(await resolveBotToken(c.env.DB, c.env), user.telegram_id, qrUrl, {
-    caption,
-    parse_mode: 'HTML',
-  }).catch((err) => console.error('[MiniApp] notify deposit failed:', err))
+  // Caption dùng chung với flow bot (`buildDepositCaption`) — escape giá trị động (Req 10.3).
+  const caption = buildDepositCaption(vietqr.bank, vietqr.amountVnd, vietqr.transferCode, depositLang)
+  const notify = sendPhoto(
+    await resolveBotToken(c.env.DB, c.env),
+    user.telegram_id,
+    vietqr.qrUrl,
+    {
+      caption,
+      parse_mode: 'HTML',
+    }
+  ).catch((err) => console.error('[MiniApp] notify deposit failed:', err))
   c.executionCtx?.waitUntil?.(notify)
 
-  // Trả thông tin chuyển khoản + VietQR cho app (Req 8.4, 8.5).
+  // Trả thông tin chuyển khoản + VietQR cho app (Req 8.4, 8.5) — GIỮ NGUYÊN shape DepositCreatedDto.
   const data: DepositCreatedDto = {
-    deposit_id: inserted?.id ?? 0,
-    transfer_code: transferCode,
-    amount,
-    amount_display: formatCurrency(amount),
-    bank_name: bank.bankName,
-    bank_account: bank.bankAccount,
-    bank_owner: bank.bankOwner,
-    qr_url: qrUrl,
+    deposit_id: depositId,
+    transfer_code: vietqr.transferCode,
+    amount: vietqr.amountVnd,
+    amount_display: formatCurrency(vietqr.amountVnd),
+    bank_name: vietqr.bank.bankName,
+    bank_account: vietqr.bank.bankAccount,
+    bank_owner: vietqr.bank.bankOwner,
+    qr_url: vietqr.qrUrl,
     status: 'pending',
   }
 
@@ -489,15 +636,6 @@ miniAppApi.post('/deposits', async (c) => {
 
   return c.json(body)
 })
-
-/** Dựng lỗi 400 cho số tiền nạp ngoài khoảng, message nêu rõ giới hạn (Req 8.2). */
-function depositRangeError(limits: { min: number; max: number }): ApiResponse<null> {
-  return {
-    success: false,
-    data: null,
-    error: `Số tiền nạp phải từ ${formatCurrency(limits.min)} đến ${formatCurrency(limits.max)}`,
-  }
-}
 
 /**
  * GET /deposits/:id — Trạng thái yêu cầu nạp để frontend poll (Req 8.5, 9.1).
@@ -526,9 +664,9 @@ miniAppApi.get('/deposits/:id', async (c) => {
   }
 
   // Guard chủ sở hữu — chỉ lấy deposit thuộc user.id (chống dò ID/IDOR). Chỉ đọc.
-  const deposit = await c.env.DB.prepare('SELECT id, status, amount FROM deposits WHERE id = ? AND user_id = ?')
+  const deposit = await c.env.DB.prepare('SELECT id, provider, status, amount FROM deposits WHERE id = ? AND user_id = ?')
     .bind(id, user.id)
-    .first<Pick<DbDeposit, 'id' | 'status' | 'amount'>>()
+    .first<Pick<DbDeposit, 'id' | 'provider' | 'status' | 'amount'>>()
 
   // Không tồn tại HOẶC không thuộc người mua → 404 (không phân biệt) (Req 9.1).
   if (!deposit) {
@@ -538,6 +676,7 @@ miniAppApi.get('/deposits/:id', async (c) => {
 
   const data: DepositStatusDto = {
     deposit_id: deposit.id,
+    provider: deposit.provider,
     status: deposit.status,
     amount: deposit.amount,
   }

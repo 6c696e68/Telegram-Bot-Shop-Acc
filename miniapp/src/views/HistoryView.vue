@@ -18,17 +18,19 @@
 
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import GlassCard from '@/components/GlassCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { ReceiptText } from '@lucide/vue'
 import { get, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { showBackButton, type Cleanup } from '@/telegram/sdk'
-import { formatDate } from '@/utils/format'
+import { formatCurrency } from '@/utils/format'
 import type { OrderListItemDto } from '@/types'
 
 const router = useRouter()
 const ui = useUiStore()
+const { t } = useI18n()
 
 /** Danh sách đơn hàng (đã sắp xếp giảm dần theo thời gian từ server — Req 11.1). */
 const orders = ref<OrderListItemDto[]>([])
@@ -38,16 +40,9 @@ const loaded = ref(false)
 /** Dọn dẹp BackButton (gỡ handler + ẩn) khi rời màn hình. */
 let cleanupBack: Cleanup = () => {}
 
-/** Map trạng thái đơn của server sang nhãn tiếng Việt hiển thị (Req 11.2). */
-function statusLabel(status: OrderListItemDto['status']): string {
-  switch (status) {
-    case 'completed':
-      return 'Hoàn thành'
-    case 'refunded':
-      return 'Đã hoàn tiền'
-    default:
-      return status
-  }
+/** Map trạng thái đơn của server sang key i18n nhãn hiển thị (Req 11.2). */
+function statusKey(status: OrderListItemDto['status']): string {
+  return status === 'completed' || status === 'refunded' ? `status.${status}` : status
 }
 
 /**
@@ -65,7 +60,7 @@ async function load(): Promise<void> {
     orders.value = await ui.withLoading(get<OrderListItemDto[]>('/orders'))
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return
-    ui.toast('Không tải được lịch sử đơn hàng. Vui lòng thử lại.', 'error')
+    ui.toast(t('history.load_error'), 'error')
   } finally {
     loaded.value = true
   }
@@ -84,21 +79,21 @@ onUnmounted(() => {
 <template>
   <main class="flex flex-col gap-4 px-4 py-6">
     <header class="px-1">
-      <h1 class="text-ios-title text-text">Lịch sử đơn hàng</h1>
+      <h1 class="text-ios-title text-text">{{ $t('history.title') }}</h1>
     </header>
 
     <!-- Danh sách đơn (Req 11.1, 11.2); sắp xếp giảm dần theo thời gian từ server -->
     <section
       v-if="orders.length"
       class="flex flex-col gap-3"
-      aria-label="Danh sách đơn hàng"
+      :aria-label="$t('history.list_label')"
     >
       <GlassCard
         v-for="order in orders"
         :key="order.id"
         as="button"
         class="tap-target w-full text-left transition-transform duration-ios ease-ios active:scale-[0.98]"
-        :aria-label="`Xem chi tiết đơn ${order.product_name}`"
+        :aria-label="order.product_name"
         @click="openDetail(order)"
       >
         <div class="flex items-center gap-3">
@@ -108,16 +103,16 @@ onUnmounted(() => {
             <div class="flex items-baseline justify-between gap-2">
               <span class="truncate text-ios-headline text-text">{{ order.product_name }}</span>
               <span class="shrink-0 tabular-nums text-ios-headline text-accent">
-                {{ order.total_display }}
+                {{ formatCurrency(order.total_amount) }}
               </span>
             </div>
 
             <div class="flex items-center justify-between gap-2 text-ios-footnote text-hint">
-              <span>SL: {{ order.quantity }}</span>
-              <span>{{ statusLabel(order.status) }}</span>
+              <span>{{ $t('history.qty', { count: order.quantity }) }}</span>
+              <span>{{ $t(statusKey(order.status)) }}</span>
             </div>
 
-            <span class="text-ios-caption text-hint">{{ formatDate(order.created_at) }}</span>
+            <span class="text-ios-caption text-hint">{{ $d(new Date(order.created_at), 'short') }}</span>
           </div>
         </div>
       </GlassCard>
@@ -127,8 +122,8 @@ onUnmounted(() => {
     <EmptyState
       v-else-if="loaded"
       :icon="ReceiptText"
-      title="Chưa có đơn hàng"
-      description="Bạn chưa mua sản phẩm nào. Hãy ghé mục Mua hàng nhé."
+      :title="$t('history.empty_title')"
+      :description="$t('history.empty_desc')"
     />
   </main>
 </template>

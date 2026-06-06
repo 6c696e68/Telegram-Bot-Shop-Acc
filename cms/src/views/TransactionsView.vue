@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api, getToken } from '@/api/client'
 import Icon from '@/components/Icon.vue'
+import { formatMoney } from '@/utils/format'
+
+const { t } = useI18n()
 
 interface Transaction {
   id: number
@@ -89,7 +93,7 @@ async function exportCSV() {
     window.URL.revokeObjectURL(url)
   } catch (err) {
     console.error('Export CSV error:', err)
-    alert('Không thể xuất CSV. Vui lòng thử lại.')
+    alert(t('transactions.export_failed'))
   } finally {
     exporting.value = false
   }
@@ -114,9 +118,8 @@ function goToPage(p: number) {
 }
 
 function formatCurrency(amount: number): string {
-  const absAmount = Math.abs(amount)
   const prefix = amount < 0 ? '-' : '+'
-  return `${prefix}${absAmount.toLocaleString('vi-VN')}đ`
+  return prefix + formatMoney(Math.abs(amount))
 }
 
 function formatDate(dateStr: string): string {
@@ -148,13 +151,13 @@ function typeBadge(type: string) {
 function typeLabel(type: string) {
   switch (type) {
     case 'deposit':
-      return 'Nạp tiền'
+      return t('transaction.type_deposit')
     case 'purchase':
-      return 'Mua hàng'
+      return t('transaction.type_purchase')
     case 'refund':
-      return 'Hoàn tiền'
+      return t('transaction.type_refund')
     case 'adjustment':
-      return 'Điều chỉnh'
+      return t('transaction.type_adjustment')
     default:
       return type
   }
@@ -174,12 +177,12 @@ onMounted(() => {
     <!-- Header -->
     <div class="page-head">
       <div>
-        <h1 class="page-title">Giao dịch</h1>
-        <p class="page-subtitle">Tổng {{ total }} giao dịch</p>
+        <h1 class="page-title">{{ $t('transactions.title') }}</h1>
+        <p class="page-subtitle">{{ $t('transactions.subtitle', { count: total }) }}</p>
       </div>
       <button class="btn btn-primary" :disabled="exporting" @click="exportCSV">
         <Icon name="download" :size="16" />
-        {{ exporting ? 'Đang xuất…' : 'Export CSV' }}
+        {{ exporting ? $t('transactions.exporting') : $t('transactions.export') }}
       </button>
     </div>
 
@@ -187,11 +190,11 @@ onMounted(() => {
     <div class="filters">
       <div class="field-wrap">
         <select v-model="filterType" class="field">
-          <option value="">Tất cả loại</option>
-          <option value="deposit">Nạp tiền</option>
-          <option value="purchase">Mua hàng</option>
-          <option value="refund">Hoàn tiền</option>
-          <option value="adjustment">Điều chỉnh</option>
+          <option value="">{{ $t('transactions.filter_all_type') }}</option>
+          <option value="deposit">{{ $t('transaction.type_deposit') }}</option>
+          <option value="purchase">{{ $t('transaction.type_purchase') }}</option>
+          <option value="refund">{{ $t('transaction.type_refund') }}</option>
+          <option value="adjustment">{{ $t('transaction.type_adjustment') }}</option>
         </select>
       </div>
 
@@ -206,9 +209,9 @@ onMounted(() => {
       <div class="filter-actions">
         <button class="btn btn-primary" @click="applyFilters">
           <Icon name="search" :size="16" />
-          Lọc
+          {{ $t('common.filter') }}
         </button>
-        <button class="btn btn-secondary" @click="clearFilters">Xoá</button>
+        <button class="btn btn-secondary" @click="clearFilters">{{ $t('common.clear') }}</button>
       </div>
     </div>
 
@@ -217,13 +220,13 @@ onMounted(() => {
       <!-- Loading -->
       <div v-if="loading" class="state-block">
         <div class="spinner"></div>
-        <span>Đang tải…</span>
+        <span>{{ $t('common.loading') }}</span>
       </div>
 
       <!-- Empty -->
       <div v-else-if="transactions.length === 0" class="state-block state-empty">
         <Icon name="receipt" :size="32" />
-        <p>Không có giao dịch nào</p>
+        <p>{{ $t('transactions.empty') }}</p>
       </div>
 
       <!-- Data -->
@@ -231,13 +234,13 @@ onMounted(() => {
         <thead>
           <tr>
             <th style="width: 64px">ID</th>
-            <th>Người dùng</th>
-            <th>Loại</th>
-            <th>Số tiền</th>
-            <th>Số dư trước</th>
-            <th>Số dư sau</th>
-            <th>Mô tả</th>
-            <th>Thời gian</th>
+            <th>{{ $t('transactions.col_user') }}</th>
+            <th>{{ $t('transactions.col_type') }}</th>
+            <th>{{ $t('common.amount') }}</th>
+            <th>{{ $t('transactions.col_balance_before') }}</th>
+            <th>{{ $t('transactions.col_balance_after') }}</th>
+            <th>{{ $t('transactions.col_desc') }}</th>
+            <th>{{ $t('common.time') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -255,8 +258,8 @@ onMounted(() => {
             <td class="amount-cell" :class="amountClass(tx.amount)">
               {{ formatCurrency(tx.amount) }}
             </td>
-            <td class="muted">{{ tx.balance_before.toLocaleString('vi-VN') }}đ</td>
-            <td class="muted">{{ tx.balance_after.toLocaleString('vi-VN') }}đ</td>
+            <td class="muted">{{ formatMoney(tx.balance_before) }}</td>
+            <td class="muted">{{ formatMoney(tx.balance_after) }}</td>
             <td class="muted desc-cell" :title="tx.description || ''">
               {{ tx.description || '—' }}
             </td>
@@ -269,7 +272,7 @@ onMounted(() => {
     <!-- Pagination -->
     <div v-if="total > limit" class="pagination">
       <p class="page-info">
-        Trang {{ page }} / {{ totalPages() }} — Tổng {{ total }} giao dịch
+        {{ $t('transactions.page_info', { page, total: totalPages(), count: total }) }}
       </p>
       <div class="page-actions">
         <button
@@ -278,14 +281,14 @@ onMounted(() => {
           @click="goToPage(page - 1)"
         >
           <Icon name="arrowLeft" :size="15" />
-          Trước
+          {{ $t('common.prev') }}
         </button>
         <button
           class="btn btn-secondary btn-sm"
           :disabled="page >= totalPages()"
           @click="goToPage(page + 1)"
         >
-          Sau
+          {{ $t('common.next') }}
           <Icon name="arrowRight" :size="15" />
         </button>
       </div>

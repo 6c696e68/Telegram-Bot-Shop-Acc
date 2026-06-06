@@ -90,7 +90,7 @@ productRoutes.post('/import', async (c) => {
 
   if (!body.category_id || !Array.isArray(body.contents) || body.contents.length === 0) {
     return c.json(
-      { success: false, data: null, error: 'category_id and non-empty contents[] are required' },
+      { success: false, data: null, error: 'category_contents_required' },
       400
     )
   }
@@ -104,7 +104,7 @@ productRoutes.post('/import', async (c) => {
 
   if (!category) {
     return c.json(
-      { success: false, data: null, error: 'Category not found' },
+      { success: false, data: null, error: 'category_not_found' },
       404
     )
   }
@@ -116,7 +116,7 @@ productRoutes.post('/import', async (c) => {
 
   if (validContents.length === 0) {
     return c.json(
-      { success: false, data: null, error: 'No valid contents provided' },
+      { success: false, data: null, error: 'no_valid_contents' },
       400
     )
   }
@@ -202,7 +202,7 @@ productRoutes.delete('/:id', async (c) => {
 
   if (!id || isNaN(id)) {
     return c.json(
-      { success: false, data: null, error: 'Invalid product ID' },
+      { success: false, data: null, error: 'invalid_product_id' },
       400
     )
   }
@@ -214,14 +214,14 @@ productRoutes.delete('/:id', async (c) => {
 
   if (!product) {
     return c.json(
-      { success: false, data: null, error: 'Product not found' },
+      { success: false, data: null, error: 'product_not_found' },
       404
     )
   }
 
   if (product.status !== 'available') {
     return c.json(
-      { success: false, data: null, error: `Cannot delete product with status '${product.status}'. Only 'available' products can be deleted.` },
+      { success: false, data: null, error: 'product_not_deletable' },
       400
     )
   }

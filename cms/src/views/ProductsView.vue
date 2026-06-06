@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import Icon from '@/components/Icon.vue'
+
+const { t } = useI18n()
 
 interface Product {
   id: number
@@ -89,17 +92,17 @@ async function fetchCategories() {
 }
 
 async function deleteProduct(id: number) {
-  if (!confirm('Bạn có chắc muốn xoá sản phẩm này?')) return
+  if (!confirm(t('products.delete_confirm'))) return
   deleteLoading.value = id
   try {
     const res = await api.delete<{ id: number }>(`/products/${id}`)
     if (res.success) {
       await fetchProducts()
     } else {
-      alert(res.error || 'Không thể xoá sản phẩm')
+      alert(res.error || t('products.delete_failed'))
     }
   } catch {
-    alert('Lỗi kết nối server')
+    alert(t('common.error'))
   } finally {
     deleteLoading.value = null
   }
@@ -128,7 +131,7 @@ function handleFileUpload(event: Event) {
 
 async function submitImport() {
   if (!importCategoryId.value) {
-    importError.value = 'Vui lòng chọn danh mục'
+    importError.value = t('products.err_no_category')
     return
   }
 
@@ -139,7 +142,7 @@ async function submitImport() {
     .filter((l) => l.length > 0)
 
   if (contents.length === 0) {
-    importError.value = 'Vui lòng nhập ít nhất 1 sản phẩm'
+    importError.value = t('products.err_empty')
     return
   }
 
@@ -157,10 +160,10 @@ async function submitImport() {
       importResult.value = res.data
       await fetchProducts()
     } else {
-      importError.value = res.error || 'Import thất bại'
+      importError.value = res.error || t('products.import_failed')
     }
   } catch {
-    importError.value = 'Lỗi kết nối server'
+    importError.value = t('common.error')
   } finally {
     importLoading.value = false
   }
@@ -210,12 +213,12 @@ onMounted(() => {
     <!-- Header -->
     <div class="page-head">
       <div>
-        <h1 class="page-title">Sản phẩm</h1>
-        <p class="page-subtitle">Quản lý sản phẩm — Tổng {{ total }}</p>
+        <h1 class="page-title">{{ $t('products.title') }}</h1>
+        <p class="page-subtitle">{{ $t('products.subtitle', { count: total }) }}</p>
       </div>
       <button class="btn btn-primary" @click="openImportModal">
         <Icon name="upload" :size="16" />
-        Import sản phẩm
+        {{ $t('products.import_btn') }}
       </button>
     </div>
 
@@ -223,7 +226,7 @@ onMounted(() => {
     <div class="filters">
       <div class="field-wrap">
         <select v-model="filterCategory" class="field">
-          <option value="">Tất cả danh mục</option>
+          <option value="">{{ $t('products.filter_all_categories') }}</option>
           <option v-for="cat in categories" :key="cat.id" :value="cat.id">
             {{ cat.name }}
           </option>
@@ -231,7 +234,7 @@ onMounted(() => {
       </div>
       <div class="field-wrap">
         <select v-model="filterStatus" class="field">
-          <option value="">Tất cả trạng thái</option>
+          <option value="">{{ $t('products.filter_all_status') }}</option>
           <option value="available">Available</option>
           <option value="sold">Sold</option>
           <option value="reserved">Reserved</option>
@@ -244,13 +247,13 @@ onMounted(() => {
       <!-- Loading -->
       <div v-if="loading" class="state-block">
         <Icon name="refresh" :size="20" />
-        <span>Đang tải...</span>
+        <span>{{ $t('common.loading') }}</span>
       </div>
 
       <!-- Empty -->
       <div v-else-if="products.length === 0" class="state-block state-empty">
         <Icon name="package" :size="32" />
-        <p>Không có sản phẩm nào</p>
+        <p>{{ $t('products.empty') }}</p>
       </div>
 
       <!-- Data -->
@@ -258,13 +261,13 @@ onMounted(() => {
         <thead>
           <tr>
             <th style="width: 56px">ID</th>
-            <th>Danh mục</th>
-            <th>Nội dung</th>
-            <th>Trạng thái</th>
-            <th>Buyer</th>
-            <th>Ngày tạo</th>
-            <th>Ngày bán</th>
-            <th style="text-align: right">Thao tác</th>
+            <th>{{ $t('products.col_category') }}</th>
+            <th>{{ $t('products.col_content') }}</th>
+            <th>{{ $t('common.status') }}</th>
+            <th>{{ $t('products.col_buyer') }}</th>
+            <th>{{ $t('common.created_at') }}</th>
+            <th>{{ $t('products.col_sold_at') }}</th>
+            <th style="text-align: right">{{ $t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -283,9 +286,9 @@ onMounted(() => {
             </td>
             <td class="buyer-cell">
               <template v-if="product.status === 'sold' && product.buyer_id">
-                User #{{ product.buyer_id }}
+                {{ $t('products.buyer_user', { id: product.buyer_id }) }}
                 <span v-if="product.order_id" class="faint">
-                  (Order #{{ product.order_id }})
+                  {{ $t('products.buyer_order', { id: product.order_id }) }}
                 </span>
               </template>
               <template v-else>—</template>
@@ -298,7 +301,7 @@ onMounted(() => {
                 class="btn btn-ghost btn-sm"
                 :style="{ color: 'var(--red-fg)' }"
                 :disabled="deleteLoading === product.id"
-                title="Xoá sản phẩm"
+                :title="$t('products.delete_title')"
                 @click="deleteProduct(product.id)"
               >
                 <Icon name="trash" :size="15" />
@@ -312,7 +315,7 @@ onMounted(() => {
     <!-- Pagination -->
     <div v-if="totalPages > 1" class="pagination">
       <p class="page-info">
-        Trang {{ page }} / {{ totalPages }} — Tổng {{ total }} sản phẩm
+        {{ $t('products.page_info', { page, total: totalPages, count: total }) }}
       </p>
       <div class="page-actions">
         <button
@@ -321,14 +324,14 @@ onMounted(() => {
           @click="page--"
         >
           <Icon name="arrowLeft" :size="15" />
-          Trước
+          {{ $t('common.prev') }}
         </button>
         <button
           class="btn btn-secondary btn-sm"
           :disabled="page >= totalPages"
           @click="page++"
         >
-          Sau
+          {{ $t('common.next') }}
           <Icon name="arrowRight" :size="15" />
         </button>
       </div>
@@ -341,12 +344,12 @@ onMounted(() => {
       @click.self="showImportModal = false"
     >
       <div class="card modal-panel">
-        <h2 class="modal-title">Import sản phẩm</h2>
+        <h2 class="modal-title">{{ $t('products.import_title') }}</h2>
 
         <div class="modal-form">
           <!-- Category select -->
           <div>
-            <label class="label">Danh mục</label>
+            <label class="label">{{ $t('products.col_category') }}</label>
             <select v-model="importCategoryId" class="field">
               <option v-for="cat in categories" :key="cat.id" :value="cat.id">
                 {{ cat.name }}
@@ -356,7 +359,7 @@ onMounted(() => {
 
           <!-- Textarea -->
           <div>
-            <label class="label">Nội dung (mỗi dòng = 1 sản phẩm)</label>
+            <label class="label">{{ $t('products.import_content_label') }}</label>
             <textarea
               v-model="importText"
               rows="8"
@@ -368,21 +371,21 @@ onMounted(() => {
 
           <!-- File upload -->
           <div>
-            <label class="label">Hoặc upload file TXT</label>
+            <label class="label">{{ $t('products.import_file_label') }}</label>
             <div class="upload-row">
               <label class="btn btn-secondary">
                 <Icon name="upload" :size="16" />
-                Chọn file
+                {{ $t('products.import_choose_file') }}
                 <input type="file" accept=".txt" class="upload-input" @change="handleFileUpload" />
               </label>
-              <span class="upload-hint">Hỗ trợ file .txt, mỗi dòng một sản phẩm</span>
+              <span class="upload-hint">{{ $t('products.import_file_hint') }}</span>
             </div>
           </div>
 
           <!-- Preview count -->
           <div v-if="importPreviewCount > 0" class="info-box">
             <Icon name="package" :size="16" />
-            <span>Sẽ import <strong>{{ importPreviewCount }}</strong> sản phẩm</span>
+            <span>{{ $t('products.import_preview', { count: importPreviewCount }) }}</span>
           </div>
 
           <!-- Error -->
@@ -395,22 +398,22 @@ onMounted(() => {
           <div v-if="importResult" class="result-stack">
             <div class="result-box result-success">
               <Icon name="check" :size="16" :style="{ flexShrink: 0 }" />
-              <span>Import thành công: <strong>{{ importResult.imported }}</strong> sản phẩm</span>
+              <span>{{ $t('products.import_success', { count: importResult.imported }) }}</span>
             </div>
             <div v-if="importResult.duplicates.length > 0" class="result-box result-warning">
               <Icon name="warning" :size="16" :style="{ flexShrink: 0 }" />
-              <span>Trùng lặp: {{ importResult.duplicates.length }} mục</span>
+              <span>{{ $t('products.import_duplicates', { count: importResult.duplicates.length }) }}</span>
             </div>
             <div v-if="importResult.errors.length > 0" class="result-box result-error">
               <Icon name="close" :size="16" :style="{ flexShrink: 0 }" />
-              <span>Lỗi: {{ importResult.errors.join(', ') }}</span>
+              <span>{{ $t('products.import_errors', { errors: importResult.errors.join(', ') }) }}</span>
             </div>
           </div>
 
           <!-- Actions -->
           <div class="modal-actions">
             <button class="btn btn-secondary" @click="showImportModal = false">
-              Huỷ
+              {{ $t('common.cancel') }}
             </button>
             <button
               class="btn btn-primary"
@@ -418,7 +421,7 @@ onMounted(() => {
               @click="submitImport"
             >
               <Icon v-if="!importLoading" name="check" :size="16" />
-              {{ importLoading ? 'Đang import...' : 'Xác nhận Import' }}
+              {{ importLoading ? $t('products.importing') : $t('products.import_confirm') }}
             </button>
           </div>
         </div>

@@ -19,8 +19,10 @@
 
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import BalanceBadge from '@/components/BalanceBadge.vue'
 import GlassCard from '@/components/GlassCard.vue'
+import GlassButton from '@/components/GlassButton.vue'
 import { useUserStore } from '@/stores/user'
 import { useUiStore } from '@/stores/ui'
 import { ApiError } from '@/api/client'
@@ -29,6 +31,7 @@ import { showBackButton, type Cleanup } from '@/telegram/sdk'
 const router = useRouter()
 const user = useUserStore()
 const ui = useUiStore()
+const { t } = useI18n()
 
 /** Read-only state người mua (telegramId/username/firstName/balance/balanceDisplay/loaded). */
 const state = user.state
@@ -54,18 +57,18 @@ interface IdentityRow {
 const identityRows = computed<IdentityRow[]>(() => [
   {
     key: 'telegram_id',
-    label: 'ID Telegram',
+    label: t('account.telegram_id'),
     value: state.telegramId !== null ? String(state.telegramId) : '—',
     mono: true,
   },
   {
     key: 'username',
-    label: 'Tên người dùng',
-    value: state.username ?? 'Chưa đặt',
+    label: t('account.username'),
+    value: state.username ?? t('account.username_unset'),
   },
   {
     key: 'first_name',
-    label: 'Tên',
+    label: t('account.name'),
     value: state.firstName ?? '—',
   },
 ])
@@ -88,7 +91,7 @@ onMounted(async () => {
     await ui.withLoading(user.fetchMe())
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return
-    ui.toast('Không tải được thông tin tài khoản. Vui lòng thử lại.', 'error')
+    ui.toast(t('account.load_error'), 'error')
   }
 })
 
@@ -100,16 +103,16 @@ onUnmounted(() => {
 <template>
   <main class="flex flex-col gap-5 px-4 py-6">
     <header class="flex flex-col gap-1">
-      <h1 class="text-ios-title text-text">Tài khoản</h1>
-      <p class="text-ios-footnote text-hint">Thông tin tài khoản và số dư của bạn.</p>
+      <h1 class="text-ios-title text-text">{{ $t('account.title') }}</h1>
+      <p class="text-ios-footnote text-hint">{{ $t('account.subtitle') }}</p>
     </header>
 
     <!-- Số dư hiện tại (Req 12.1) -->
-    <BalanceBadge :balance="state.balance" :display="state.balanceDisplay" />
+    <BalanceBadge :balance="state.balance" />
 
     <!-- Thông tin định danh (Req 12.2) — màn hình chỉ đọc, KHÔNG có chức năng quản trị (Req 12.3) -->
-    <section class="flex flex-col gap-3" aria-label="Thông tin định danh">
-      <h2 class="px-1 text-ios-footnote text-hint">Thông tin định danh</h2>
+    <section class="flex flex-col gap-3" :aria-label="$t('account.identity')">
+      <h2 class="px-1 text-ios-footnote text-hint">{{ $t('account.identity') }}</h2>
       <GlassCard>
         <dl class="flex flex-col">
           <template v-for="(row, index) in identityRows" :key="row.key">
@@ -131,5 +134,10 @@ onUnmounted(() => {
         </dl>
       </GlassCard>
     </section>
+
+    <!-- Thiết lập vùng + ngôn ngữ (R5.2, R6.2) -->
+    <GlassButton variant="secondary" block @click="router.push({ name: 'settings' })">
+      {{ $t('settings.title') }}
+    </GlassButton>
   </main>
 </template>

@@ -6,6 +6,16 @@ import {
   escapeHtml,
   type SuccessTemplateVars,
 } from '../src/utils/telegram-template'
+import type { Lang } from '../src/i18n/locales'
+
+/**
+ * Helper: dựng `Map<Lang,string|null>` 1 ngôn ngữ để gọi API mới
+ * `renderSuccessMessage(templatesByLang, vars, lang)`. `null` template →
+ * renderer dùng body mặc định theo lang.
+ */
+function templatesFor(template: string | null, lang: Lang = 'vi'): Map<Lang, string | null> {
+  return new Map<Lang, string | null>([[lang, template]])
+}
 
 /**
  * Property 11: Escape HTML cho giá trị động trong tin nhắn mua hàng.
@@ -123,7 +133,7 @@ describe('Property 11: Escape HTML giá trị động trong tin nhắn mua hàng
   it('default body (template null): không lộ ký tự HTML thô từ name/contents', () => {
     fc.assert(
       fc.property(varsArb, (vars) => {
-        const rendered = renderSuccessMessage(null, vars)
+        const rendered = renderSuccessMessage(templatesFor(null), vars, 'vi')
         assertNoRawDynamicMarkup(rendered, vars)
       }),
       { numRuns: 200 }
@@ -133,7 +143,7 @@ describe('Property 11: Escape HTML giá trị động trong tin nhắn mua hàng
   it('custom template ([name]/[content]): không lộ ký tự HTML thô từ name/contents', () => {
     fc.assert(
       fc.property(varsArb, (vars) => {
-        const rendered = renderSuccessMessage(CUSTOM_TEMPLATE, vars)
+        const rendered = renderSuccessMessage(templatesFor(CUSTOM_TEMPLATE), vars, 'vi')
         assertNoRawDynamicMarkup(rendered, vars)
       }),
       { numRuns: 200 }
@@ -154,7 +164,7 @@ describe('Property 11 — ví dụ escape cụ thể', () => {
   }
 
   it('default body: name & content được escape, không còn <script> thô', () => {
-    const out = renderSuccessMessage(null, baseVars)
+    const out = renderSuccessMessage(templatesFor(null), baseVars, 'vi')
 
     // name escape: 'A & B <script>' → 'A &amp; B &lt;script&gt;'
     expect(out).toContain('A &amp; B &lt;script&gt;')
@@ -169,7 +179,7 @@ describe('Property 11 — ví dụ escape cụ thể', () => {
   })
 
   it('custom template: name & content được escape, không còn <script> thô', () => {
-    const out = renderSuccessMessage(CUSTOM_TEMPLATE, baseVars)
+    const out = renderSuccessMessage(templatesFor(CUSTOM_TEMPLATE), baseVars, 'vi')
 
     expect(out).toContain('A &amp; B &lt;script&gt;')
     expect(out).toContain('<code>u&lt;1&gt;&amp;p&gt;</code>')
@@ -178,10 +188,10 @@ describe('Property 11 — ví dụ escape cụ thể', () => {
   })
 
   it('header luôn escape name kể cả khi template không tham chiếu [name]', () => {
-    const out = renderSuccessMessage('[content]', {
+    const out = renderSuccessMessage(templatesFor('[content]'), {
       ...baseVars,
       name: '<b>boom</b> & <i>x</i>',
-    })
+    }, 'vi')
 
     expect(out).toContain('&lt;b&gt;boom&lt;/b&gt; &amp; &lt;i&gt;x&lt;/i&gt;')
     // Phần name thô không xuất hiện như thẻ thật

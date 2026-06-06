@@ -11,8 +11,19 @@ import {
   FLOOD_RULE,
 } from '../bot/rate-limit'
 import { answerCallbackQuery, sendMessage } from '../bot/telegram-api'
-import { isTelegramUserBanned, BAN_NOTICE } from '../services/user-ban'
+import { isTelegramUserBanned } from '../services/user-ban'
 import { resolveTelegramRuntimeConfig } from '../services/telegram-config'
+import { resolveLang } from '../services/user-locale'
+import { t } from '../bot/i18n'
+
+/** Resolve ngôn ngữ hiển thị của user theo telegram_id (cho thông báo guard flood/ban). */
+async function resolveLangByTelegramId(db: D1Database, telegramId: number) {
+  const row = await db
+    .prepare('SELECT language FROM users WHERE telegram_id = ?')
+    .bind(telegramId)
+    .first<{ language: string | null }>()
+  return resolveLang(db, { language: row?.language ?? null })
+}
 
 /**
  * Telegram webhook route — POST /webhook/telegram
@@ -44,10 +55,13 @@ telegramWebhook.post('/telegram', async (c) => {
       if (!verdict.allowed) {
         // Luôn answer để client dừng spinner; chỉ hiện toast nhắc nhở có throttle.
         const notify = shouldSendNotice(`flood:${telegramId}`)
+        let toastText: string | undefined
+        if (notify) {
+          const lang = await resolveLangByTelegramId(db, telegramId)
+          toastText = t(lang, 'guard.flood_toast', { sec: retryAfterSeconds(verdict.retryAfterMs) })
+        }
         await answerCallbackQuery(botToken, update.callback_query.id, {
-          text: notify
-            ? `⏳ Bạn thao tác quá nhanh, chờ ${retryAfterSeconds(verdict.retryAfterMs)}s.`
-            : undefined,
+          text: toastText,
           cache_time: 1,
         }).catch(() => {})
         return c.json({ ok: true })
@@ -55,12 +69,13 @@ telegramWebhook.post('/telegram', async (c) => {
 
       // Chặn user bị ban: dismiss spinner + thông báo (throttle) rồi dừng, không xử lý nghiệp vụ.
       if (await isTelegramUserBanned(db, telegramId)) {
+        const lang = await resolveLangByTelegramId(db, telegramId)
         await answerCallbackQuery(botToken, update.callback_query.id, {
-          text: 'Tài khoản đã bị khoá.',
+          text: t(lang, 'guard.ban_toast'),
           cache_time: 5,
         }).catch(() => {})
         if (shouldSendNotice(`ban:${telegramId}`) && update.callback_query.message) {
-          await sendMessage(botToken, update.callback_query.message.chat.id, BAN_NOTICE).catch(() => {})
+          await sendMessage(botToken, update.callback_query.message.chat.id, t(lang, 'guard.ban_notice')).catch(() => {})
         }
         return c.json({ ok: true })
       }
@@ -74,10 +89,11 @@ telegramWebhook.post('/telegram', async (c) => {
         const verdict = consumeToken(`flood:${telegramId}`, FLOOD_RULE)
         if (!verdict.allowed) {
           if (shouldSendNotice(`flood:${telegramId}`)) {
+            const lang = await resolveLangByTelegramId(db, telegramId)
             await sendMessage(
               botToken,
               update.message.chat.id,
-              `⏳ Bạn đang gửi quá nhanh. Vui lòng chờ ${retryAfterSeconds(verdict.retryAfterMs)} giây rồi thử lại.`
+              t(lang, 'guard.flood_text', { sec: retryAfterSeconds(verdict.retryAfterMs) })
             ).catch(() => {})
           }
           return c.json({ ok: true })
@@ -87,7 +103,8 @@ telegramWebhook.post('/telegram', async (c) => {
       // Chặn user bị ban: gửi thông báo (throttle) rồi dừng, không xử lý lệnh/flow.
       if (telegramId && (await isTelegramUserBanned(db, telegramId))) {
         if (shouldSendNotice(`ban:${telegramId}`)) {
-          await sendMessage(botToken, update.message.chat.id, BAN_NOTICE).catch(() => {})
+          const lang = await resolveLangByTelegramId(db, telegramId)
+          await sendMessage(botToken, update.message.chat.id, t(lang, 'guard.ban_notice')).catch(() => {})
         }
         return c.json({ ok: true })
       }

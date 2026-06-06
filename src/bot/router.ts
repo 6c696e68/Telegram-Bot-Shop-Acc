@@ -2,11 +2,12 @@
  * Callback Query Router & Text Message Router.
  * Parse callback_data format "action:param1:param2", dispatch tới handler tương ứng.
  * Xử lý text messages: detect flow context (session), route input text tương ứng.
- * Requirements: 7.4, 7.8
+ * Requirements: 7.4, 7.8, 1.3, 1.4, 1.6, 3.7, 4.1
  */
 
 import type { CallbackQuery, Message } from '../types/telegram'
 import type { Bindings } from '../types/bindings'
+import type { DbUser } from '../types/db'
 import {
   answerCallbackQuery,
   sendMessage,
@@ -30,15 +31,30 @@ import { handleHistory } from './callbacks/history'
 import { handleAccount } from './callbacks/account'
 import {
   handleDepositMenu,
+  handleDepositMethod,
   handleDepositAmount,
+  handleCryptoDepositAmount,
   handleDepositCancel,
 } from './callbacks/deposit'
+import { handleRegionCallback, sendRegionOnboarding, sendRegionPicker } from './callbacks/region'
+import { handleLanguageCallback, sendLanguagePicker } from './callbacks/language'
+import { resolveLang } from '../services/user-locale'
+import { t, BASE_FALLBACK_LANG, type Lang } from './i18n'
+import { MENU_ACTION_BY_LABEL } from './i18n/menu'
 
 // --- Types ---
 
 export interface ParsedCallback {
   action: string
   params: string[]
+}
+
+/** Region + ngôn ngữ hiển thị của user (đã resolve) — dùng cho guard onboarding + i18n. */
+interface UserLocale {
+  /** Bản ghi user tồn tại trong DB hay chưa (chưa /start → null). */
+  exists: boolean
+  region: 'vietnam' | 'international' | null
+  lang: Lang
 }
 
 // --- Helper: parse callback_data ---
@@ -52,6 +68,20 @@ export function parseCallbackData(data: string): ParsedCallback {
   const action = parts[0] ?? ''
   const params = parts.slice(1)
   return { action, params }
+}
+
+/**
+ * Tải region + ngôn ngữ hiển thị của user theo `telegram_id`.
+ * User chưa tồn tại → `exists=false`, region=null, lang=Default_Language.
+ */
+async function loadUserLocale(db: D1Database, telegramId: number): Promise<UserLocale> {
+  const row = await db
+    .prepare('SELECT region, language FROM users WHERE telegram_id = ?')
+    .bind(telegramId)
+    .first<Pick<DbUser, 'region' | 'language'>>()
+
+  const lang = await resolveLang(db, { language: row?.language ?? null })
+  return { exists: !!row, region: row?.region ?? null, lang }
 }
 
 // --- Deposit callback dispatcher ---
@@ -68,7 +98,12 @@ async function handleDepositCallback(
   const subAction = params[0]
 
   if (subAction === 'menu' || !subAction) {
-    await handleDepositMenu(db, botToken, chatId, userId, messageId)
+    await handleDepositMenu(db, botToken, chatId, userId, env, messageId)
+    return
+  }
+
+  if (subAction === 'method') {
+    await handleDepositMethod(db, botToken, chatId, userId, params[1], env, messageId)
     return
   }
 
@@ -85,7 +120,7 @@ async function handleDepositCallback(
   }
 
   // Unknown deposit sub-action
-  await handleDepositMenu(db, botToken, chatId, userId, messageId)
+  await handleDepositMenu(db, botToken, chatId, userId, env, messageId)
 }
 
 // --- Admin callback dispatcher ---
@@ -97,15 +132,16 @@ async function handleAdminCallback(
   messageId: number | undefined,
   params: string[],
   userId: number,
-  env: Bindings
+  env: Bindings,
+  lang: Lang
 ): Promise<void> {
   if (!isAdmin(userId, env.ADMIN_IDS)) {
-    await editOrSendMessage(botToken, chatId, messageId, '⛔ Bạn không có quyền truy cập.', {
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'common.no_permission'), {
       parse_mode: 'HTML',
     })
     return
   }
-  await handleAdminCallbackRouted(db, env.BOT_TOKEN, chatId, messageId, userId, params)
+  await handleAdminCallbackRouted(db, env.BOT_TOKEN, chatId, messageId, userId, params, lang)
 }
 
 // --- Main Callback Query Handler ---
@@ -126,28 +162,51 @@ export async function handleCallbackQuery(
 
   if (!chatId) return
 
+  let lang: Lang = BASE_FALLBACK_LANG
+
   try {
     // Answer callback query ngay lập tức (dismiss loading indicator)
     await answerCallbackQuery(botToken, callbackQuery.id)
 
+    const locale = await loadUserLocale(db, userId)
+    lang = locale.lang
+
     // Nếu không có data → invalid callback
     if (!data) {
-      await sendMessage(botToken, chatId, '⚠️ Yêu cầu không hợp lệ.', {
-        reply_markup: buildMainMenu(),
+      await sendMessage(botToken, chatId, t(lang, 'common.invalid_request'), {
+        reply_markup: buildMainMenu(lang),
       })
       return
     }
 
     const { action, params } = parseCallbackData(data)
 
+    // Onboarding callback luôn được xử lý (kể cả khi region NULL).
+    if (action === 'reg') {
+      await handleRegionCallback(db, botToken, chatId, params, userId)
+      return
+    }
+
+    // Đổi ngôn ngữ — cho phép kể cả khi chưa chọn vùng (ngôn ngữ độc lập vùng — R6).
+    if (action === 'lang') {
+      await handleLanguageCallback(db, botToken, chatId, params, userId)
+      return
+    }
+
+    // Guard onboarding (R1.6, R3.7): user đã tồn tại nhưng chưa chọn vùng → bắt chọn vùng.
+    if (locale.exists && locale.region === null) {
+      await sendRegionOnboarding(botToken, chatId, lang)
+      return
+    }
+
     switch (action) {
       case 'cat':
         if (params[0] === 'list') {
-          await handleCategoryList(db, botToken, chatId, messageId)
+          await handleCategoryList(db, botToken, chatId, messageId, lang)
         } else {
           const catId = parseInt(params[0], 10)
           if (!isNaN(catId)) {
-            await handleCategoryDetail(db, botToken, chatId, messageId, catId, userId)
+            await handleCategoryDetail(db, botToken, chatId, messageId, catId, userId, lang)
           }
         }
         break
@@ -156,7 +215,7 @@ export async function handleCallbackQuery(
         const catId = parseInt(params[0], 10)
         const qty = parseInt(params[1], 10)
         if (!isNaN(catId) && !isNaN(qty)) {
-          await handleQuantitySelect(db, botToken, chatId, messageId, catId, qty, userId)
+          await handleQuantitySelect(db, botToken, chatId, messageId, catId, qty, userId, lang)
         }
         break
       }
@@ -165,7 +224,7 @@ export async function handleCallbackQuery(
         const catId = parseInt(params[0], 10)
         const qty = parseInt(params[1], 10)
         if (!isNaN(catId) && !isNaN(qty)) {
-          await handlePurchaseConfirm(db, botToken, chatId, messageId, catId, qty, userId)
+          await handlePurchaseConfirm(db, botToken, chatId, messageId, catId, qty, userId, lang)
         }
         break
       }
@@ -178,48 +237,48 @@ export async function handleCallbackQuery(
         // page:cat:{pageNum} — pagination for category list
         if (params[0] === 'cat') {
           const pageNum = parseInt(params[1], 10)
-          await handleCategoryList(db, botToken, chatId, messageId, isNaN(pageNum) ? 0 : pageNum)
+          await handleCategoryList(db, botToken, chatId, messageId, lang, isNaN(pageNum) ? 0 : pageNum)
         }
         break
 
       case 'menu':
-        // menu:main → hiển thị menu chính với inline shortcuts
-        await sendMessage(botToken, chatId, '🏪 <b>Menu chính</b>', {
+        // menu:main → hiển thị menu chính với inline shortcuts (nhãn theo lang)
+        await sendMessage(botToken, chatId, t(lang, 'menu.title'), {
           parse_mode: 'HTML',
           reply_markup: buildInlineKeyboard([
             [
-              { text: '🛒 Mua hàng', callback_data: 'cat:list' },
-              { text: '💰 Nạp tiền', callback_data: 'dep:menu' },
+              { text: t(lang, 'menu.shop'), callback_data: 'cat:list' },
+              { text: t(lang, 'menu.deposit'), callback_data: 'dep:menu' },
             ],
             [
-              { text: '📜 Lịch sử', callback_data: 'hist' },
-              { text: '👤 Số dư', callback_data: 'acc' },
+              { text: t(lang, 'menu.history'), callback_data: 'hist' },
+              { text: t(lang, 'menu.account'), callback_data: 'acc' },
             ],
           ]),
         })
         break
 
       case 'adm':
-        await handleAdminCallback(db, botToken, chatId, messageId, params, userId, env)
+        await handleAdminCallback(db, botToken, chatId, messageId, params, userId, env, lang)
         break
 
       case 'hist':
-        await handleHistory(db, botToken, chatId, messageId, userId)
+        await handleHistory(db, botToken, chatId, messageId, userId, lang)
         break
 
       case 'acc':
-        await handleAccount(db, botToken, chatId, messageId, userId)
+        await handleAccount(db, botToken, chatId, messageId, userId, lang)
         break
 
       default:
         // Unknown action → thông báo lỗi + menu chính
-        await sendMessage(botToken, chatId, '⚠️ Yêu cầu không hợp lệ hoặc đã hết hạn.', {
-          reply_markup: buildMainMenu(),
+        await sendMessage(botToken, chatId, t(lang, 'common.invalid_request'), {
+          reply_markup: buildMainMenu(lang),
         })
         break
     }
   } catch (error) {
-    const { message, shouldNotifyUser } = handleBotError(error, {
+    const { shouldNotifyUser } = handleBotError(error, {
       userId,
       command: `callback:${data}`,
       operation: 'handleCallbackQuery',
@@ -227,8 +286,8 @@ export async function handleCallbackQuery(
 
     if (shouldNotifyUser && chatId) {
       try {
-        await sendMessage(botToken, chatId, message, {
-          reply_markup: buildMainMenu(),
+        await sendMessage(botToken, chatId, t(lang, 'common.system_error'), {
+          reply_markup: buildMainMenu(lang),
         })
       } catch {
         // Silent fail — đã log ở trên
@@ -255,38 +314,62 @@ export async function handleTextMessage(
 
   if (!userId || !from) return
 
+  let lang: Lang = BASE_FALLBACK_LANG
+
   try {
-    // 1. Reply keyboard buttons
-    switch (text) {
-      case '🛒 Mua hàng':
-        await handleCategoryList(db, botToken, chatId, undefined)
-        return
-
-      case '💰 Nạp tiền':
-        await handleDepositMenu(db, botToken, chatId, userId, undefined)
-        return
-
-      case '📜 Lịch sử':
-        await handleHistory(db, botToken, chatId, undefined, userId)
-        return
-
-      case '👤 Số dư':
-        await handleAccount(db, botToken, chatId, undefined, userId)
-        return
-    }
-
-    // 2. Commands
+    // /start luôn được xử lý trước (đăng ký user + onboarding/menu).
     if (text === '/start') {
       await handleStart(db, botToken, chatId, from)
       return
     }
 
+    const locale = await loadUserLocale(db, userId)
+    lang = locale.lang
+
+    // Lệnh đổi vùng/ngôn ngữ — xử lý trước guard onboarding (R5.1, R6.1).
+    // `/language` cho phép kể cả khi chưa chọn vùng (ngôn ngữ độc lập vùng — R6).
+    if (text === '/region') {
+      await sendRegionPicker(botToken, chatId, lang)
+      return
+    }
+    if (text === '/language' || text === '/lang') {
+      await sendLanguagePicker(botToken, chatId, lang)
+      return
+    }
+
+    // Guard onboarding (R1.6, R3.7): user đã tồn tại nhưng chưa chọn vùng → bắt chọn vùng
+    // trước mọi thao tác khác (trừ /start ở trên).
+    if (locale.exists && locale.region === null) {
+      await sendRegionOnboarding(botToken, chatId, lang)
+      return
+    }
+
+    // 1. Reply keyboard buttons — tra map nhãn (gộp mọi locale) thay switch chuỗi cứng.
+    const menuAction = MENU_ACTION_BY_LABEL.get(text)
+    if (menuAction) {
+      switch (menuAction) {
+        case 'shop':
+          await handleCategoryList(db, botToken, chatId, undefined, lang)
+          return
+        case 'deposit':
+          await handleDepositMenu(db, botToken, chatId, userId, env, undefined)
+          return
+        case 'history':
+          await handleHistory(db, botToken, chatId, undefined, userId, lang)
+          return
+        case 'account':
+          await handleAccount(db, botToken, chatId, undefined, userId, lang)
+          return
+      }
+    }
+
+    // 2. Commands
     if (text === '/admin') {
       if (!isAdmin(userId, env.ADMIN_IDS)) {
-        await sendMessage(botToken, chatId, '⛔ Bạn không có quyền truy cập chức năng này.')
+        await sendMessage(botToken, chatId, t(lang, 'common.no_permission'))
         return
       }
-      await handleAdminPanel(db, env.BOT_TOKEN, chatId)
+      await handleAdminPanel(db, env.BOT_TOKEN, chatId, undefined, lang)
       return
     }
 
@@ -299,8 +382,8 @@ export async function handleTextMessage(
       }
       if (session) {
         clearSession(userId)
-        await sendMessage(botToken, chatId, '✅ Đã huỷ thao tác hiện tại.', {
-          reply_markup: buildMainMenu(),
+        await sendMessage(botToken, chatId, t(lang, 'common.cancelled'), {
+          reply_markup: buildMainMenu(lang),
         })
       } else {
         // Even without session, try to cancel any pending deposit
@@ -312,16 +395,16 @@ export async function handleTextMessage(
     // 3. Check active session — route input text theo flow context
     const session = getSession(userId)
     if (session && session.flow) {
-      await handleSessionInput(db, botToken, chatId, userId, text, session.flow, session.step, env)
+      await handleSessionInput(db, botToken, chatId, userId, text, session.flow, session.step, env, lang)
       return
     }
 
     // 4. Fallback — lệnh không hợp lệ
-    await sendMessage(botToken, chatId, '❓ Lệnh không hợp lệ. Vui lòng chọn chức năng từ menu bên dưới.', {
-      reply_markup: buildMainMenu(),
+    await sendMessage(botToken, chatId, t(lang, 'common.invalid_request'), {
+      reply_markup: buildMainMenu(lang),
     })
   } catch (error) {
-    const { message: errorMsg, shouldNotifyUser } = handleBotError(error, {
+    const { shouldNotifyUser } = handleBotError(error, {
       userId,
       command: text,
       operation: 'handleTextMessage',
@@ -329,8 +412,8 @@ export async function handleTextMessage(
 
     if (shouldNotifyUser) {
       try {
-        await sendMessage(botToken, chatId, errorMsg, {
-          reply_markup: buildMainMenu(),
+        await sendMessage(botToken, chatId, t(lang, 'common.system_error'), {
+          reply_markup: buildMainMenu(lang),
         })
       } catch {
         // Silent fail — đã log ở trên
@@ -353,31 +436,32 @@ async function handleSessionInput(
   text: string,
   flow: string,
   step: string | null,
-  env: Bindings
+  env: Bindings,
+  lang: Lang
 ): Promise<void> {
   switch (flow) {
     case 'deposit':
       // User nhập số tiền nạp tùy ý
-      await handleDepositTextInput(db, botToken, chatId, userId, text, step, env)
+      await handleDepositTextInput(db, botToken, chatId, userId, text, step, env, lang)
       break
 
     case 'purchase':
       // User nhập số lượng mua tự do
-      await handlePurchaseSessionInput(db, botToken, chatId, userId, text, step)
+      await handlePurchaseSessionInput(db, botToken, chatId, userId, text, step, lang)
       break
 
     case 'admin_add_type':
     case 'admin_edit_type':
     case 'admin_add_product':
       // Admin multi-step flows
-      await handleAdminTextInput(db, botToken, chatId, userId, text, flow, step, env)
+      await handleAdminTextInput(db, botToken, chatId, userId, text, flow, step, env, lang)
       break
 
     default:
       // Flow không xác định → clear session, fallback menu
       clearSession(userId)
-      await sendMessage(botToken, chatId, '❓ Phiên làm việc đã hết hạn. Vui lòng bắt đầu lại.', {
-        reply_markup: buildMainMenu(),
+      await sendMessage(botToken, chatId, t(lang, 'common.session_expired'), {
+        reply_markup: buildMainMenu(lang),
       })
       break
   }
@@ -391,23 +475,24 @@ async function handlePurchaseSessionInput(
   chatId: number,
   userId: number,
   text: string,
-  step: string | null
+  step: string | null,
+  lang: Lang
 ): Promise<void> {
   if (step === 'quantity') {
     const session = getSession(userId)
     const categoryId = session?.data?.categoryId
     if (!categoryId) {
       clearSession(userId)
-      await sendMessage(botToken, chatId, '❓ Phiên làm việc đã hết hạn. Vui lòng bắt đầu lại.', {
-        reply_markup: buildMainMenu(),
+      await sendMessage(botToken, chatId, t(lang, 'common.session_expired'), {
+        reply_markup: buildMainMenu(lang),
       })
       return
     }
-    await handlePurchaseTextInput(db, botToken, chatId, userId, text, categoryId)
+    await handlePurchaseTextInput(db, botToken, chatId, userId, text, categoryId, lang)
   } else {
     clearSession(userId)
-    await sendMessage(botToken, chatId, '❓ Phiên làm việc đã hết hạn. Vui lòng bắt đầu lại.', {
-      reply_markup: buildMainMenu(),
+    await sendMessage(botToken, chatId, t(lang, 'common.session_expired'), {
+      reply_markup: buildMainMenu(lang),
     })
   }
 }
@@ -419,22 +504,33 @@ async function handleDepositTextInput(
   userId: number,
   text: string,
   step: string | null,
-  env: Bindings
+  env: Bindings,
+  lang: Lang
 ): Promise<void> {
   if (step === 'amount') {
     // Parse amount from text input
     const amount = parseInt(text.replace(/[.,\s]/g, ''), 10)
     if (isNaN(amount)) {
-      await sendMessage(botToken, chatId, '⚠️ Vui lòng nhập số tiền hợp lệ (VD: 50000).', {
+      await sendMessage(botToken, chatId, t(lang, 'deposit.amount.invalid'), {
         parse_mode: 'HTML',
       })
       return
     }
     await handleDepositAmount(db, botToken, chatId, userId, amount, env)
+  } else if (step === 'crypto_amount') {
+    // Nhập số USDT (cho phép thập phân) → tạo invoice Crypto Pay.
+    const usdt = Number(text.replace(/\s/g, '').replace(',', '.'))
+    if (!Number.isFinite(usdt) || usdt <= 0) {
+      await sendMessage(botToken, chatId, t(lang, 'deposit.crypto.invalid'), {
+        parse_mode: 'HTML',
+      })
+      return
+    }
+    await handleCryptoDepositAmount(db, botToken, chatId, userId, usdt, env)
   } else {
     clearSession(userId)
-    await sendMessage(botToken, chatId, '❓ Phiên làm việc đã hết hạn. Vui lòng bắt đầu lại.', {
-      reply_markup: buildMainMenu(),
+    await sendMessage(botToken, chatId, t(lang, 'common.session_expired'), {
+      reply_markup: buildMainMenu(lang),
     })
   }
 }
@@ -447,12 +543,13 @@ async function handleAdminTextInput(
   text: string,
   flow: string,
   step: string | null,
-  env: Bindings
+  env: Bindings,
+  lang: Lang
 ): Promise<void> {
   if (!isAdmin(userId, env.ADMIN_IDS)) {
     clearSession(userId)
-    await sendMessage(botToken, chatId, '⛔ Bạn không có quyền truy cập.')
+    await sendMessage(botToken, chatId, t(lang, 'common.no_permission'))
     return
   }
-  await handleAdminTextInputRouted(db, botToken, chatId, userId, text, flow, step)
+  await handleAdminTextInputRouted(db, botToken, chatId, userId, text, flow, step, lang)
 }

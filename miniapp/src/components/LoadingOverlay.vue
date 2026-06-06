@@ -7,8 +7,10 @@
  * Màu phẳng, không gradient (Req 13.3).
  */
 import { useUiStore } from '@/stores/ui'
+import { useI18n } from 'vue-i18n'
 
 const ui = useUiStore()
+const { t } = useI18n()
 </script>
 
 <template>
@@ -19,7 +21,7 @@ const ui = useUiStore()
       :style="{ backgroundColor: 'rgba(0, 0, 0, 0.25)' }"
       role="status"
       aria-live="polite"
-      aria-label="Đang tải"
+      :aria-label="t('a11y.loading')"
     >
       <div class="glass flex h-14 w-14 items-center justify-center">
         <span

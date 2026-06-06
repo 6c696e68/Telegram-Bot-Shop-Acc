@@ -1,9 +1,17 @@
 /**
- * Deposit flow handlers — nạp tiền qua SePay.
- * Requirements: 2.1, 2.2, 2.3, 2.4, 2.13, 7.3
+ * Deposit flow handlers — nạp tiền đa phương thức theo vùng.
+ *
+ * Vùng quyết định tập phương thức nạp (`methodsForRegion`):
+ *  - vietnam → SePay (VietQR, VND) + CryptoBot (USDT).
+ *  - international → chỉ CryptoBot (USDT).
+ * Nhiều phương thức → hiện bước chọn (`dep:method:<id>`); một phương thức → vào thẳng.
+ * SePay giữ flow VND (mệnh giá/nhập tuỳ ý); CryptoBot dùng session step `crypto_amount`
+ * (nhập USDT) → `CryptoPayProvider.createDeposit` → gửi nút `pay_url`.
+ *
+ * Requirements: 8.1, 8.2, 8.3, 8.4, 10.1, 10.3
  */
 
-import type { DbDeposit } from '../../types/db'
+import type { DbDeposit, DbUser } from '../../types/db'
 import type { Bindings } from '../../types/bindings'
 import {
   sendMessage,
@@ -12,56 +20,186 @@ import {
   editMessageText,
   buildInlineKeyboard,
 } from '../telegram-api'
-import { generateTransferCode } from '../../utils/transfer-code'
-import { generateVietQRUrl } from '../../utils/vietqr'
-import { formatCurrency } from '../../utils/format'
-import { escapeHtml } from '../../utils/telegram-template'
+import { formatMoney } from '../../utils/format'
 import { getSession, setSession, clearSession } from '../session'
 import { shouldSendNotice } from '../rate-limit'
-import { checkDepositPolicy, depositPolicyMessage } from '../../services/deposit-policy'
+import { depositPolicyMessage } from '../../services/deposit-policy'
 import { readDepositLimits } from '../../services/deposit-limits'
-import { resolveBankConfig } from '../../services/bank-config'
+import { readSystemConfigValue } from '../../utils/system-config'
+import { sePayProvider, buildDepositCaption } from '../../services/payments/sepay-provider'
+import { cryptoPayProvider } from '../../services/payments/cryptopay-provider'
+import { isMethodAllowedForRegion, enabledMethodsForRegion, isProviderEnabled } from '../../services/payments/registry'
+import type { ProviderId } from '../../services/payments/types'
+import { resolveLang } from '../../services/user-locale'
+import { t, type Lang } from '../i18n'
 
 /** Mệnh giá nạp nhanh (grid 2×3) */
 const PRESET_AMOUNTS = [30_000, 50_000, 100_000, 200_000, 500_000, 1_000_000]
 
+/** Số USDT tối thiểu mặc định khi `crypto_min_usdt` chưa cấu hình (R13.5). */
+const DEFAULT_CRYPTO_MIN_USDT = 5
+
+/** Bản ghi user tối thiểu cần cho luồng nạp. */
+type DepositUser = Pick<DbUser, 'id' | 'region' | 'language'>
+
+/** Lấy user (id, region, language) theo telegram_id. */
+async function loadDepositUser(db: D1Database, telegramId: number): Promise<DepositUser | null> {
+  return db
+    .prepare('SELECT id, region, language FROM users WHERE telegram_id = ?')
+    .bind(telegramId)
+    .first<DepositUser>()
+}
+
 /**
- * Hiển thị menu chọn mệnh giá nạp tiền (grid 2×3).
- * Callback: `dep:menu`
+ * Entry nạp tiền (`dep:menu`): liệt kê phương thức theo vùng của user.
+ *  - Nhiều phương thức → hiện bước chọn (`dep:method:<id>`).
+ *  - Một phương thức → vào thẳng flow tương ứng.
  */
 export async function handleDepositMenu(
   db: D1Database,
   botToken: string,
   chatId: number,
-  userId: number,
+  telegramId: number,
+  env: Bindings,
   messageId?: number
 ): Promise<void> {
-  // Set session to deposit flow, step 'amount'
-  setSession(userId, 'deposit', 'amount')
+  const user = await loadDepositUser(db, telegramId)
+  const lang = await resolveLang(db, { language: user?.language ?? null })
+
+  if (!user) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.account_not_found'))
+    return
+  }
+
+  // Router đã gate onboarding; region null ở đây là bất thường → yêu cầu chọn vùng lại.
+  if (user.region === null) {
+    await sendMessage(botToken, chatId, t(lang, 'onboarding.required'))
+    return
+  }
+
+  const methods = await enabledMethodsForRegion(db, user.region)
+
+  // Không phương thức nào được bật cho vùng (vd provider mới chưa được admin mở) — R7.6.
+  if (methods.length === 0) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.method.unavailable'))
+    return
+  }
+
+  // Một phương thức → vào thẳng (không bắt user chọn thừa).
+  if (methods.length === 1) {
+    await startDepositMethod(db, botToken, chatId, telegramId, methods[0], env, lang, user, messageId)
+    return
+  }
+
+  // Nhiều phương thức → hiện bước chọn (R8.3).
+  const rows = methods.map((id) => [
+    { text: t(lang, `deposit.method.${id}` as const), callback_data: `dep:method:${id}` },
+  ])
+  rows.push([{ text: t(lang, 'deposit.cancel'), callback_data: 'dep:cancel' }])
+
+  await editOrSendMessage(botToken, chatId, messageId, t(lang, 'deposit.method.prompt'), {
+    parse_mode: 'HTML',
+    reply_markup: buildInlineKeyboard(rows),
+  })
+}
+
+/**
+ * Xử lý chọn phương thức (`dep:method:<id>`): enforce phương thức theo vùng rồi vào flow.
+ */
+export async function handleDepositMethod(
+  db: D1Database,
+  botToken: string,
+  chatId: number,
+  telegramId: number,
+  method: string,
+  env: Bindings,
+  messageId?: number
+): Promise<void> {
+  const user = await loadDepositUser(db, telegramId)
+  const lang = await resolveLang(db, { language: user?.language ?? null })
+
+  if (!user) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.account_not_found'))
+    return
+  }
+  if (user.region === null) {
+    await sendMessage(botToken, chatId, t(lang, 'onboarding.required'))
+    return
+  }
+
+  // Enforce phương thức theo vùng (R8.4): method ngoài danh sách → từ chối.
+  if (
+    (method !== 'sepay' && method !== 'cryptobot') ||
+    !isMethodAllowedForRegion(user.region, method)
+  ) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.method.unavailable'))
+    return
+  }
+
+  // Enforce cờ bật provider (R7.6): provider mới chưa được admin mở → từ chối.
+  if (!(await isProviderEnabled(db, method))) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.method.unavailable'))
+    return
+  }
+
+  await startDepositMethod(db, botToken, chatId, telegramId, method, env, lang, user, messageId)
+}
+
+/** Điều phối vào flow của phương thức cụ thể. */
+async function startDepositMethod(
+  db: D1Database,
+  botToken: string,
+  chatId: number,
+  telegramId: number,
+  method: ProviderId,
+  env: Bindings,
+  lang: Lang,
+  user: DepositUser,
+  messageId?: number
+): Promise<void> {
+  if (method === 'cryptobot') {
+    await startCryptoDeposit(db, botToken, chatId, telegramId, lang, messageId)
+    return
+  }
+  await startSepayDeposit(db, botToken, chatId, telegramId, lang, messageId)
+}
+
+/**
+ * SePay flow: hiển thị grid mệnh giá VND + cho phép nhập số tiền tuỳ ý.
+ * Session: flow='deposit', step='amount'.
+ */
+async function startSepayDeposit(
+  db: D1Database,
+  botToken: string,
+  chatId: number,
+  telegramId: number,
+  lang: Lang,
+  messageId?: number
+): Promise<void> {
+  setSession(telegramId, 'deposit', 'amount')
 
   // Hạn mức lấy từ system_config (admin chỉnh qua CMS) — đồng bộ với Mini App + webhook SePay.
   const { min: minAmount } = await readDepositLimits(db)
 
   const text = [
-    '💰 <b>Nạp tiền</b>',
+    t(lang, 'deposit.title'),
     '',
-    'Chọn mệnh giá hoặc nhập số tiền tùy ý:',
+    t(lang, 'deposit.amount.choose'),
     '',
-    `💡 Tối thiểu: <b>${formatCurrency(minAmount)}</b>`,
-    '📝 Gõ /huy để huỷ giao dịch',
+    t(lang, 'deposit.amount.hint_min', { min: formatMoney(minAmount, lang) }),
+    t(lang, 'deposit.amount.hint_cancel'),
   ].join('\n')
 
   // Build grid 2×3 inline keyboard
   const rows: { text: string; callback_data: string }[][] = []
   for (let i = 0; i < PRESET_AMOUNTS.length; i += 2) {
     const row = PRESET_AMOUNTS.slice(i, i + 2).map((amount) => ({
-      text: formatCurrency(amount),
+      text: formatMoney(amount, lang),
       callback_data: `dep:${amount}`,
     }))
     rows.push(row)
   }
-  // Nút huỷ
-  rows.push([{ text: '❌ Huỷ', callback_data: 'dep:cancel' }])
+  rows.push([{ text: t(lang, 'deposit.cancel'), callback_data: 'dep:cancel' }])
 
   const res = await editOrSendMessage(botToken, chatId, messageId, text, {
     parse_mode: 'HTML',
@@ -72,71 +210,106 @@ export async function handleDepositMenu(
   // tránh user bấm lại spam tạo deposit + QR. Áp dụng cho cả nhập số tiền tùy ý.
   const menuMessageId = (res.result as { message_id?: number } | undefined)?.message_id
   if (menuMessageId) {
-    setSession(userId, 'deposit', 'amount', { menuMessageId })
+    setSession(telegramId, 'deposit', 'amount', { menuMessageId })
   }
 }
 
 /**
- * Xử lý chọn mệnh giá / nhập số tiền → tạo deposit pending + hiển thị QR.
- * Callback: `dep:{amount}` hoặc text input khi session flow='deposit' step='amount'
+ * CryptoBot flow: yêu cầu user nhập số USDT.
+ * Session: flow='deposit', step='crypto_amount'.
+ */
+async function startCryptoDeposit(
+  db: D1Database,
+  botToken: string,
+  chatId: number,
+  telegramId: number,
+  lang: Lang,
+  messageId?: number
+): Promise<void> {
+  setSession(telegramId, 'deposit', 'crypto_amount')
+
+  const minUsdtRaw = await readSystemConfigValue(db, 'crypto_min_usdt')
+  const minUsdt = Number(minUsdtRaw)
+  const minUsdtDisplay =
+    Number.isFinite(minUsdt) && minUsdt > 0 ? minUsdt : DEFAULT_CRYPTO_MIN_USDT
+
+  await editOrSendMessage(
+    botToken,
+    chatId,
+    messageId,
+    t(lang, 'deposit.crypto.prompt', { min: minUsdtDisplay }),
+    {
+      parse_mode: 'HTML',
+      reply_markup: buildInlineKeyboard([
+        [{ text: t(lang, 'deposit.cancel'), callback_data: 'dep:cancel' }],
+      ]),
+    }
+  )
+}
+
+/**
+ * Xử lý chọn mệnh giá / nhập số tiền VND → tạo deposit SePay pending + hiển thị QR.
+ * Callback: `dep:{amount}` hoặc text input khi session step='amount'.
  */
 export async function handleDepositAmount(
   db: D1Database,
   botToken: string,
   chatId: number,
-  userId: number,
+  telegramId: number,
   amount: number,
   env: Bindings
 ): Promise<void> {
-  // Validate amount theo hạn mức cấu hình (min/max) trong system_config — đồng bộ với
-  // Mini App (`POST /deposits`) và webhook SePay. Trước đây bot hardcode min = 20.000 và
-  // KHÔNG kiểm max → lệch luật khi admin đổi cấu hình qua CMS.
-  const { min: minAmount, max: maxAmount } = await readDepositLimits(db)
-  if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
-    await sendMessage(
-      botToken,
-      chatId,
-      `⚠️ Số tiền nạp phải từ <b>${formatCurrency(minAmount)}</b> đến <b>${formatCurrency(maxAmount)}</b>. Vui lòng nhập lại.`,
-      { parse_mode: 'HTML' }
-    )
-    return
-  }
-
-  // Lấy user.id từ telegram_id (cần cho cả kiểm tra luật nạp lẫn insert).
-  const user = await db
-    .prepare('SELECT id FROM users WHERE telegram_id = ?')
-    .bind(userId)
-    .first<{ id: number }>()
+  const user = await loadDepositUser(db, telegramId)
+  const lang = await resolveLang(db, { language: user?.language ?? null })
 
   if (!user) {
-    await sendMessage(botToken, chatId, '❌ Không tìm thấy tài khoản. Gõ /start để bắt đầu.')
-    return
-  }
-
-  // Luật nạp dùng chung (D1-backed): cooldown 5 phút + tối đa 3 deposit pending còn hiệu lực.
-  const verdict = await checkDepositPolicy(db, user.id)
-  if (!verdict.allowed) {
-    // Throttle thông báo để không spam ngược user khi bấm liên tục (flood đã chặn ở tầng trên).
-    if (shouldSendNotice(`dep:${userId}`)) {
-      await sendMessage(botToken, chatId, depositPolicyMessage(verdict), { parse_mode: 'HTML' })
-    }
+    await sendMessage(botToken, chatId, t(lang, 'deposit.account_not_found'))
     return
   }
 
   // Lấy messageId của menu mệnh giá (nếu có) để ẩn nút sau khi tạo QR.
-  const menuMessageId = getSession(userId)?.data?.menuMessageId as number | undefined
+  const menuMessageId = getSession(telegramId)?.data?.menuMessageId as number | undefined
 
-  // Generate transfer code
-  const transferCode = generateTransferCode(userId)
-  const now = new Date().toISOString()
+  // Tạo yêu cầu nạp qua nguồn logic chung (validate hạn mức + luật nạp + transfer_code + VietQR).
+  const result = await sePayProvider.createDeposit({
+    db,
+    env,
+    userId: user.id,
+    telegramId,
+    rawAmount: amount,
+    lang,
+    channel: 'bot',
+  })
 
-  // Insert deposit pending
-  await db
-    .prepare(
-      `INSERT INTO deposits (user_id, transfer_code, amount, status, created_at) VALUES (?, ?, ?, 'pending', ?)`
-    )
-    .bind(user.id, transferCode, amount, now)
-    .run()
+  if (!result.success) {
+    const err = result.error
+    if (err.type === 'limit') {
+      await sendMessage(botToken, chatId, err.message, { parse_mode: 'HTML' })
+      return
+    }
+    if (err.type === 'policy') {
+      if (shouldSendNotice(`dep:${telegramId}`)) {
+        const message = depositPolicyMessage(
+          {
+            allowed: false,
+            reason: err.reason,
+            retryAfterMs: err.retryAfterMs,
+          },
+          lang
+        )
+        await sendMessage(botToken, chatId, message, { parse_mode: 'HTML' })
+      }
+      return
+    }
+    await sendMessage(botToken, chatId, t(lang, 'deposit.generic_error'), { parse_mode: 'HTML' })
+    return
+  }
+
+  const { vietqr } = result.output
+  if (!vietqr) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.generic_error'))
+    return
+  }
 
   // Ẩn lưới mệnh giá: gỡ toàn bộ nút trên menu để user không bấm lại spam tạo QR.
   if (menuMessageId) {
@@ -145,61 +318,116 @@ export async function handleDepositAmount(
       chatId,
       menuMessageId,
       [
-        '💰 <b>Nạp tiền</b>',
+        t(lang, 'deposit.title'),
         '',
-        `✅ Đã tạo yêu cầu nạp <b>${formatCurrency(amount)}</b>.`,
-        '👇 Quét mã QR bên dưới để chuyển khoản.',
+        t(lang, 'deposit.created', { amount: formatMoney(vietqr.amountVnd, lang) }),
+        t(lang, 'deposit.created.scan'),
       ].join('\n'),
       { parse_mode: 'HTML' }
     )
   }
 
-  // Thông tin ngân hàng: DB (system_config) ưu tiên, fallback env Worker.
-  const bank = await resolveBankConfig(db, env)
-
-  // Generate VietQR URL
-  const qrUrl = generateVietQRUrl({
-    bankId: bank.bankName,
-    accountNo: bank.bankAccount,
-    accountName: bank.bankOwner,
-    amount,
-    description: transferCode,
-  })
-
   // Send QR code image
-  await sendPhoto(botToken, chatId, qrUrl, {
-    caption: '📱 Quét mã QR để chuyển khoản',
+  await sendPhoto(botToken, chatId, vietqr.qrUrl, {
+    caption: t(lang, 'deposit.qr.caption'),
     parse_mode: 'HTML',
   })
 
-  // Send transfer details
-  const detailText = [
-    '💸 <b>Thông tin chuyển khoản</b>',
-    '',
-    `🏦 Ngân hàng: <b>${escapeHtml(bank.bankName)}</b>`,
-    `💳 Số TK: <code>${escapeHtml(bank.bankAccount)}</code>`,
-    `👤 Chủ TK: <b>${escapeHtml(bank.bankOwner)}</b>`,
-    `💰 Số tiền: <b>${formatCurrency(amount)}</b>`,
-    `📝 Nội dung CK: <code>${transferCode}</code>`,
-    '',
-    '⚠️ <b>QUAN TRỌNG: Gõ đúng y chang nội dung CK!</b>',
-    '',
-    '⚠️ Sai nội dung hoặc sai số tiền → không tự duyệt được.',
-    '🤖 Hệ thống tự động duyệt khi CK đúng nội dung (1-3 phút).',
-    'Không cần liên hệ admin.',
-  ].join('\n')
-
+  // Send transfer details — caption dùng chung với Mini App (`buildDepositCaption`).
   const cancelKeyboard = buildInlineKeyboard([
-    [{ text: '❌ Huỷ giao dịch', callback_data: 'dep:cancel' }],
+    [{ text: t(lang, 'deposit.cancel.button'), callback_data: 'dep:cancel' }],
   ])
 
-  await sendMessage(botToken, chatId, detailText, {
-    parse_mode: 'HTML',
-    reply_markup: cancelKeyboard,
-  })
+  await sendMessage(
+    botToken,
+    chatId,
+    buildDepositCaption(vietqr.bank, vietqr.amountVnd, vietqr.transferCode, lang),
+    {
+      parse_mode: 'HTML',
+      reply_markup: cancelKeyboard,
+    }
+  )
 
   // Clear session — user đã nhận QR, không cần giữ flow nữa
-  clearSession(userId)
+  clearSession(telegramId)
+}
+
+/**
+ * Xử lý nhập số USDT (session step='crypto_amount') → tạo invoice Crypto Pay + gửi nút pay_url.
+ */
+export async function handleCryptoDepositAmount(
+  db: D1Database,
+  botToken: string,
+  chatId: number,
+  telegramId: number,
+  usdt: number,
+  env: Bindings
+): Promise<void> {
+  const user = await loadDepositUser(db, telegramId)
+  const lang = await resolveLang(db, { language: user?.language ?? null })
+
+  if (!user) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.account_not_found'))
+    return
+  }
+
+  const result = await cryptoPayProvider.createDeposit({
+    db,
+    env,
+    userId: user.id,
+    telegramId,
+    rawAmount: usdt,
+    lang,
+    channel: 'bot',
+  })
+
+  if (!result.success) {
+    const err = result.error
+    if (err.type === 'limit') {
+      await sendMessage(botToken, chatId, err.message, { parse_mode: 'HTML' })
+      return
+    }
+    if (err.type === 'policy') {
+      if (shouldSendNotice(`dep:${telegramId}`)) {
+        const message = depositPolicyMessage(
+          {
+            allowed: false,
+            reason: err.reason,
+            retryAfterMs: err.retryAfterMs,
+          },
+          lang
+        )
+        await sendMessage(botToken, chatId, message, { parse_mode: 'HTML' })
+      }
+      return
+    }
+    // provider_error (gồm createInvoice thất bại — R10.4): không tạo pending, báo lỗi.
+    await sendMessage(botToken, chatId, err.message, { parse_mode: 'HTML' })
+    return
+  }
+
+  const { crypto } = result.output
+  if (!crypto) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.generic_error'))
+    return
+  }
+
+  // Gửi nút mở liên kết thanh toán Crypto Pay (R10.3).
+  await sendMessage(
+    botToken,
+    chatId,
+    t(lang, 'deposit.crypto.created', { usdt: crypto.usdtAmount }),
+    {
+      parse_mode: 'HTML',
+      reply_markup: buildInlineKeyboard([
+        [{ text: t(lang, 'deposit.crypto.pay_button'), url: crypto.payUrl }],
+        [{ text: t(lang, 'deposit.cancel.button'), callback_data: 'dep:cancel' }],
+      ]),
+    }
+  )
+
+  // Clear session — user đã nhận liên kết thanh toán.
+  clearSession(telegramId)
 }
 
 /**
@@ -210,21 +438,18 @@ export async function handleDepositCancel(
   db: D1Database,
   botToken: string,
   chatId: number,
-  userId: number,
+  telegramId: number,
   messageId?: number
 ): Promise<void> {
-  // Lấy user.id từ telegram_id
-  const user = await db
-    .prepare('SELECT id FROM users WHERE telegram_id = ?')
-    .bind(userId)
-    .first<{ id: number }>()
+  const user = await loadDepositUser(db, telegramId)
+  const lang = await resolveLang(db, { language: user?.language ?? null })
 
   if (!user) {
-    await sendMessage(botToken, chatId, '❌ Không tìm thấy tài khoản. Gõ /start để bắt đầu.')
+    await sendMessage(botToken, chatId, t(lang, 'deposit.account_not_found'))
     return
   }
 
-  // Tìm deposit pending của user
+  // Tìm deposit pending của user (mọi provider).
   const pendingDeposit = await db
     .prepare(
       `SELECT id, amount, transfer_code FROM deposits WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`
@@ -233,11 +458,10 @@ export async function handleDepositCancel(
     .first<Pick<DbDeposit, 'id' | 'amount' | 'transfer_code'>>()
 
   // Clear session
-  clearSession(userId)
+  clearSession(telegramId)
 
   if (!pendingDeposit) {
-    const text = '📌 Không có giao dịch nạp tiền nào đang chờ.'
-    await editOrSendMessage(botToken, chatId, messageId, text, {
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'deposit.cancel.none'), {
       parse_mode: 'HTML',
     })
     return
@@ -250,13 +474,17 @@ export async function handleDepositCancel(
     .run()
 
   const text = [
-    '✅ Đã huỷ giao dịch nạp tiền.',
+    t(lang, 'deposit.cancel.done'),
     '',
-    `💰 Mệnh giá: ${formatCurrency(pendingDeposit.amount)}`,
-    `📝 Mã CK: <code>${pendingDeposit.transfer_code}</code>`,
+    t(lang, 'deposit.cancel.amount', { amount: formatMoney(pendingDeposit.amount, lang) }),
+    pendingDeposit.transfer_code
+      ? t(lang, 'deposit.cancel.code', { code: pendingDeposit.transfer_code })
+      : '',
     '',
-    '📌 Gõ /start để quay về menu chính.',
-  ].join('\n')
+    t(lang, 'deposit.cancel.back_hint'),
+  ]
+    .filter((line) => line !== '')
+    .join('\n')
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
     parse_mode: 'HTML',

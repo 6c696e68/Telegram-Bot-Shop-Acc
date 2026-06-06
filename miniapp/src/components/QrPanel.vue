@@ -46,14 +46,14 @@ async function copy(field: string, value: string): Promise<void> {
     <div class="mx-auto rounded-ios bg-white p-3">
       <img
         :src="qrUrl"
-        alt="Mã VietQR chuyển khoản"
+        :alt="$t('deposit.scan_qr')"
         class="block h-56 w-56 object-contain"
       />
     </div>
 
     <div class="flex flex-col gap-1 text-ios-body">
       <div class="flex items-center justify-between gap-3 py-1">
-        <span class="text-hint">Ngân hàng</span>
+        <span class="text-hint">{{ $t('qr.bank') }}</span>
         <span class="text-text">{{ bankName }}</span>
       </div>
 
@@ -62,19 +62,19 @@ async function copy(field: string, value: string): Promise<void> {
         class="tap-target flex items-center justify-between gap-3 text-left"
         @click="copy('account', bankAccount)"
       >
-        <span class="text-hint">Số tài khoản</span>
+        <span class="text-hint">{{ $t('qr.account') }}</span>
         <span class="tabular-nums text-accent">
-          {{ copied === 'account' ? 'Đã chép' : bankAccount }}
+          {{ copied === 'account' ? $t('qr.copied') : bankAccount }}
         </span>
       </button>
 
       <div class="flex items-center justify-between gap-3 py-1">
-        <span class="text-hint">Chủ tài khoản</span>
+        <span class="text-hint">{{ $t('qr.owner') }}</span>
         <span class="text-text">{{ bankOwner }}</span>
       </div>
 
       <div class="flex items-center justify-between gap-3 py-1">
-        <span class="text-hint">Số tiền</span>
+        <span class="text-hint">{{ $t('qr.amount') }}</span>
         <span class="tabular-nums text-text">{{ amountDisplay }}</span>
       </div>
 
@@ -83,9 +83,9 @@ async function copy(field: string, value: string): Promise<void> {
         class="tap-target flex items-center justify-between gap-3 text-left"
         @click="copy('code', transferCode)"
       >
-        <span class="text-hint">Nội dung CK</span>
+        <span class="text-hint">{{ $t('qr.note') }}</span>
         <span class="font-semibold text-accent">
-          {{ copied === 'code' ? 'Đã chép' : transferCode }}
+          {{ copied === 'code' ? $t('qr.copied') : transferCode }}
         </span>
       </button>
     </div>

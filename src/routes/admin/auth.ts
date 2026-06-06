@@ -22,7 +22,7 @@ authRoutes.post('/login', async (c) => {
 
   if (!body.username || !body.password) {
     return c.json(
-      { success: false, data: null, error: 'Username and password are required' },
+      { success: false, data: null, error: 'username_password_required' },
       400
     )
   }
@@ -36,7 +36,7 @@ authRoutes.post('/login', async (c) => {
 
   if (!admin) {
     return c.json(
-      { success: false, data: null, error: 'Invalid credentials' },
+      { success: false, data: null, error: 'invalid_credentials' },
       401
     )
   }
@@ -48,7 +48,7 @@ authRoutes.post('/login', async (c) => {
     const lockedUntil = new Date(admin.locked_until)
     if (now < lockedUntil) {
       return c.json(
-        { success: false, data: null, error: 'Account locked. Try again later.' },
+        { success: false, data: null, error: 'account_locked' },
         403
       )
     }
@@ -74,7 +74,7 @@ authRoutes.post('/login', async (c) => {
       ).bind(newFailCount, lockedUntil, admin.id).run()
 
       return c.json(
-        { success: false, data: null, error: 'Account locked. Try again later.' },
+        { success: false, data: null, error: 'account_locked' },
         403
       )
     }
@@ -84,7 +84,7 @@ authRoutes.post('/login', async (c) => {
     ).bind(newFailCount, admin.id).run()
 
     return c.json(
-      { success: false, data: null, error: 'Invalid credentials' },
+      { success: false, data: null, error: 'invalid_credentials' },
       401
     )
   }
@@ -155,7 +155,7 @@ authRoutes.get('/me', jwtAuth, async (c) => {
 
   if (!admin) {
     return c.json(
-      { success: false, data: null, error: 'Admin not found' },
+      { success: false, data: null, error: 'admin_not_found' },
       404
     )
   }

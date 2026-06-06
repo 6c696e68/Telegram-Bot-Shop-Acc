@@ -1,16 +1,25 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import Icon from '@/components/Icon.vue'
+import { formatMoney } from '@/utils/format'
+
+const { t } = useI18n()
 
 interface Deposit {
   id: number
   user_id: number
-  transfer_code: string
+  provider: 'sepay' | 'cryptobot'
+  transfer_code: string | null
   amount: number
-  status: 'pending' | 'completed' | 'expired' | 'cancelled'
+  status: 'pending' | 'completed' | 'expired' | 'cancelled' | 'awaiting_credit'
   sepay_transaction_id: string | null
   bank_ref: string | null
+  crypto_invoice_id: string | null
+  asset: string | null
+  usdt_amount: string | null
+  exchange_rate: number | null
   completed_at: string | null
   expired_at: string | null
   created_at: string
@@ -33,18 +42,16 @@ const approveSuccess = ref('')
 const selectedDeposit = ref<Deposit | null>(null)
 
 const statusOptions = [
-  { value: '', label: 'Tất cả' },
-  { value: 'pending', label: 'Chờ duyệt' },
-  { value: 'completed', label: 'Hoàn thành' },
-  { value: 'expired', label: 'Hết hạn' },
-  { value: 'cancelled', label: 'Đã huỷ' },
+  { value: '', label: 'common.all' },
+  { value: 'pending', label: 'deposits.status_pending' },
+  { value: 'completed', label: 'deposits.status_completed' },
+  { value: 'awaiting_credit', label: 'deposits.status_awaiting_credit' },
+  { value: 'expired', label: 'deposits.status_expired' },
+  { value: 'cancelled', label: 'deposits.status_cancelled' },
 ]
 
 const totalPages = () => Math.ceil(total.value / limit.value)
 
-function formatCurrency(amount: number): string {
-  return amount.toLocaleString('vi-VN') + 'đ'
-}
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '—'
@@ -57,6 +64,7 @@ function statusBadge(status: string): string {
   switch (status) {
     case 'pending': return 'badge-yellow'
     case 'completed': return 'badge-green'
+    case 'awaiting_credit': return 'badge-blue'
     case 'expired': return 'badge-gray'
     case 'cancelled': return 'badge-red'
     default: return 'badge-gray'
@@ -64,13 +72,19 @@ function statusBadge(status: string): string {
 }
 
 function statusLabel(status: string): string {
-  switch (status) {
-    case 'pending': return 'Chờ duyệt'
-    case 'completed': return 'Hoàn thành'
-    case 'expired': return 'Hết hạn'
-    case 'cancelled': return 'Đã huỷ'
-    default: return status
+  const map: Record<string, string> = {
+    pending: 'deposits.status_pending',
+    completed: 'deposits.status_completed',
+    awaiting_credit: 'deposits.status_awaiting_credit',
+    expired: 'deposits.status_expired',
+    cancelled: 'deposits.status_cancelled',
   }
+  return map[status] ? t(map[status]) : status
+}
+
+/** Nhãn provider hiển thị cho cột Phương thức (R20.6). */
+function providerLabel(provider: string): string {
+  return provider === 'cryptobot' ? t('deposits.method_cryptobot') : t('deposits.method_sepay')
 }
 
 async function fetchDeposits() {
@@ -84,10 +98,10 @@ async function fetchDeposits() {
       deposits.value = res.data
       total.value = res.meta?.total ?? 0
     } else {
-      error.value = res.error || 'Không thể tải danh sách'
+      error.value = res.error || t('common.error')
     }
   } catch {
-    error.value = 'Lỗi kết nối server'
+    error.value = t('common.error')
   } finally {
     loading.value = false
   }
@@ -103,14 +117,14 @@ async function approveDeposit(deposit: Deposit) {
       `/deposits/${deposit.id}/approve`
     )
     if (res.success && res.data) {
-      approveSuccess.value = `Duyệt thành công! Số dư mới: ${formatCurrency(res.data.new_balance)}`
+      approveSuccess.value = t('deposits.approve_ok', { balance: formatMoney(res.data.new_balance) })
       selectedDeposit.value = null
       await fetchDeposits()
     } else {
-      approveError.value = res.error || 'Duyệt thất bại'
+      approveError.value = res.error || t('deposits.approve_failed')
     }
   } catch {
-    approveError.value = 'Lỗi kết nối server'
+    approveError.value = t('common.error')
   } finally {
     approvingId.value = null
   }
@@ -144,7 +158,7 @@ onMounted(() => {
   <div class="animate-in">
     <!-- Header -->
     <div class="mb-5">
-      <p class="text-[13px]" style="color: var(--muted)">Quản lý nạp tiền · Tổng {{ total }}</p>
+      <p class="text-[13px]" style="color: var(--muted)">{{ $t('deposits.subtitle', { count: total }) }}</p>
     </div>
 
     <!-- Alerts -->
@@ -169,9 +183,9 @@ onMounted(() => {
 
     <!-- Filter -->
     <div class="mb-4 flex items-center gap-2.5">
-      <span class="text-[13px]" style="color: var(--muted)">Trạng thái</span>
+      <span class="text-[13px]" style="color: var(--muted)">{{ $t('deposits.filter_status') }}</span>
       <select v-model="statusFilter" class="field" style="width: auto; min-width: 160px">
-        <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ $t(opt.label) }}</option>
       </select>
     </div>
 
@@ -183,7 +197,7 @@ onMounted(() => {
     <div class="card overflow-hidden">
       <div v-if="loading" class="flex flex-col items-center justify-center gap-3 py-12 text-[13px]" style="color: var(--muted)">
         <div class="spinner" />
-        <span>Đang tải…</span>
+        <span>{{ $t('common.loading') }}</span>
       </div>
 
       <div
@@ -192,19 +206,20 @@ onMounted(() => {
         style="color: var(--faint)"
       >
         <Icon name="wallet" :size="32" />
-        <p>Không có giao dịch nạp nào.</p>
+        <p>{{ $t('deposits.empty') }}</p>
       </div>
 
       <table v-else class="data-table">
         <thead>
           <tr>
-            <th style="width: 56px">ID</th>
-            <th>User</th>
-            <th>Mã CK</th>
-            <th class="text-right">Số tiền</th>
-            <th>Trạng thái</th>
-            <th>Thời gian</th>
-            <th class="text-right">Thao tác</th>
+            <th style="width: 56px">{{ $t('deposits.col_id') }}</th>
+            <th>{{ $t('deposits.col_user') }}</th>
+            <th>{{ $t('deposits.col_method') }}</th>
+            <th>{{ $t('deposits.col_code') }}</th>
+            <th class="text-right">{{ $t('deposits.col_amount') }}</th>
+            <th>{{ $t('deposits.col_status') }}</th>
+            <th>{{ $t('deposits.col_time') }}</th>
+            <th class="text-right">{{ $t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -214,21 +229,29 @@ onMounted(() => {
               <div style="color: var(--ink)">{{ deposit.username || '—' }}</div>
               <div class="text-xs" style="color: var(--muted)">ID: {{ deposit.telegram_id || deposit.user_id }}</div>
             </td>
-            <td><span class="chip-code">{{ deposit.transfer_code }}</span></td>
-            <td class="text-right" style="font-weight: 500; color: var(--ink)">{{ formatCurrency(deposit.amount) }}</td>
+            <td>
+              <span class="badge" :class="deposit.provider === 'cryptobot' ? 'badge-blue' : 'badge-gray'">
+                {{ providerLabel(deposit.provider) }}
+              </span>
+              <div v-if="deposit.provider === 'cryptobot' && deposit.usdt_amount" class="text-xs" style="color: var(--muted)">
+                {{ deposit.usdt_amount }} USDT
+              </div>
+            </td>
+            <td><span class="chip-code">{{ deposit.transfer_code || '—' }}</span></td>
+            <td class="text-right" style="font-weight: 500; color: var(--ink)">{{ formatMoney(deposit.amount) }}</td>
             <td><span class="badge" :class="statusBadge(deposit.status)">{{ statusLabel(deposit.status) }}</span></td>
             <td class="text-xs" style="color: var(--muted); white-space: nowrap">{{ formatDate(deposit.created_at) }}</td>
             <td class="text-right">
               <div class="flex items-center justify-end gap-1.5">
-                <button class="btn btn-ghost btn-sm" @click="openDetail(deposit)">Chi tiết</button>
+                <button class="btn btn-ghost btn-sm" @click="openDetail(deposit)">{{ $t('common.details') }}</button>
                 <button
-                  v-if="deposit.status === 'pending'"
+                  v-if="deposit.status === 'pending' && deposit.provider === 'sepay'"
                   class="btn btn-primary btn-sm"
                   :disabled="approvingId === deposit.id"
                   @click="approveDeposit(deposit)"
                 >
                   <Icon name="check" :size="14" />
-                  {{ approvingId === deposit.id ? '...' : 'Duyệt' }}
+                  {{ approvingId === deposit.id ? '...' : $t('deposits.approve') }}
                 </button>
               </div>
             </td>
@@ -242,13 +265,13 @@ onMounted(() => {
         class="flex items-center justify-between px-4 py-3"
         style="border-top: 1px solid var(--border)"
       >
-        <span class="text-[13px]" style="color: var(--muted)">Trang {{ page }} / {{ totalPages() }}</span>
+        <span class="text-[13px]" style="color: var(--muted)">{{ $t('common.page_of', { page, total: totalPages() }) }}</span>
         <div class="flex gap-2">
           <button class="btn btn-secondary btn-sm" :disabled="page <= 1" @click="goToPage(page - 1)">
-            <Icon name="arrowLeft" :size="14" /> Trước
+            <Icon name="arrowLeft" :size="14" /> {{ $t('common.prev') }}
           </button>
           <button class="btn btn-secondary btn-sm" :disabled="page >= totalPages()" @click="goToPage(page + 1)">
-            Sau <Icon name="arrowRight" :size="14" />
+            {{ $t('common.next') }} <Icon name="arrowRight" :size="14" />
           </button>
         </div>
       </div>
@@ -263,62 +286,78 @@ onMounted(() => {
     >
       <div class="card w-full max-w-md p-6">
         <div class="mb-4 flex items-center justify-between">
-          <h2 class="text-base font-semibold" style="color: var(--ink)">Chi tiết nạp #{{ selectedDeposit.id }}</h2>
+          <h2 class="text-base font-semibold" style="color: var(--ink)">{{ $t('deposits.detail', { id: selectedDeposit.id }) }}</h2>
           <button class="btn btn-ghost btn-icon" @click="closeDetail"><Icon name="close" :size="18" /></button>
         </div>
 
         <dl class="space-y-2.5 text-[13px]">
           <div class="flex items-center justify-between">
-            <dt style="color: var(--muted)">Mã chuyển khoản</dt>
+            <dt style="color: var(--muted)">{{ $t('deposits.transfer_code') }}</dt>
             <dd><span class="chip-code">{{ selectedDeposit.transfer_code }}</span></dd>
           </div>
           <div class="flex items-center justify-between">
-            <dt style="color: var(--muted)">Số tiền</dt>
-            <dd style="font-weight: 600; color: var(--ink)">{{ formatCurrency(selectedDeposit.amount) }}</dd>
+            <dt style="color: var(--muted)">{{ $t('deposits.col_amount') }}</dt>
+            <dd style="font-weight: 600; color: var(--ink)">{{ formatMoney(selectedDeposit.amount) }}</dd>
           </div>
           <div class="flex items-center justify-between">
-            <dt style="color: var(--muted)">Trạng thái</dt>
+            <dt style="color: var(--muted)">{{ $t('deposits.col_method') }}</dt>
+            <dd>
+              <span class="badge" :class="selectedDeposit.provider === 'cryptobot' ? 'badge-blue' : 'badge-gray'">
+                {{ providerLabel(selectedDeposit.provider) }}
+              </span>
+            </dd>
+          </div>
+          <div v-if="selectedDeposit.provider === 'cryptobot'" class="flex items-center justify-between">
+            <dt style="color: var(--muted)">{{ $t('deposits.usdt') }}</dt>
+            <dd style="color: var(--ink-soft)">{{ selectedDeposit.usdt_amount || '—' }} USDT</dd>
+          </div>
+          <div v-if="selectedDeposit.provider === 'cryptobot'" class="flex items-center justify-between">
+            <dt style="color: var(--muted)">{{ $t('deposits.exchange_rate') }}</dt>
+            <dd style="color: var(--ink-soft)">{{ selectedDeposit.exchange_rate ? formatMoney(selectedDeposit.exchange_rate) + '/USDT' : '—' }}</dd>
+          </div>
+          <div class="flex items-center justify-between">
+            <dt style="color: var(--muted)">{{ $t('deposits.col_status') }}</dt>
             <dd><span class="badge" :class="statusBadge(selectedDeposit.status)">{{ statusLabel(selectedDeposit.status) }}</span></dd>
           </div>
           <div class="flex items-center justify-between">
-            <dt style="color: var(--muted)">User</dt>
+            <dt style="color: var(--muted)">{{ $t('deposits.col_user') }}</dt>
             <dd style="color: var(--ink-soft)">{{ selectedDeposit.username || '—' }} ({{ selectedDeposit.telegram_id || selectedDeposit.user_id }})</dd>
           </div>
           <div class="flex items-center justify-between">
-            <dt style="color: var(--muted)">SePay TX ID</dt>
+            <dt style="color: var(--muted)">{{ $t('deposits.sepay_tx') }}</dt>
             <dd class="mono text-xs" style="color: var(--ink-soft)">{{ selectedDeposit.sepay_transaction_id || '—' }}</dd>
           </div>
           <div class="flex items-center justify-between">
-            <dt style="color: var(--muted)">Bank Ref</dt>
+            <dt style="color: var(--muted)">{{ $t('deposits.bank_ref') }}</dt>
             <dd class="mono text-xs" style="color: var(--ink-soft)">{{ selectedDeposit.bank_ref || '—' }}</dd>
           </div>
           <div style="border-top: 1px solid var(--border); padding-top: 0.625rem">
             <div class="flex items-center justify-between">
-              <dt style="color: var(--muted)">Tạo lúc</dt>
+              <dt style="color: var(--muted)">{{ $t('common.created_at') }}</dt>
               <dd style="color: var(--ink-soft)">{{ formatDate(selectedDeposit.created_at) }}</dd>
             </div>
           </div>
           <div v-if="selectedDeposit.completed_at" class="flex items-center justify-between">
-            <dt style="color: var(--muted)">Hoàn thành lúc</dt>
+            <dt style="color: var(--muted)">{{ $t('deposits.completed_at') }}</dt>
             <dd style="color: var(--ink-soft)">{{ formatDate(selectedDeposit.completed_at) }}</dd>
           </div>
           <div v-if="selectedDeposit.expired_at" class="flex items-center justify-between">
-            <dt style="color: var(--muted)">Hết hạn lúc</dt>
+            <dt style="color: var(--muted)">{{ $t('deposits.expired_at') }}</dt>
             <dd style="color: var(--ink-soft)">{{ formatDate(selectedDeposit.expired_at) }}</dd>
           </div>
         </dl>
 
-        <div v-if="selectedDeposit.status === 'pending'" class="mt-5 pt-4" style="border-top: 1px solid var(--border)">
+        <div v-if="selectedDeposit.status === 'pending' && selectedDeposit.provider === 'sepay'" class="mt-5 pt-4" style="border-top: 1px solid var(--border)">
           <button class="btn btn-primary w-full" :disabled="approvingId === selectedDeposit.id" @click="approveDeposit(selectedDeposit)">
             <Icon name="check" :size="16" />
-            {{ approvingId === selectedDeposit.id ? 'Đang duyệt…' : 'Duyệt thủ công' }}
+            {{ approvingId === selectedDeposit.id ? $t('common.processing') : $t('deposits.approve_manual') }}
           </button>
           <p class="mt-2 text-center text-xs" style="color: var(--faint)">
-            Chỉ dùng khi webhook SePay bị miss. Flow chính là tự động.
+            {{ $t('deposits.approve_note') }}
           </p>
         </div>
 
-        <button class="btn btn-secondary mt-4 w-full" @click="closeDetail">Đóng</button>
+        <button class="btn btn-secondary mt-4 w-full" @click="closeDetail">{{ $t('common.close') }}</button>
       </div>
     </div>
   </div>

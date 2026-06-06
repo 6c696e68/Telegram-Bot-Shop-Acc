@@ -20,6 +20,8 @@ export type Bindings = {
   BANK_ACCOUNT: string
   /** Tên chủ tài khoản ngân hàng */
   BANK_OWNER: string
+  /** Token Crypto Pay API (secret) cho thanh toán crypto đa khu vực */
+  CRYPTO_PAY_API_TOKEN: string
   /** KV namespace cho static assets (Wrangler Sites) */
   __STATIC_CONTENT: KVNamespace
 }

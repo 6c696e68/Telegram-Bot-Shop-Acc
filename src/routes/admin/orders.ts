@@ -98,7 +98,7 @@ orderRoutes.get('/:id', async (c) => {
   const orderId = Number(c.req.param('id'))
 
   if (!orderId || isNaN(orderId)) {
-    return c.json({ success: false, data: null, error: 'Invalid order ID' }, 400)
+    return c.json({ success: false, data: null, error: 'invalid_order_id' }, 400)
   }
 
   // Fetch order with user and product_type info
@@ -115,7 +115,7 @@ orderRoutes.get('/:id', async (c) => {
   `).bind(orderId).first()
 
   if (!order) {
-    return c.json({ success: false, data: null, error: 'Order not found' }, 404)
+    return c.json({ success: false, data: null, error: 'order_not_found' }, 404)
   }
 
   // Fetch order items with product content

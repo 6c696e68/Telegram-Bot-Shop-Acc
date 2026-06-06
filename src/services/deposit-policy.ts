@@ -20,6 +20,8 @@
  * tránh lỗi so sánh chuỗi lẫn lộn định dạng.
  */
 
+import { t, type Lang } from '../bot/i18n'
+
 /** Thời gian sống của một deposit `pending` trước khi hết hạn (ms). */
 export const DEPOSIT_TTL_MS = 15 * 60 * 1000
 
@@ -107,26 +109,25 @@ export async function checkDepositPolicy(
 }
 
 /**
- * Dựng thông báo tiếng Việt cho người dùng khi yêu cầu tạo deposit bị chặn.
+ * Dựng thông báo cho người dùng khi yêu cầu tạo deposit bị chặn, theo `lang` (R4.1/R4.2).
  * Dùng chung cho bot (gửi tin nhắn) và Mini App (trả `error` trong response 429).
  */
-export function depositPolicyMessage(verdict: DepositPolicyVerdict): string {
-  const wait = formatWait(verdict.retryAfterMs ?? 0)
+export function depositPolicyMessage(verdict: DepositPolicyVerdict, lang: Lang): string {
+  const wait = formatWait(verdict.retryAfterMs ?? 0, lang)
   if (verdict.reason === 'too_many_pending') {
-    return (
-      `⏳ Bạn đang có ${MAX_PENDING_DEPOSITS} yêu cầu nạp chờ xử lý. ` +
-      `Vui lòng thanh toán, hoặc chờ ${wait} để yêu cầu cũ hết hạn rồi thử lại.`
-    )
+    return t(lang, 'deposit.policy.too_many_pending', { max: MAX_PENDING_DEPOSITS, wait })
   }
   // Mặc định: cooldown.
-  return `⏳ Bạn vừa tạo yêu cầu nạp. Vui lòng chờ ${wait} rồi thử lại.`
+  return t(lang, 'deposit.policy.cooldown', { wait })
 }
 
-/** Quy đổi ms → chuỗi "X phút Y giây" / "X phút" / "Y giây" cho thông báo người dùng. */
-function formatWait(ms: number): string {
+/** Quy đổi ms → chuỗi chờ đã bản địa hoá ("X phút Y giây" / "X minutes Y seconds"...). */
+function formatWait(ms: number, lang: Lang): string {
   const totalSec = Math.max(1, Math.ceil(ms / 1000))
-  if (totalSec < 60) return `${totalSec} giây`
+  if (totalSec < 60) return t(lang, 'deposit.wait.seconds', { sec: totalSec })
   const min = Math.floor(totalSec / 60)
   const sec = totalSec % 60
-  return sec === 0 ? `${min} phút` : `${min} phút ${sec} giây`
+  return sec === 0
+    ? t(lang, 'deposit.wait.minutes', { min })
+    : t(lang, 'deposit.wait.minutes_seconds', { min, sec })
 }

@@ -1,23 +1,30 @@
 /**
- * Render tin nhắn "Mua hàng thành công" cho từng product_type.
+ * Render tin nhắn "Mua hàng thành công" cho từng product_type — đa ngôn ngữ.
  *
- * Cấu trúc tin nhắn = HEADER cố định + BODY.
- *  - HEADER (luôn có, không sửa): ✅ Mua hàng thành công + emoji name × qty + 📋 Nội dung sản phẩm:
- *  - BODY = success_template của product_type. Trống → dùng body mặc định.
+ * Cấu trúc tin nhắn = HEADER cố định (theo `lang`) + BODY.
+ *  - HEADER (luôn có): tiêu đề + emoji name × qty + nhãn nội dung sản phẩm.
+ *    Bản 'vi' GIỮ NGUYÊN nội dung+emoji cũ; bản ngôn ngữ mới dùng chữ thuần.
+ *  - BODY = success_template của product_type theo `lang`. Chọn theo thứ tự:
+ *    `lang` → `BASE_FALLBACK_LANG` → body mặc định dựng sẵn theo `lang` (R16.5).
  *
  * Placeholder dùng trong BODY (admin nhập ở CMS):
  *   [content]   → danh sách account đã mua (đánh số, mỗi dòng bọc <code>)
  *   [name]      → tên loại sản phẩm
  *   [emoji]     → emoji loại sản phẩm
  *   [quantity]  → số lượng mua
- *   [total]     → tổng tiền (đã format, vd 75,000đ)
- *   [balance]   → số dư còn lại (đã format)
+ *   [total]     → tổng tiền (đã format theo lang, vd 75.000đ)
+ *   [balance]   → số dư còn lại (đã format theo lang)
  *
  * BODY là HTML do admin kiểm soát → KHÔNG escape phần template.
- * Giá trị động (account content, name) ĐƯỢC escape để không phá vỡ HTML.
+ * Giá trị động (account content, name) ĐƯỢC escape để không phá vỡ HTML (R16.6).
+ *
+ * HEADER + nhãn body mặc định lấy từ catalog i18n bot theo `lang` (key `purchase.success.*`)
+ * — thêm ngôn ngữ chỉ cần thêm catalog, KHÔNG sửa renderer (R16.4, OCP).
  */
 
-import { formatCurrency } from './format'
+import { formatMoney } from './format'
+import { t } from '../bot/i18n'
+import { BASE_FALLBACK_LANG, type Lang } from '../i18n/locales'
 
 export interface SuccessTemplateVars {
   emoji: string
@@ -53,37 +60,37 @@ function buildContentList(contents: string[]): string {
     .join('\n')
 }
 
-/** Header cố định — luôn xuất hiện ở đầu mọi tin nhắn thành công. */
-function buildHeader(vars: SuccessTemplateVars): string {
+/** Header cố định theo ngôn ngữ — luôn xuất hiện ở đầu mọi tin nhắn thành công. */
+function buildHeader(vars: SuccessTemplateVars, lang: Lang): string {
   return [
-    '✅ <b>Mua hàng thành công!</b>',
+    t(lang, 'purchase.success.header'),
     '',
     `${vars.emoji} ${escapeHtml(vars.name)} × ${vars.quantity}`,
     '',
-    '📋 <b>Nội dung sản phẩm:</b>',
+    t(lang, 'purchase.success.content_label'),
   ].join('\n')
 }
 
-/** Body mặc định khi product_type không cấu hình success_template riêng. */
-function defaultBody(vars: SuccessTemplateVars): string {
+/** Body mặc định theo ngôn ngữ khi product_type không cấu hình template riêng. */
+function defaultBody(vars: SuccessTemplateVars, lang: Lang): string {
   return [
     buildContentList(vars.contents),
     '',
-    '━━━━━━━━━━━━━━━',
-    `💵 Tổng tiền: ${formatCurrency(vars.totalAmount)}`,
-    `💰 Số dư còn lại: ${formatCurrency(vars.balanceAfter)}`,
+    t(lang, 'purchase.success.divider'),
+    `${t(lang, 'purchase.success.total_label')}: ${formatMoney(vars.totalAmount, lang)}`,
+    `${t(lang, 'purchase.success.balance_label')}: ${formatMoney(vars.balanceAfter, lang)}`,
   ].join('\n')
 }
 
-/** Thay placeholder trong body custom bằng giá trị thật. */
-function renderBody(template: string, vars: SuccessTemplateVars): string {
+/** Thay placeholder trong body custom bằng giá trị thật ([total]/[balance] theo lang). */
+function renderBody(template: string, vars: SuccessTemplateVars, lang: Lang): string {
   const replacements: Record<string, string> = {
     '[content]': buildContentList(vars.contents),
     '[name]': escapeHtml(vars.name),
     '[emoji]': vars.emoji,
     '[quantity]': String(vars.quantity),
-    '[total]': formatCurrency(vars.totalAmount),
-    '[balance]': formatCurrency(vars.balanceAfter),
+    '[total]': formatMoney(vars.totalAmount, lang),
+    '[balance]': formatMoney(vars.balanceAfter, lang),
   }
   return template.replace(
     /\[(content|name|emoji|quantity|total|balance)\]/g,
@@ -92,16 +99,25 @@ function renderBody(template: string, vars: SuccessTemplateVars): string {
 }
 
 /**
- * Render tin nhắn thành công đầy đủ: HEADER + BODY.
- * @param template - success_template của product_type (null/empty → body mặc định)
+ * Render tin nhắn thành công đầy đủ: HEADER (theo lang) + BODY.
+ *
+ * Chọn BODY theo thứ tự fallback xác định (R16.5):
+ *   templates[lang] (non-empty) → templates[BASE_FALLBACK_LANG] (non-empty) → body mặc định theo lang.
+ * HEADER luôn lấy theo `lang` (không phụ thuộc template nào được chọn).
+ *
+ * @param templatesByLang - map lang → success_template (null/empty → bỏ qua mắt xích đó)
  * @param vars - dữ liệu thay thế
+ * @param lang - ngôn ngữ hiển thị của người mua
  */
 export function renderSuccessMessage(
-  template: string | null | undefined,
-  vars: SuccessTemplateVars
+  templatesByLang: Map<Lang, string | null>,
+  vars: SuccessTemplateVars,
+  lang: Lang
 ): string {
-  const header = buildHeader(vars)
-  const tpl = template?.trim()
-  const body = tpl ? renderBody(tpl, vars) : defaultBody(vars)
+  const header = buildHeader(vars, lang)
+  const tpl =
+    templatesByLang.get(lang)?.trim() ||
+    templatesByLang.get(BASE_FALLBACK_LANG)?.trim()
+  const body = tpl ? renderBody(tpl, vars, lang) : defaultBody(vars, lang)
   return `${header}\n${body}`
 }

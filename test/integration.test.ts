@@ -611,7 +611,8 @@ describe('Integration: JWT Auth Flow', () => {
     expect(res.status).toBe(401)
     const body = await res.json() as { success: boolean; error: string }
     expect(body.success).toBe(false)
-    expect(body.error).toBe('Invalid credentials')
+    // Backend trả error CODE ổn định (CMS dịch sang chuỗi bản địa hoá qua i18n) — R18.
+    expect(body.error).toBe('invalid_credentials')
   })
 
   it('should lock account after 5 failed login attempts', async () => {

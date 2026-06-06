@@ -1,11 +1,13 @@
 /**
  * Callback handler: Thông tin tài khoản.
  * Hiển thị username, first_name, balance, tổng transactions, ngày tham gia.
- * Requirements: 1.4
+ * Nội dung + định dạng tiền/ngày theo Language của user (R4.1, R4.6).
+ * Requirements: 1.4, 4.1, 4.6
  */
 
 import { editOrSendMessage, buildInlineKeyboard, buildBackButton } from '../telegram-api'
-import { formatCurrency, formatDate } from '../../utils/format'
+import { formatMoney, formatDateTime } from '../../utils/format'
+import { t, type Lang } from '../i18n'
 
 interface UserInfo {
   id: number
@@ -23,7 +25,8 @@ export async function handleAccount(
   botToken: string,
   chatId: number,
   messageId: number | undefined,
-  userId: number
+  userId: number,
+  lang: Lang
 ): Promise<void> {
   const user = await db
     .prepare(
@@ -35,8 +38,8 @@ export async function handleAccount(
     .first<UserInfo>()
 
   if (!user) {
-    await editOrSendMessage(botToken, chatId, messageId, '❌ Không tìm thấy thông tin tài khoản.', {
-      reply_markup: buildInlineKeyboard([buildBackButton('menu:main')]),
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'account.not_found'), {
+      reply_markup: buildInlineKeyboard([buildBackButton('menu:main', lang)]),
     })
     return
   }
@@ -46,22 +49,22 @@ export async function handleAccount(
     .bind(user.id)
     .first<{ count: number }>()
 
-  const usernameDisplay = user.username ? `@${user.username}` : 'Chưa có'
-  const nameDisplay = user.first_name || 'Chưa có'
-  const balanceDisplay = formatCurrency(user.balance)
+  const usernameDisplay = user.username ? `@${user.username}` : t(lang, 'account.value_empty')
+  const nameDisplay = user.first_name || t(lang, 'account.value_empty')
+  const balanceDisplay = formatMoney(user.balance, lang)
   const txDisplay = txCount?.count ?? 0
-  const joinDateDisplay = formatDate(user.created_at)
+  const joinDateDisplay = formatDateTime(user.created_at, lang)
 
   const text = [
-    '👤 <b>Thông tin tài khoản</b>\n',
-    `👤 Username: ${usernameDisplay}`,
-    `📛 Tên: ${nameDisplay}`,
-    `💰 Số dư: ${balanceDisplay}`,
-    `📊 Tổng giao dịch: ${txDisplay}`,
-    `📅 Ngày tham gia: ${joinDateDisplay}`,
+    `${t(lang, 'account.title')}\n`,
+    t(lang, 'account.username', { value: usernameDisplay }),
+    t(lang, 'account.name', { value: nameDisplay }),
+    t(lang, 'account.balance', { value: balanceDisplay }),
+    t(lang, 'account.tx_count', { value: txDisplay }),
+    t(lang, 'account.join_date', { value: joinDateDisplay }),
   ].join('\n')
 
-  const keyboard = buildInlineKeyboard([buildBackButton('menu:main')])
+  const keyboard = buildInlineKeyboard([buildBackButton('menu:main', lang)])
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
     parse_mode: 'HTML',

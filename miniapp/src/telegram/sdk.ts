@@ -76,6 +76,8 @@ interface TelegramWebApp {
   BackButton: BackButton
   ready(): void
   expand(): void
+  openLink?(url: string): void
+  openTelegramLink?(url: string): void
   onEvent(eventType: TelegramEventType, handler: TelegramEventHandler): void
   offEvent(eventType: TelegramEventType, handler: TelegramEventHandler): void
 }
@@ -109,6 +111,27 @@ function getWebApp(): TelegramWebApp | undefined {
  */
 export function getInitData(): string {
   return getWebApp()?.initData ?? ''
+}
+
+/**
+ * Mở một liên kết thanh toán (vd `pay_url` của Crypto Pay).
+ *  - Link `t.me/...` → `openTelegramLink` (mở trong Telegram, giữ Mini App sống).
+ *  - Link khác → `openLink` của WebApp.
+ *  - Ngoài Telegram → `window.open` (dev/trình duyệt thường).
+ */
+export function openLink(url: string): void {
+  const wa = getWebApp()
+  if (wa) {
+    if (url.startsWith('https://t.me/') && typeof wa.openTelegramLink === 'function') {
+      wa.openTelegramLink(url)
+      return
+    }
+    if (typeof wa.openLink === 'function') {
+      wa.openLink(url)
+      return
+    }
+  }
+  if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener')
 }
 
 // ── Khởi tạo ──────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import i18n from '@/i18n'
 
 const TOKEN_KEY = 'cms_token'
 
@@ -62,7 +63,19 @@ class ApiClient {
       throw new Error('Unauthorized')
     }
 
-    return response.json() as Promise<ApiResponse<T>>
+    const json = (await response.json()) as ApiResponse<T>
+
+    // Backend trả ERROR CODE ổn định (snake_case) cho lỗi nghiệp vụ; dịch tập trung tại đây
+    // sang chuỗi bản địa hoá theo ngôn ngữ admin đang chọn (R18). Chỉ map khi error đúng dạng
+    // code thuần (^[a-z0-9_]+$) và có bản dịch tương ứng — ngược lại giữ nguyên để không che lỗi.
+    if (json && json.success === false && typeof json.error === 'string' && /^[a-z0-9_]+$/.test(json.error)) {
+      const key = `errors.${json.error}`
+      if (i18n.global.te(key)) {
+        json.error = i18n.global.t(key)
+      }
+    }
+
+    return json
   }
 
   get<T>(path: string): Promise<ApiResponse<T>> {

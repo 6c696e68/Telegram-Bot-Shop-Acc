@@ -225,6 +225,7 @@ npx wrangler secret put JWT_SECRET             # Chuỗi ngẫu nhiên ≥ 32 k�
 npx wrangler secret put BANK_NAME              # Tên ngân hàng nhận tiền
 npx wrangler secret put BANK_ACCOUNT           # Số tài khoản
 npx wrangler secret put BANK_OWNER             # Tên chủ tài khoản
+npx wrangler secret put CRYPTO_PAY_API_TOKEN   # Token Crypto Pay API (@CryptoBot) cho nạp USDT
 ```
 
 ### 4.3. Cấu hình runtime qua CMS (DB-first, fallback env)
@@ -239,6 +240,9 @@ Phần lớn cấu hình vận hành có thể **chỉnh trực tiếp trong CMS
 | `sepay_api_key` | `SEPAY_API_KEY` | Xác thực webhook SePay |
 | `bank_name` / `bank_account` / `bank_owner` | `BANK_NAME` / `BANK_ACCOUNT` / `BANK_OWNER` | Thông tin nhận tiền (VietQR + caption CK) |
 | `min_deposit` / `max_deposit` | (seed mặc định trong DB) | Hạn mức nạp — áp dụng cho cả tạo yêu cầu nạp lẫn webhook SePay khi cộng tiền |
+| `exchange_rate_usdt_vnd` | (seed mặc định trong DB) | Tỷ giá quy đổi 1 USDT sang VND cho nạp qua @CryptoBot — chỉnh trong CMS → Cấu hình |
+| `crypto_min_usdt` | (seed mặc định `5`) | Số USDT tối thiểu cho một yêu cầu nạp qua @CryptoBot |
+| `default_language` | (seed mặc định `en`) | Ngôn ngữ mặc định toàn hệ thống khi user chưa xác định |
 
 Hệ quả:
 - **Deploy không bắt buộc `wrangler secret put`** cho các key trên — chỉ cần vào CMS → **Cấu hình** điền giá trị rồi Lưu (vẫn nên giữ `JWT_SECRET` ở secret vì dùng cho đăng nhập CMS).
@@ -260,6 +264,8 @@ Migration nằm trong `migrations/`, chạy theo thứ tự:
 | `0004_add_user_ban.sql` | Thêm `banned_at` cho `users` (tính năng khoá tài khoản; dùng `is_active` làm cờ ban) |
 | `0005_add_sepay_api_key_config.sql` | Thêm key `sepay_api_key` vào `system_config` (cấu hình SePay API key qua CMS) |
 | `0006_add_telegram_config.sql` | Thêm key `bot_token`, `telegram_secret_token`, `admin_ids` vào `system_config` (cấu hình Telegram qua CMS) |
+| `0008_multi_region_payments.sql` | Thêm `users.region`/`language`/`language_locked`; bảng `product_type_templates` (template bán hàng đa ngôn ngữ); rebuild `deposits` đa provider (sepay\|cryptobot, USDT, exchange_rate, trạng thái `awaiting_credit`); seed `exchange_rate_usdt_vnd`, `crypto_min_usdt`, `default_language` |
+| `0009_provider_enable_flags.sql` | Seed cờ `payment_cryptobot_enabled='0'` — provider mới (CryptoBot) chỉ mở cho user sau khi admin bật trong CMS (R7.6) |
 
 ```bash
 # Local (cho development)
@@ -379,6 +385,16 @@ curl -X POST "https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook" \
    (Worker yêu cầu header `Authorization: Apikey <key>`)
 
 > Key này có thể đặt ở secret `SEPAY_API_KEY` **hoặc** trong CMS → Cấu hình → SePay (`system_config.sepay_api_key`, ưu tiên DB). Mã chuyển khoản `NAP…` được nhận diện từ trường `code` của SePay trước, nếu không có thì dò trong `content`.
+
+### CryptoBot Webhook (@CryptoBot — nạp USDT)
+
+1. Lưu token: `npx wrangler secret put CRYPTO_PAY_API_TOKEN` (lấy ở app Crypto Pay trong @CryptoBot → Crypto Pay → API → Create App). Local đặt trong `.dev.vars` (KHÔNG commit giá trị thật).
+2. Trong app @CryptoBot → **bật Webhooks** và set URL: `https://YOUR_WORKER_URL/webhook/cryptopay`.
+3. Worker xác thực chữ ký mỗi callback: `secret = SHA256(token)`, `hmac = HMAC_SHA256(secret, rawBody)` so khớp header `crypto-pay-api-signature` (sai → 401, không cộng tiền).
+4. Cấu hình tỷ giá trong CMS → Cấu hình → **Thanh toán đa khu vực** (`exchange_rate_usdt_vnd`) và số USDT tối thiểu (`crypto_min_usdt`). Số dư cộng = `floor(USDT × tỷ giá)`. Tỷ giá lỗi lúc nhận thanh toán → deposit giữ `awaiting_credit` và được cron cộng lại khi tỷ giá hợp lệ (không mất tiền).
+5. **Bật CryptoBot cho user (R7.6)**: mặc định phương thức CryptoBot **TẮT** (`payment_cryptobot_enabled='0'`). Sau khi chạy thử một giao dịch nạp USDT thành công, vào CMS → Cấu hình → Thanh toán đa khu vực → bật **"Bật nạp CryptoBot (USDT)"**. Khi tắt, bot/Mini App ẩn phương thức CryptoBot và từ chối yêu cầu nạp qua provider này.
+
+> Token Crypto Pay KHÔNG bao giờ được log/echo ra response. Thanh toán USDT đến trễ sau khi yêu cầu nạp `expired` vẫn được cộng đúng một lần (idempotent theo `crypto_invoice_id`).
 
 ---
 

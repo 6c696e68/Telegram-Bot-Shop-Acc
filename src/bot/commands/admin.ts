@@ -2,6 +2,9 @@
  * Admin Bot Commands — quản lý categories, products, thống kê qua Telegram bot.
  *
  * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7
+ *
+ * i18n (R4.1): mọi chuỗi hiển thị cho user lấy qua `t(lang, 'admin.*')`. Nhãn nút
+ * inline đổi text thoải mái vì routing dựa trên `callback_data` (không match text).
  */
 
 import {
@@ -10,7 +13,8 @@ import {
   buildInlineKeyboard,
 } from '../telegram-api'
 import { getSession, setSession, clearSession } from '../session'
-import { formatCurrency } from '../../utils/format'
+import { formatMoney } from '../../utils/format'
+import { t, type Lang } from '../i18n'
 
 // --- Constants ---
 
@@ -25,25 +29,25 @@ export interface ValidationResult {
   error?: string
 }
 
-export function validateName(name: string): ValidationResult {
+export function validateName(name: string, lang: Lang = 'vi'): ValidationResult {
   const trimmed = name.trim()
-  if (!trimmed) return { valid: false, error: '❌ Tên không được để trống.' }
-  if (trimmed.length > 100) return { valid: false, error: '❌ Tên tối đa 100 ký tự.' }
+  if (!trimmed) return { valid: false, error: t(lang, 'admin.err.name_empty') }
+  if (trimmed.length > 100) return { valid: false, error: t(lang, 'admin.err.name_too_long') }
   return { valid: true }
 }
 
-export function validateDescription(description: string): ValidationResult {
-  if (description.length > 500) return { valid: false, error: '❌ Mô tả tối đa 500 ký tự.' }
+export function validateDescription(description: string, lang: Lang = 'vi'): ValidationResult {
+  if (description.length > 500) return { valid: false, error: t(lang, 'admin.err.desc_too_long') }
   return { valid: true }
 }
 
-export function validatePrice(input: string): ValidationResult {
+export function validatePrice(input: string, lang: Lang = 'vi'): ValidationResult {
   const price = parseInt(input.replace(/[.,\s]/g, ''), 10)
   if (isNaN(price) || !Number.isInteger(price)) {
-    return { valid: false, error: '❌ Giá phải là số nguyên.' }
+    return { valid: false, error: t(lang, 'admin.err.price_not_integer') }
   }
-  if (price < 1000) return { valid: false, error: '❌ Giá tối thiểu 1,000đ.' }
-  if (price > 999999999) return { valid: false, error: '❌ Giá tối đa 999,999,999đ.' }
+  if (price < 1000) return { valid: false, error: t(lang, 'admin.err.price_too_low') }
+  if (price > 999999999) return { valid: false, error: t(lang, 'admin.err.price_too_high') }
   return { valid: true }
 }
 
@@ -60,18 +64,19 @@ export async function handleAdminPanel(
   db: D1Database,
   botToken: string,
   chatId: number,
-  messageId?: number
+  messageId: number | undefined,
+  lang: Lang
 ): Promise<void> {
-  const text = '🔧 <b>Bảng điều khiển Admin</b>\n\nChọn chức năng:'
+  const text = t(lang, 'admin.panel.title')
 
   const keyboard = buildInlineKeyboard([
     [
-      { text: '➕ Thêm loại', callback_data: 'adm:addtype' },
-      { text: '📋 Danh sách loại', callback_data: 'adm:listtypes' },
+      { text: t(lang, 'admin.btn.add_type'), callback_data: 'adm:addtype' },
+      { text: t(lang, 'admin.btn.list_types'), callback_data: 'adm:listtypes' },
     ],
     [
-      { text: '➕ Thêm sản phẩm', callback_data: 'adm:addproduct' },
-      { text: '📊 Thống kê', callback_data: 'adm:stats' },
+      { text: t(lang, 'admin.btn.add_product'), callback_data: 'adm:addproduct' },
+      { text: t(lang, 'admin.btn.stats'), callback_data: 'adm:stats' },
     ],
   ])
 
@@ -92,12 +97,13 @@ export async function handleAddTypeFlow(
   chatId: number,
   userId: number,
   step: string,
+  lang: Lang,
   data?: Record<string, any>
 ): Promise<void> {
   switch (step) {
     case 'start': {
       setSession(userId, 'admin_add_type', 'name', {})
-      await sendMessage(botToken, chatId, '📝 <b>Thêm loại sản phẩm mới</b>\n\nNhập <b>tên loại</b> (1-100 ký tự):\n\n<i>Gửi /cancel để huỷ</i>', {
+      await sendMessage(botToken, chatId, t(lang, 'admin.addtype.prompt_name'), {
         parse_mode: 'HTML',
       })
       break
@@ -105,15 +111,15 @@ export async function handleAddTypeFlow(
 
     case 'name': {
       const name = data?.input?.trim() ?? ''
-      const validation = validateName(name)
+      const validation = validateName(name, lang)
       if (!validation.valid) {
-        await sendMessage(botToken, chatId, `${validation.error}\n\nNhập lại <b>tên loại</b>:`, {
+        await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.addtype.retry_name')}`, {
           parse_mode: 'HTML',
         })
         return
       }
       setSession(userId, 'admin_add_type', 'description', { name })
-      await sendMessage(botToken, chatId, '📝 Nhập <b>mô tả</b> (0-500 ký tự, gửi "." nếu bỏ qua):\n\n<i>Gửi /cancel để huỷ</i>', {
+      await sendMessage(botToken, chatId, t(lang, 'admin.addtype.prompt_desc'), {
         parse_mode: 'HTML',
       })
       break
@@ -124,9 +130,9 @@ export async function handleAddTypeFlow(
       let description = data?.input ?? ''
       if (description.trim() === '.') description = ''
 
-      const validation = validateDescription(description)
+      const validation = validateDescription(description, lang)
       if (!validation.valid) {
-        await sendMessage(botToken, chatId, `${validation.error}\n\nNhập lại <b>mô tả</b>:`, {
+        await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.addtype.retry_desc')}`, {
           parse_mode: 'HTML',
         })
         return
@@ -136,7 +142,7 @@ export async function handleAddTypeFlow(
         ...session?.data,
         description: description.trim(),
       })
-      await sendMessage(botToken, chatId, '💰 Nhập <b>giá bán</b> (1,000 - 999,999,999 VNĐ):\n\n<i>Gửi /cancel để huỷ</i>', {
+      await sendMessage(botToken, chatId, t(lang, 'admin.addtype.prompt_price'), {
         parse_mode: 'HTML',
       })
       break
@@ -145,9 +151,9 @@ export async function handleAddTypeFlow(
     case 'price': {
       const session = getSession(userId)
       const input = data?.input ?? ''
-      const validation = validatePrice(input)
+      const validation = validatePrice(input, lang)
       if (!validation.valid) {
-        await sendMessage(botToken, chatId, `${validation.error}\n\nNhập lại <b>giá bán</b>:`, {
+        await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.addtype.retry_price')}`, {
           parse_mode: 'HTML',
         })
         return
@@ -165,10 +171,14 @@ export async function handleAddTypeFlow(
 
       clearSession(userId)
 
-      const confirmText = `✅ <b>Đã tạo loại sản phẩm mới!</b>\n\n📦 Tên: ${name}\n📝 Mô tả: ${description || '(không có)'}\n💰 Giá: ${formatCurrency(price)}`
+      const confirmText = t(lang, 'admin.addtype.created', {
+        name,
+        description: description || t(lang, 'admin.value.none'),
+        price: formatMoney(price, lang),
+      })
 
       const keyboard = buildInlineKeyboard([
-        [{ text: '🔙 Bảng điều khiển', callback_data: 'adm:panel' }],
+        [{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }],
       ])
 
       await sendMessage(botToken, chatId, confirmText, {
@@ -190,7 +200,8 @@ export async function handleListTypes(
   botToken: string,
   chatId: number,
   messageId: number | undefined,
-  page: number = 0
+  page: number,
+  lang: Lang
 ): Promise<void> {
   const offset = page * PAGE_SIZE
 
@@ -200,9 +211,9 @@ export async function handleListTypes(
 
   if (total === 0) {
     const keyboard = buildInlineKeyboard([
-      [{ text: '🔙 Bảng điều khiển', callback_data: 'adm:panel' }],
+      [{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }],
     ])
-    await editOrSendMessage(botToken, chatId, messageId, '📋 Chưa có loại sản phẩm nào.', {
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'admin.listtypes.empty'), {
       parse_mode: 'HTML',
       reply_markup: keyboard,
     })
@@ -221,33 +232,39 @@ export async function handleListTypes(
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
-  let text = `📋 <b>Danh sách loại sản phẩm</b> (trang ${page + 1}/${totalPages})\n\n`
+  let text = t(lang, 'admin.listtypes.title', { page: page + 1, total: totalPages })
 
   const buttons: Array<Array<{ text: string; callback_data: string }>> = []
 
   for (const cat of categories.results) {
     const c = cat as any
-    text += `${c.emoji || '📦'} <b>${c.name}</b> — ${formatCurrency(c.price)} (${c.stock_available}/${c.stock_total})\n`
+    text += t(lang, 'admin.listtypes.item', {
+      emoji: c.emoji || '📦',
+      name: c.name,
+      price: formatMoney(c.price, lang),
+      available: c.stock_available,
+      total: c.stock_total,
+    })
 
     buttons.push([
-      { text: `✏️ ${c.name}`, callback_data: `adm:edit:${c.id}` },
-      { text: `🗑️ Xoá`, callback_data: `adm:del:${c.id}` },
+      { text: t(lang, 'admin.btn.edit', { name: c.name }), callback_data: `adm:edit:${c.id}` },
+      { text: t(lang, 'admin.btn.delete'), callback_data: `adm:del:${c.id}` },
     ])
   }
 
   // Pagination buttons
   const navButtons: Array<{ text: string; callback_data: string }> = []
   if (page > 0) {
-    navButtons.push({ text: '⬅️ Trước', callback_data: `adm:listtypes:${page - 1}` })
+    navButtons.push({ text: t(lang, 'admin.btn.prev'), callback_data: `adm:listtypes:${page - 1}` })
   }
   if (page < totalPages - 1) {
-    navButtons.push({ text: '➡️ Sau', callback_data: `adm:listtypes:${page + 1}` })
+    navButtons.push({ text: t(lang, 'admin.btn.next'), callback_data: `adm:listtypes:${page + 1}` })
   }
   if (navButtons.length > 0) {
     buttons.push(navButtons)
   }
 
-  buttons.push([{ text: '🔙 Bảng điều khiển', callback_data: 'adm:panel' }])
+  buttons.push([{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }])
 
   const keyboard = buildInlineKeyboard(buttons)
 
@@ -269,20 +286,25 @@ export async function handleEditType(
   userId: number,
   typeId: number,
   step: string,
+  lang: Lang,
   value?: string
 ): Promise<void> {
   switch (step) {
     case 'start': {
       const category = await db.prepare('SELECT * FROM product_types WHERE id = ?').bind(typeId).first()
       if (!category) {
-        await sendMessage(botToken, chatId, '❌ Loại sản phẩm không tồn tại.')
+        await sendMessage(botToken, chatId, t(lang, 'admin.type_not_found'))
         return
       }
 
       const c = category as any
       setSession(userId, 'admin_edit_type', 'name', { typeId, name: c.name, description: c.description ?? '', price: c.price })
 
-      const text = `✏️ <b>Sửa loại sản phẩm</b>\n\n📦 Tên: ${c.name}\n📝 Mô tả: ${c.description || '(không có)'}\n💰 Giá: ${formatCurrency(c.price)}\n\nNhập <b>tên mới</b> (gửi "." để giữ nguyên):\n\n<i>Gửi /cancel để huỷ</i>`
+      const text = t(lang, 'admin.edittype.start', {
+        name: c.name,
+        description: c.description || t(lang, 'admin.value.none'),
+        price: formatMoney(c.price, lang),
+      })
 
       await sendMessage(botToken, chatId, text, { parse_mode: 'HTML' })
       break
@@ -294,9 +316,9 @@ export async function handleEditType(
 
       const input = value?.trim() ?? ''
       if (input !== '.') {
-        const validation = validateName(input)
+        const validation = validateName(input, lang)
         if (!validation.valid) {
-          await sendMessage(botToken, chatId, `${validation.error}\n\nNhập lại <b>tên mới</b> (hoặc "." để giữ nguyên):`, {
+          await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.edittype.retry_name')}`, {
             parse_mode: 'HTML',
           })
           return
@@ -305,7 +327,7 @@ export async function handleEditType(
       }
 
       setSession(userId, 'admin_edit_type', 'description', session.data)
-      await sendMessage(botToken, chatId, `📝 Nhập <b>mô tả mới</b> (gửi "." để giữ nguyên, "-" để xoá):\n\n<i>Gửi /cancel để huỷ</i>`, {
+      await sendMessage(botToken, chatId, t(lang, 'admin.edittype.prompt_desc'), {
         parse_mode: 'HTML',
       })
       break
@@ -319,9 +341,9 @@ export async function handleEditType(
       if (input.trim() === '-') {
         session.data.description = ''
       } else if (input.trim() !== '.') {
-        const validation = validateDescription(input)
+        const validation = validateDescription(input, lang)
         if (!validation.valid) {
-          await sendMessage(botToken, chatId, `${validation.error}\n\nNhập lại <b>mô tả mới</b>:`, {
+          await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.edittype.retry_desc')}`, {
             parse_mode: 'HTML',
           })
           return
@@ -330,7 +352,7 @@ export async function handleEditType(
       }
 
       setSession(userId, 'admin_edit_type', 'price', session.data)
-      await sendMessage(botToken, chatId, `💰 Nhập <b>giá mới</b> (gửi "." để giữ nguyên):\n\n<i>Gửi /cancel để huỷ</i>`, {
+      await sendMessage(botToken, chatId, t(lang, 'admin.edittype.prompt_price'), {
         parse_mode: 'HTML',
       })
       break
@@ -342,9 +364,9 @@ export async function handleEditType(
 
       const input = value?.trim() ?? ''
       if (input !== '.') {
-        const validation = validatePrice(input)
+        const validation = validatePrice(input, lang)
         if (!validation.valid) {
-          await sendMessage(botToken, chatId, `${validation.error}\n\nNhập lại <b>giá mới</b> (hoặc "." để giữ nguyên):`, {
+          await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.edittype.retry_price')}`, {
             parse_mode: 'HTML',
           })
           return
@@ -361,11 +383,15 @@ export async function handleEditType(
 
       clearSession(userId)
 
-      const confirmText = `✅ <b>Đã cập nhật loại sản phẩm!</b>\n\n📦 Tên: ${name}\n📝 Mô tả: ${description || '(không có)'}\n💰 Giá: ${formatCurrency(price)}`
+      const confirmText = t(lang, 'admin.edittype.updated', {
+        name,
+        description: description || t(lang, 'admin.value.none'),
+        price: formatMoney(price, lang),
+      })
 
       const keyboard = buildInlineKeyboard([
-        [{ text: '📋 Danh sách loại', callback_data: 'adm:listtypes' }],
-        [{ text: '🔙 Bảng điều khiển', callback_data: 'adm:panel' }],
+        [{ text: t(lang, 'admin.btn.list_types'), callback_data: 'adm:listtypes' }],
+        [{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }],
       ])
 
       await sendMessage(botToken, chatId, confirmText, {
@@ -387,11 +413,12 @@ export async function handleDeleteType(
   botToken: string,
   chatId: number,
   messageId: number | undefined,
-  typeId: number
+  typeId: number,
+  lang: Lang
 ): Promise<void> {
   const category = await db.prepare('SELECT * FROM product_types WHERE id = ?').bind(typeId).first()
   if (!category) {
-    await editOrSendMessage(botToken, chatId, messageId, '❌ Loại sản phẩm không tồn tại.', {
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'admin.type_not_found'), {
       parse_mode: 'HTML',
     })
     return
@@ -405,9 +432,9 @@ export async function handleDeleteType(
   const available = availableCount?.count ?? 0
 
   if (available > 0) {
-    const text = `⚠️ <b>Không thể xoá!</b>\n\n📦 <b>${c.name}</b> còn <b>${available}</b> sản phẩm khả dụng.\n\nVui lòng xoá hết sản phẩm trước khi xoá loại.`
+    const text = t(lang, 'admin.deltype.has_products', { name: c.name, count: available })
     const keyboard = buildInlineKeyboard([
-      [{ text: '📋 Danh sách loại', callback_data: 'adm:listtypes' }],
+      [{ text: t(lang, 'admin.btn.list_types'), callback_data: 'adm:listtypes' }],
     ])
     await editOrSendMessage(botToken, chatId, messageId, text, {
       parse_mode: 'HTML',
@@ -416,12 +443,15 @@ export async function handleDeleteType(
     return
   }
 
-  const text = `🗑️ <b>Xác nhận xoá?</b>\n\n📦 Tên: ${c.name}\n💰 Giá: ${formatCurrency(c.price)}\n\n⚠️ Thao tác này không thể hoàn tác.`
+  const text = t(lang, 'admin.deltype.confirm', {
+    name: c.name,
+    price: formatMoney(c.price, lang),
+  })
 
   const keyboard = buildInlineKeyboard([
     [
-      { text: '✅ Xác nhận xoá', callback_data: `adm:delconfirm:${typeId}` },
-      { text: '❌ Huỷ', callback_data: 'adm:listtypes' },
+      { text: t(lang, 'admin.btn.confirm_delete'), callback_data: `adm:delconfirm:${typeId}` },
+      { text: t(lang, 'admin.btn.cancel'), callback_data: 'adm:listtypes' },
     ],
   ])
 
@@ -439,7 +469,8 @@ export async function handleDeleteTypeConfirm(
   botToken: string,
   chatId: number,
   messageId: number | undefined,
-  typeId: number
+  typeId: number,
+  lang: Lang
 ): Promise<void> {
   // Double-check available products
   const availableCount = await db.prepare(
@@ -447,10 +478,10 @@ export async function handleDeleteTypeConfirm(
   ).bind(typeId).first<{ count: number }>()
 
   if ((availableCount?.count ?? 0) > 0) {
-    await editOrSendMessage(botToken, chatId, messageId, '⚠️ Không thể xoá — vẫn còn sản phẩm khả dụng.', {
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'admin.deltype.has_products_short'), {
       parse_mode: 'HTML',
       reply_markup: buildInlineKeyboard([
-        [{ text: '📋 Danh sách loại', callback_data: 'adm:listtypes' }],
+        [{ text: t(lang, 'admin.btn.list_types'), callback_data: 'adm:listtypes' }],
       ]),
     })
     return
@@ -459,11 +490,11 @@ export async function handleDeleteTypeConfirm(
   await db.prepare('DELETE FROM product_types WHERE id = ?').bind(typeId).run()
 
   const keyboard = buildInlineKeyboard([
-    [{ text: '📋 Danh sách loại', callback_data: 'adm:listtypes' }],
-    [{ text: '🔙 Bảng điều khiển', callback_data: 'adm:panel' }],
+    [{ text: t(lang, 'admin.btn.list_types'), callback_data: 'adm:listtypes' }],
+    [{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }],
   ])
 
-  await editOrSendMessage(botToken, chatId, messageId, '✅ Đã xoá loại sản phẩm thành công.', {
+  await editOrSendMessage(botToken, chatId, messageId, t(lang, 'admin.deltype.success'), {
     parse_mode: 'HTML',
     reply_markup: keyboard,
   })
@@ -480,6 +511,7 @@ export async function handleAddProduct(
   chatId: number,
   userId: number,
   step: string,
+  lang: Lang,
   data?: Record<string, any>
 ): Promise<void> {
   switch (step) {
@@ -491,9 +523,9 @@ export async function handleAddProduct(
 
       if (!categories.results.length) {
         const keyboard = buildInlineKeyboard([
-          [{ text: '🔙 Bảng điều khiển', callback_data: 'adm:panel' }],
+          [{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }],
         ])
-        await sendMessage(botToken, chatId, '📋 Chưa có loại sản phẩm. Vui lòng tạo loại trước.', {
+        await sendMessage(botToken, chatId, t(lang, 'admin.addproduct.no_types'), {
           parse_mode: 'HTML',
           reply_markup: keyboard,
         })
@@ -501,12 +533,19 @@ export async function handleAddProduct(
       }
 
       const buttons = categories.results.map((cat: any) => [
-        { text: `${cat.emoji || '📦'} ${cat.name} — ${formatCurrency(cat.price)}`, callback_data: `adm:addprod:${cat.id}` },
+        {
+          text: t(lang, 'admin.addproduct.type_btn', {
+            emoji: cat.emoji || '📦',
+            name: cat.name,
+            price: formatMoney(cat.price, lang),
+          }),
+          callback_data: `adm:addprod:${cat.id}`,
+        },
       ])
-      buttons.push([{ text: '🔙 Bảng điều khiển', callback_data: 'adm:panel' }])
+      buttons.push([{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }])
 
       const keyboard = buildInlineKeyboard(buttons)
-      await sendMessage(botToken, chatId, '📦 <b>Thêm sản phẩm</b>\n\nChọn loại sản phẩm:', {
+      await sendMessage(botToken, chatId, t(lang, 'admin.addproduct.choose_type'), {
         parse_mode: 'HTML',
         reply_markup: keyboard,
       })
@@ -519,14 +558,14 @@ export async function handleAddProduct(
 
       const category = await db.prepare('SELECT * FROM product_types WHERE id = ?').bind(categoryId).first()
       if (!category) {
-        await sendMessage(botToken, chatId, '❌ Loại sản phẩm không tồn tại.')
+        await sendMessage(botToken, chatId, t(lang, 'admin.type_not_found'))
         return
       }
 
       const c = category as any
       setSession(userId, 'admin_add_product', 'content', { categoryId, categoryName: c.name })
 
-      const text = `📦 <b>Thêm sản phẩm vào: ${c.name}</b>\n\nNhập nội dung sản phẩm (mỗi dòng 1 sản phẩm, tối đa ${MAX_BULK_PRODUCTS} sản phẩm):\n\n<i>Gửi /cancel để huỷ</i>`
+      const text = t(lang, 'admin.addproduct.prompt_content', { name: c.name, max: MAX_BULK_PRODUCTS })
       await sendMessage(botToken, chatId, text, { parse_mode: 'HTML' })
       break
     }
@@ -546,12 +585,12 @@ export async function handleAddProduct(
         .filter((l: string) => l.length > 0)
 
       if (lines.length === 0) {
-        await sendMessage(botToken, chatId, '❌ Nội dung không được trống. Nhập lại:', { parse_mode: 'HTML' })
+        await sendMessage(botToken, chatId, t(lang, 'admin.addproduct.err_empty'), { parse_mode: 'HTML' })
         return
       }
 
       if (lines.length > MAX_BULK_PRODUCTS) {
-        await sendMessage(botToken, chatId, `❌ Tối đa ${MAX_BULK_PRODUCTS} sản phẩm mỗi lần. Bạn nhập ${lines.length} dòng.`, {
+        await sendMessage(botToken, chatId, t(lang, 'admin.addproduct.err_too_many', { max: MAX_BULK_PRODUCTS, count: lines.length }), {
           parse_mode: 'HTML',
         })
         return
@@ -561,11 +600,11 @@ export async function handleAddProduct(
       const invalidLines: string[] = []
       for (let i = 0; i < lines.length; i++) {
         if (lines[i].length > MAX_CONTENT_LENGTH) {
-          invalidLines.push(`Dòng ${i + 1}: vượt ${MAX_CONTENT_LENGTH} ký tự`)
+          invalidLines.push(t(lang, 'admin.addproduct.err_line_too_long', { line: i + 1, max: MAX_CONTENT_LENGTH }))
         }
       }
       if (invalidLines.length > 0) {
-        await sendMessage(botToken, chatId, `❌ Lỗi:\n${invalidLines.join('\n')}\n\nNhập lại:`, {
+        await sendMessage(botToken, chatId, t(lang, 'admin.addproduct.err_lines', { errors: invalidLines.join('\n') }), {
           parse_mode: 'HTML',
         })
         return
@@ -575,7 +614,7 @@ export async function handleAddProduct(
       const inputDups = lines.filter((item: string, index: number) => lines.indexOf(item) !== index)
       if (inputDups.length > 0) {
         const uniqueDups = [...new Set(inputDups)]
-        await sendMessage(botToken, chatId, `❌ Nội dung trùng trong danh sách nhập:\n${uniqueDups.slice(0, 5).join('\n')}\n\nNhập lại:`, {
+        await sendMessage(botToken, chatId, t(lang, 'admin.addproduct.err_dup_input', { items: uniqueDups.slice(0, 5).join('\n') }), {
           parse_mode: 'HTML',
         })
         return
@@ -593,10 +632,12 @@ export async function handleAddProduct(
       }
 
       if (existingDups.length > 0) {
+        const items = existingDups.slice(0, 5).map(d => `• ${d.substring(0, 50)}...`).join('\n')
+        const more = existingDups.length > 5 ? t(lang, 'admin.addproduct.dup_more', { count: existingDups.length - 5 }) : ''
         await sendMessage(
           botToken,
           chatId,
-          `❌ Nội dung đã tồn tại trong loại "${categoryName}":\n${existingDups.slice(0, 5).map(d => `• ${d.substring(0, 50)}...`).join('\n')}${existingDups.length > 5 ? `\n... và ${existingDups.length - 5} mục khác` : ''}\n\nNhập lại (bỏ các mục trùng):`,
+          t(lang, 'admin.addproduct.err_dup_db', { name: categoryName, items, more }),
           { parse_mode: 'HTML' }
         )
         return
@@ -615,14 +656,14 @@ export async function handleAddProduct(
       clearSession(userId)
 
       const keyboard = buildInlineKeyboard([
-        [{ text: '➕ Thêm tiếp', callback_data: `adm:addprod:${categoryId}` }],
-        [{ text: '🔙 Bảng điều khiển', callback_data: 'adm:panel' }],
+        [{ text: t(lang, 'admin.btn.add_more'), callback_data: `adm:addprod:${categoryId}` }],
+        [{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }],
       ])
 
       await sendMessage(
         botToken,
         chatId,
-        `✅ <b>Đã thêm ${lines.length} sản phẩm</b> vào loại "${categoryName}".`,
+        t(lang, 'admin.addproduct.success', { count: lines.length, name: categoryName }),
         { parse_mode: 'HTML', reply_markup: keyboard }
       )
       break
@@ -639,7 +680,8 @@ export async function handleStats(
   db: D1Database,
   botToken: string,
   chatId: number,
-  messageId: number | undefined
+  messageId: number | undefined,
+  lang: Lang
 ): Promise<void> {
   // Total users
   const usersResult = await db.prepare('SELECT COUNT(*) as total FROM users').first<{ total: number }>()
@@ -664,22 +706,27 @@ export async function handleStats(
     ORDER BY pt.sort_order ASC, pt.id ASC
   `).all()
 
-  let text = '📊 <b>Thống kê hệ thống</b>\n\n'
-  text += `👥 Tổng user: <b>${totalUsers}</b>\n`
-  text += `💰 Tổng doanh thu: <b>${formatCurrency(totalRevenue)}</b>\n\n`
+  let text = t(lang, 'admin.stats.title')
+  text += t(lang, 'admin.stats.total_users', { count: totalUsers })
+  text += t(lang, 'admin.stats.total_revenue', { amount: formatMoney(totalRevenue, lang) })
 
   if (categoryStats.results.length > 0) {
-    text += '📦 <b>Sản phẩm theo loại:</b>\n'
+    text += t(lang, 'admin.stats.by_type_header')
     for (const stat of categoryStats.results) {
       const s = stat as any
-      text += `${s.emoji || '📦'} ${s.name}: ✅ ${s.sold} đã bán / 📦 ${s.available} còn lại\n`
+      text += t(lang, 'admin.stats.by_type_item', {
+        emoji: s.emoji || '📦',
+        name: s.name,
+        sold: s.sold,
+        available: s.available,
+      })
     }
   } else {
-    text += '📦 Chưa có loại sản phẩm nào.\n'
+    text += t(lang, 'admin.stats.no_types')
   }
 
   const keyboard = buildInlineKeyboard([
-    [{ text: '🔙 Bảng điều khiển', callback_data: 'adm:panel' }],
+    [{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }],
   ])
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
@@ -699,63 +746,64 @@ export async function handleAdminCallbackRouted(
   chatId: number,
   messageId: number | undefined,
   userId: number,
-  params: string[]
+  params: string[],
+  lang: Lang
 ): Promise<void> {
   const subAction = params[0] ?? 'panel'
 
   switch (subAction) {
     case 'panel':
-      await handleAdminPanel(db, botToken, chatId, messageId)
+      await handleAdminPanel(db, botToken, chatId, messageId, lang)
       break
 
     case 'addtype':
-      await handleAddTypeFlow(db, botToken, chatId, userId, 'start')
+      await handleAddTypeFlow(db, botToken, chatId, userId, 'start', lang)
       break
 
     case 'listtypes': {
       const page = params[1] ? parseInt(params[1], 10) : 0
-      await handleListTypes(db, botToken, chatId, messageId, page)
+      await handleListTypes(db, botToken, chatId, messageId, page, lang)
       break
     }
 
     case 'edit': {
       const typeId = parseInt(params[1], 10)
       if (isNaN(typeId)) return
-      await handleEditType(db, botToken, chatId, userId, typeId, 'start')
+      await handleEditType(db, botToken, chatId, userId, typeId, 'start', lang)
       break
     }
 
     case 'del': {
       const typeId = parseInt(params[1], 10)
       if (isNaN(typeId)) return
-      await handleDeleteType(db, botToken, chatId, messageId, typeId)
+      await handleDeleteType(db, botToken, chatId, messageId, typeId, lang)
       break
     }
 
     case 'delconfirm': {
       const typeId = parseInt(params[1], 10)
       if (isNaN(typeId)) return
-      await handleDeleteTypeConfirm(db, botToken, chatId, messageId, typeId)
+      await handleDeleteTypeConfirm(db, botToken, chatId, messageId, typeId, lang)
       break
     }
 
     case 'addproduct':
-      await handleAddProduct(db, botToken, chatId, userId, 'start')
+      await handleAddProduct(db, botToken, chatId, userId, 'start', lang)
       break
 
     case 'addprod': {
       const categoryId = parseInt(params[1], 10)
       if (isNaN(categoryId)) return
-      await handleAddProduct(db, botToken, chatId, userId, 'category', { categoryId })
+      await handleAddProduct(db, botToken, chatId, userId, 'category', lang, { categoryId })
       break
     }
 
     case 'stats':
-      await handleStats(db, botToken, chatId, messageId)
+      await handleStats(db, botToken, chatId, messageId, lang)
       break
 
     default:
-      await handleAdminPanel(db, botToken, chatId, messageId)
+      await handleAdminPanel(db, botToken, chatId, messageId, lang)
       break
   }
 }
@@ -772,23 +820,24 @@ export async function handleAdminTextInputRouted(
   userId: number,
   text: string,
   flow: string,
-  step: string | null
+  step: string | null,
+  lang: Lang
 ): Promise<void> {
   switch (flow) {
     case 'admin_add_type':
-      await handleAddTypeFlow(db, botToken, chatId, userId, step ?? 'name', { input: text })
+      await handleAddTypeFlow(db, botToken, chatId, userId, step ?? 'name', lang, { input: text })
       break
 
     case 'admin_edit_type': {
       const session = getSession(userId)
       if (!session) return
       const typeId = session.data.typeId
-      await handleEditType(db, botToken, chatId, userId, typeId, step ?? 'name', text)
+      await handleEditType(db, botToken, chatId, userId, typeId, step ?? 'name', lang, text)
       break
     }
 
     case 'admin_add_product':
-      await handleAddProduct(db, botToken, chatId, userId, step ?? 'content', { input: text })
+      await handleAddProduct(db, botToken, chatId, userId, step ?? 'content', lang, { input: text })
       break
   }
 }

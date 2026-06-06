@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { api, setToken } from '@/api/client'
 import Icon from '@/components/Icon.vue'
 
 const router = useRouter()
+const { t } = useI18n()
 const username = ref('')
 const password = ref('')
 const error = ref('')
@@ -22,10 +24,10 @@ async function handleLogin() {
       setToken(res.data.token)
       router.push('/')
     } else {
-      error.value = res.error || 'Đăng nhập thất bại'
+      error.value = res.error || t('login.failed')
     }
   } catch {
-    error.value = 'Không thể kết nối máy chủ'
+    error.value = t('login.conn_error')
   } finally {
     loading.value = false
   }
@@ -50,7 +52,7 @@ async function handleLogin() {
           <Icon name="store" :size="24" />
         </div>
         <h1 class="text-xl font-semibold tracking-tight" style="color: var(--ink)">Shop Admin</h1>
-        <p class="mt-1 text-[13px]" style="color: var(--muted)">Đăng nhập để quản trị hệ thống</p>
+        <p class="mt-1 text-[13px]" style="color: var(--muted)">{{ $t('login.subtitle') }}</p>
       </div>
 
       <!-- Card -->
@@ -71,7 +73,7 @@ async function handleLogin() {
 
         <div class="space-y-4">
           <div>
-            <label class="label" for="username">Tên đăng nhập</label>
+            <label class="label" for="username">{{ $t('login.username') }}</label>
             <input
               id="username"
               v-model="username"
@@ -83,7 +85,7 @@ async function handleLogin() {
             />
           </div>
           <div>
-            <label class="label" for="password">Mật khẩu</label>
+            <label class="label" for="password">{{ $t('login.password') }}</label>
             <input
               id="password"
               v-model="password"
@@ -98,7 +100,7 @@ async function handleLogin() {
 
         <button type="submit" :disabled="loading" class="btn btn-primary mt-6 w-full py-2.5">
           <Icon v-if="!loading" name="lock" :size="16" />
-          {{ loading ? 'Đang đăng nhập…' : 'Đăng nhập' }}
+          {{ loading ? $t('login.submitting') : $t('login.submit') }}
         </button>
       </form>
 

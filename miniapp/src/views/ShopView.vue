@@ -17,6 +17,7 @@
 
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import ProductCard from '@/components/ProductCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { ShoppingCart } from '@lucide/vue'
@@ -27,6 +28,7 @@ import type { ProductTypeListItemDto } from '@/types'
 
 const router = useRouter()
 const ui = useUiStore()
+const { t } = useI18n()
 
 /** Danh sách loại sản phẩm (gồm cả loại hết hàng để hiển thị trạng thái — Req 5.4). */
 const products = ref<ProductTypeListItemDto[]>([])
@@ -51,7 +53,7 @@ async function load(): Promise<void> {
     products.value = await ui.withLoading(get<ProductTypeListItemDto[]>('/product-types'))
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return
-    ui.toast('Không tải được danh sách sản phẩm. Vui lòng thử lại.', 'error')
+    ui.toast(t('shop.load_error'), 'error')
   } finally {
     loaded.value = true
   }
@@ -70,21 +72,21 @@ onUnmounted(() => {
 <template>
   <main class="flex flex-col gap-4 px-4 py-6">
     <header class="px-1">
-      <h1 class="text-ios-title text-text">Mua hàng</h1>
+      <h1 class="text-ios-title text-text">{{ $t('shop.title') }}</h1>
     </header>
 
     <!-- Danh sách loại sản phẩm (Req 5.1, 5.2); loại hết hàng hiển thị trạng thái + disable (Req 5.4) -->
     <section
       v-if="products.length"
       class="flex flex-col gap-3"
-      aria-label="Danh sách sản phẩm"
+      :aria-label="$t('shop.list_label')"
     >
       <ProductCard
         v-for="item in products"
         :key="item.id"
         :name="item.name"
         :emoji="item.emoji"
-        :price-display="item.price_display"
+        :price="item.price"
         :stock="item.stock"
         :in-stock="item.in_stock"
         @click="openDetail(item)"
@@ -95,8 +97,8 @@ onUnmounted(() => {
     <EmptyState
       v-else-if="loaded"
       :icon="ShoppingCart"
-      title="Chưa có sản phẩm"
-      description="Hiện chưa có loại sản phẩm nào để mua."
+      :title="$t('shop.empty_title')"
+      :description="$t('shop.empty_desc')"
     />
   </main>
 </template>

@@ -150,7 +150,7 @@ productTypesRoutes.post('/', async (c) => {
 productTypesRoutes.put('/:id', async (c) => {
   const id = Number(c.req.param('id'))
   if (!id || isNaN(id)) {
-    return c.json({ success: false, data: null, error: 'Invalid product type ID' }, 400)
+    return c.json({ success: false, data: null, error: 'invalid_product_type_id' }, 400)
   }
 
   // Find existing record
@@ -159,7 +159,7 @@ productTypesRoutes.put('/:id', async (c) => {
   ).bind(id).first<DbProductType>()
 
   if (!existing) {
-    return c.json({ success: false, data: null, error: 'Product type not found' }, 404)
+    return c.json({ success: false, data: null, error: 'product_type_not_found' }, 404)
   }
 
   const body = await c.req.json<{
@@ -214,7 +214,7 @@ productTypesRoutes.put('/:id', async (c) => {
   }
 
   if (updates.length === 0) {
-    return c.json({ success: false, data: null, error: 'No fields to update' }, 400)
+    return c.json({ success: false, data: null, error: 'no_fields_to_update' }, 400)
   }
 
   updates.push('updated_at = ?')
@@ -262,7 +262,7 @@ productTypesRoutes.put('/:id', async (c) => {
 productTypesRoutes.delete('/:id', async (c) => {
   const id = Number(c.req.param('id'))
   if (!id || isNaN(id)) {
-    return c.json({ success: false, data: null, error: 'Invalid product type ID' }, 400)
+    return c.json({ success: false, data: null, error: 'invalid_product_type_id' }, 400)
   }
 
   // Find existing record
@@ -271,7 +271,7 @@ productTypesRoutes.delete('/:id', async (c) => {
   ).bind(id).first<DbProductType>()
 
   if (!existing) {
-    return c.json({ success: false, data: null, error: 'Product type not found' }, 404)
+    return c.json({ success: false, data: null, error: 'product_type_not_found' }, 404)
   }
 
   // Check if there are available products
@@ -285,7 +285,7 @@ productTypesRoutes.delete('/:id', async (c) => {
     return c.json({
       success: false,
       data: null,
-      error: `Cannot delete: ${availableCount} available product(s) still exist for this type. Remove them first.`,
+      error: 'product_type_has_stock',
     }, 400)
   }
 
@@ -317,8 +317,95 @@ productTypesRoutes.delete('/:id', async (c) => {
   })
 })
 
-// --- Validation helpers ---
+/**
+ * GET /product-types/:id/templates
+ * Đọc toàn bộ template bán hàng đa ngôn ngữ của một product_type (R16.2).
+ * Trả mảng `{ lang, success_template }` cho mọi lang đã có dòng.
+ */
+productTypesRoutes.get('/:id/templates', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!id || isNaN(id)) {
+    return c.json({ success: false, data: null, error: 'invalid_product_type_id' }, 400)
+  }
 
+  const { results } = await c.env.DB.prepare(
+    'SELECT lang, success_template FROM product_type_templates WHERE product_type_id = ?'
+  )
+    .bind(id)
+    .all<{ lang: string; success_template: string | null }>()
+
+  return c.json({ success: true, data: results, error: null })
+})
+
+/**
+ * PUT /product-types/:id/templates
+ * Upsert MỘT bản template theo (product_type_id, lang) (R16.2).
+ * Body `{ lang, success_template }`. Validate tag HTML như template chung.
+ */
+productTypesRoutes.put('/:id/templates', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!id || isNaN(id)) {
+    return c.json({ success: false, data: null, error: 'invalid_product_type_id' }, 400)
+  }
+
+  const body = await c.req
+    .json<{ lang?: string; success_template?: string | null }>()
+    .catch(() => ({ lang: undefined, success_template: undefined }))
+
+  const lang = typeof body.lang === 'string' ? body.lang.trim() : ''
+  if (!lang) {
+    return c.json({ success: false, data: null, error: 'lang_required' }, 400)
+  }
+
+  const tplErr = validateTemplate(body.success_template ?? null)
+  if (tplErr) {
+    return c.json({ success: false, data: null, error: tplErr }, 400)
+  }
+
+  // product_type phải tồn tại (FK + tránh tạo template mồ côi).
+  const pt = await c.env.DB.prepare('SELECT id FROM product_types WHERE id = ?').bind(id).first<{ id: number }>()
+  if (!pt) {
+    return c.json({ success: false, data: null, error: 'product_type_not_found' }, 404)
+  }
+
+  const value =
+    typeof body.success_template === 'string' && body.success_template.trim().length > 0
+      ? body.success_template.trim()
+      : null
+  const now = new Date().toISOString()
+
+  // Upsert theo UNIQUE(product_type_id, lang).
+  await c.env.DB.prepare(
+    `INSERT INTO product_type_templates (product_type_id, lang, success_template, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(product_type_id, lang) DO UPDATE SET
+       success_template = excluded.success_template,
+       updated_at = excluded.updated_at`
+  )
+    .bind(id, lang, value, now)
+    .run()
+
+  const adminId = c.get('adminId')
+  await c.env.DB.prepare(
+    `INSERT INTO audit_logs (admin_id, action, resource_type, resource_id, old_value, new_value, ip_address, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      adminId,
+      'update_template',
+      'product_type',
+      id,
+      null,
+      JSON.stringify({ lang, has_template: value !== null }),
+      c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || null,
+      now
+    )
+    .run()
+
+  return c.json({ success: true, data: { product_type_id: id, lang, success_template: value }, error: null })
+})
+
+// --- Validation helpers ---
 function validateProductType(body: {
   name?: string
   description?: string
@@ -326,19 +413,19 @@ function validateProductType(body: {
   success_template?: string | null
 }): string | null {
   if (!body.name || body.name.trim().length === 0) {
-    return 'Name is required (1-100 characters)'
+    return 'name_required'
   }
   if (body.name.trim().length > 100) {
-    return 'Name must not exceed 100 characters'
+    return 'name_too_long'
   }
   if (body.description !== undefined && body.description !== null && body.description.length > 500) {
-    return 'Description must not exceed 500 characters'
+    return 'description_too_long'
   }
   if (body.price === undefined || body.price === null) {
-    return 'Price is required (1000-999999999)'
+    return 'price_required'
   }
   if (!Number.isInteger(body.price) || body.price < 1000 || body.price > 999999999) {
-    return 'Price must be an integer between 1000 and 999999999'
+    return 'price_out_of_range'
   }
   const tplErr = validateTemplate(body.success_template)
   if (tplErr) return tplErr
@@ -353,18 +440,18 @@ function validateProductTypeUpdate(body: {
 }): string | null {
   if (body.name !== undefined) {
     if (body.name.trim().length === 0) {
-      return 'Name is required (1-100 characters)'
+      return 'name_required'
     }
     if (body.name.trim().length > 100) {
-      return 'Name must not exceed 100 characters'
+      return 'name_too_long'
     }
   }
   if (body.description !== undefined && body.description !== null && body.description.length > 500) {
-    return 'Description must not exceed 500 characters'
+    return 'description_too_long'
   }
   if (body.price !== undefined) {
     if (!Number.isInteger(body.price) || body.price < 1000 || body.price > 999999999) {
-      return 'Price must be an integer between 1000 and 999999999'
+      return 'price_out_of_range'
     }
   }
   const tplErr = validateTemplate(body.success_template)
@@ -382,7 +469,7 @@ function validateTemplate(template?: string | null): string | null {
   const tpl = template.trim()
   if (tpl.length === 0) return null
   if (tpl.length > 3500) {
-    return 'Template không được vượt quá 3500 ký tự'
+    return 'template_too_long'
   }
 
   const allowedTags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre', 'a', 'tg-spoiler', 'blockquote']
@@ -393,19 +480,19 @@ function validateTemplate(template?: string | null): string | null {
     const raw = m[0]
     const tag = m[1].toLowerCase()
     if (!allowedTags.includes(tag)) {
-      return `Tag <${tag}> không được Telegram hỗ trợ. Chỉ dùng: ${allowedTags.join(', ')}`
+      return 'template_tag_not_allowed'
     }
     if (raw.startsWith('</')) {
       const last = stack.pop()
       if (last !== tag) {
-        return `Tag HTML không cân bằng: </${tag}> không khớp`
+        return 'template_tag_unbalanced'
       }
     } else if (!raw.endsWith('/>')) {
       stack.push(tag)
     }
   }
   if (stack.length > 0) {
-    return `Tag HTML chưa đóng: <${stack[stack.length - 1]}>`
+    return 'template_tag_unclosed'
   }
   return null
 }

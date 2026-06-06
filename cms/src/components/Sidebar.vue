@@ -8,14 +8,14 @@ defineEmits<{ close: [] }>()
 const route = useRoute()
 
 const navItems = [
-  { name: 'Tổng quan', path: '/', icon: 'dashboard' },
-  { name: 'Người dùng', path: '/users', icon: 'users' },
-  { name: 'Danh mục', path: '/categories', icon: 'category' },
-  { name: 'Sản phẩm', path: '/products', icon: 'package' },
-  { name: 'Đơn hàng', path: '/orders', icon: 'cart' },
-  { name: 'Giao dịch', path: '/transactions', icon: 'receipt' },
-  { name: 'Nạp tiền', path: '/deposits', icon: 'wallet' },
-  { name: 'Cấu hình', path: '/config', icon: 'settings' },
+  { key: 'nav.dashboard', path: '/', icon: 'dashboard' },
+  { key: 'nav.users', path: '/users', icon: 'users' },
+  { key: 'nav.categories', path: '/categories', icon: 'category' },
+  { key: 'nav.products', path: '/products', icon: 'package' },
+  { key: 'nav.orders', path: '/orders', icon: 'cart' },
+  { key: 'nav.transactions', path: '/transactions', icon: 'receipt' },
+  { key: 'nav.deposits', path: '/deposits', icon: 'wallet' },
+  { key: 'nav.config', path: '/config', icon: 'settings' },
 ]
 
 function isActive(path: string): boolean {
@@ -55,7 +55,7 @@ function isActive(path: string): boolean {
       </div>
       <div class="leading-tight">
         <div class="text-[13px] font-semibold" style="color: var(--ink)">Shop Admin</div>
-        <div class="text-[11px]" style="color: var(--faint)">Quản trị hệ thống</div>
+        <div class="text-[11px]" style="color: var(--faint)">{{ $t('brand.subtitle') }}</div>
       </div>
     </div>
 
@@ -75,7 +75,7 @@ function isActive(path: string): boolean {
         @click="$emit('close')"
       >
         <Icon :name="item.icon" :size="18" />
-        <span>{{ item.name }}</span>
+        <span>{{ $t(item.key) }}</span>
         <span
           v-if="isActive(item.path)"
           class="ml-auto h-1.5 w-1.5 rounded-full"

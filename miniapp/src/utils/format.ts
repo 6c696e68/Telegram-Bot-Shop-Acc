@@ -1,17 +1,25 @@
 /**
  * format.ts — tiện ích hiển thị phía frontend.
  *
- * Mirror chính xác logic của backend `src/utils/format.ts` để Mini App hiển thị
- * tiền/thời gian thống nhất với tin nhắn bot và payload server. Dùng làm fallback
- * khi server chưa kèm chuỗi `*_display` (vd cập nhật số dư sau khi poll nạp).
+ * Tiền tệ format CLIENT-SIDE theo LOCALE hiện tại của Mini App (đã sync = ngôn ngữ
+ * user — R4.6). KHÔNG dùng chuỗi `*_display` của server nữa để tránh lẫn lộn định
+ * dạng (server ghim `vi`, client theo ngôn ngữ user). Thời gian giữ nguyên UTC.
  */
 
+import i18n from '@/i18n'
+
+/** BCP-47 tag theo locale hiện tại của Mini App (R4.6). */
+function bcp47(): string {
+  return i18n.global.locale.value === 'vi' ? 'vi-VN' : 'en-US'
+}
+
 /**
- * Format số tiền VNĐ với dấu phân cách hàng nghìn.
- * Ví dụ: 150000 → "150,000đ". Khớp `formatCurrency` backend.
+ * Format số tiền VNĐ với dấu phân cách hàng nghìn theo locale hiện tại (R4.6).
+ * Ví dụ: 150000 → "150.000đ" (vi) hoặc "150,000đ" (en). Đọc `i18n.global.locale.value`
+ * nên reactive theo đổi ngôn ngữ khi dùng trong template/computed.
  */
 export function formatCurrency(amount: number): string {
-  return amount.toLocaleString('en-US') + 'đ'
+  return amount.toLocaleString(bcp47()) + 'đ'
 }
 
 /**

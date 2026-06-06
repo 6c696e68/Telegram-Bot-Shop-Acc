@@ -7,12 +7,13 @@ import type { AppEnv } from '../types'
 import type { SepayWebhookPayload } from '../types/sepay'
 import type { DbDeposit, DbUser } from '../types/db'
 import { sepayAuth } from '../middleware/sepay-auth'
-import { transactionService } from '../services/transaction'
+import { completeDeposit } from '../services/deposit-service'
 import { DEPOSIT_TTL_MS } from '../services/deposit-policy'
 import { readDepositLimits } from '../services/deposit-limits'
 import { resolveBotToken } from '../services/telegram-config'
 import { sendMessage } from '../bot/telegram-api'
-import { formatCurrency } from '../utils/format'
+import { resolveLang } from '../services/user-locale'
+import { renderDepositSuccess } from '../bot/notify-deposit'
 
 /**
  * Mã chuyển khoản nội bộ: "NAP" + 4-17 ký tự alphanumeric (xem `utils/transfer-code.ts`).
@@ -119,26 +120,32 @@ sepayWebhook.post('/sepay', async (c) => {
     return c.json({ success: true })
   }
 
-  // Execute deposit transaction (Req 2.9, 2.10)
-  const result = await transactionService.executeDeposit(
+  // Execute deposit transaction (Req 2.9, 2.10).
+  // Lưu ý R15.3: SePay phải bỏ qua khi deposit đã `expired`. `completeDeposit` cho
+  // phép hoàn tất từ `expired` (phục vụ CryptoBot trả trễ), nên ta CHỈ gọi cho deposit
+  // còn `pending`: query phía trên đã lọc `status = 'pending'` + TTL guard ở trên đã
+  // bỏ qua chuyển khoản tới sau khi quá hạn → deposit `expired` không bao giờ tới đây.
+  const result = await completeDeposit({
     db,
-    deposit.id,
-    user.id,
-    payload.transferAmount,
-    String(payload.id)
-  )
+    depositId: deposit.id,
+    userId: user.id,
+    creditVnd: payload.transferAmount,
+    provider: 'sepay',
+    sepayTransactionId: String(payload.id),
+  })
 
-  // Gửi notification cho user nếu thành công (Req 2.11) — async via waitUntil
-  if (result.success && result.newBalance !== undefined) {
+  if (!result.success && result.error === 'db_error') {
+    // Lỗi atomic tạm thời sau khi đã xác nhận thanh toán — log để theo dõi; dựa vào
+    // retry của SePay (giữ nguyên hành vi cũ: luôn trả success ở cuối — Req 8.5).
+    console.error('[SePay] completeDeposit db_error for deposit:', deposit.id)
+  }
+
+  // Gửi notification cho user nếu thành công (Req 2.11, 9.2-9.5) — async via waitUntil.
+  // Thông báo render theo ngôn ngữ user: resolve qua resolveLang(db, user) rồi chọn biến thể.
+  if (result.success) {
     const botToken = await resolveBotToken(db, c.env)
-    const notificationText = [
-      '✅ Nạp tiền thành công!',
-      '',
-      `💰 Số tiền: ${formatCurrency(payload.transferAmount)}`,
-      `💳 Số dư mới: ${formatCurrency(result.newBalance)}`,
-      '',
-      '🛒 Bạn có thể mua hàng ngay!',
-    ].join('\n')
+    const lang = await resolveLang(db, user)
+    const notificationText = renderDepositSuccess(lang, payload.transferAmount, result.newBalance)
 
     // Fire-and-forget notification (waitUntil pattern for CF Workers)
     const notificationPromise = sendMessage(botToken, user.telegram_id, notificationText, {

@@ -89,7 +89,7 @@ statsRoutes.get('/revenue', async (c) => {
 
   if (!from || !to) {
     return c.json(
-      { success: false, data: null, error: 'Query parameters "from" and "to" are required (YYYY-MM-DD)' },
+      { success: false, data: null, error: 'date_range_required' },
       400
     )
   }
@@ -98,7 +98,7 @@ statsRoutes.get('/revenue', async (c) => {
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/
   if (!dateRegex.test(from) || !dateRegex.test(to)) {
     return c.json(
-      { success: false, data: null, error: 'Invalid date format. Use YYYY-MM-DD.' },
+      { success: false, data: null, error: 'invalid_date_format' },
       400
     )
   }

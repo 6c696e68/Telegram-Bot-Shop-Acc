@@ -6,7 +6,9 @@
  *  - phát haptic('light') + emit('click') khi còn hàng; màu phẳng, không chuyển-màu-nền.
  */
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { haptic } from '@/telegram/sdk'
+import { formatCurrency } from '@/utils/format'
 
 const props = withDefaults(
   defineProps<{
@@ -14,8 +16,8 @@ const props = withDefaults(
     name: string
     /** Emoji minh hoạ. */
     emoji?: string
-    /** Giá đã định dạng từ server (vd "50,000đ"). */
-    priceDisplay: string
+    /** Giá dạng số (đồng) — format CLIENT-SIDE theo locale user (R4.6). */
+    price: number
     /** Số lượng còn lại (products status='available'). */
     stock?: number
     /** Còn hàng hay không (stock > 0). */
@@ -26,8 +28,13 @@ const props = withDefaults(
 
 const emit = defineEmits<{ (e: 'click'): void }>()
 
+const { t } = useI18n()
+
+/** Giá hiển thị, format theo LOCALE hiện tại của user (R4.6). */
+const priceText = computed(() => formatCurrency(props.price))
+
 const stockText = computed(() =>
-  props.inStock ? `Còn ${props.stock}` : 'Hết hàng'
+  props.inStock ? t('product.in_stock', { count: props.stock }) : t('product.out_of_stock')
 )
 
 function onClick(): void {
@@ -47,7 +54,7 @@ function onClick(): void {
     <span class="text-3xl leading-none" aria-hidden="true">{{ emoji }}</span>
     <span class="flex min-w-0 flex-1 flex-col">
       <span class="truncate text-ios-headline text-text">{{ name }}</span>
-      <span class="text-ios-body tabular-nums text-accent">{{ priceDisplay }}</span>
+      <span class="text-ios-body tabular-nums text-accent">{{ priceText }}</span>
     </span>
     <span
       class="shrink-0 text-ios-footnote"

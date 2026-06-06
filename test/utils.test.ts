@@ -1,17 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { formatCurrency, formatDate } from '../src/utils/format'
+import { formatCurrency, formatMoney, formatNumber, formatDate } from '../src/utils/format'
 import { generateTransferCode } from '../src/utils/transfer-code'
 import { generateVietQRUrl } from '../src/utils/vietqr'
 import { AppError, handleBotError, handleApiError } from '../src/utils/error-handler'
 import { d1WithRetry } from '../src/utils/retry'
 
 describe('formatCurrency', () => {
-  it('formats number with thousand separators and đ suffix', () => {
-    expect(formatCurrency(150000)).toBe('150,000đ')
-    expect(formatCurrency(1000000)).toBe('1,000,000đ')
+  it('formats number with vi grouping (dot) and đ suffix', () => {
+    // R4.6: thống nhất hiển thị VND theo locale vi (nhóm bằng dấu chấm)
+    expect(formatCurrency(150000)).toBe('150.000đ')
+    expect(formatCurrency(1000000)).toBe('1.000.000đ')
     expect(formatCurrency(0)).toBe('0đ')
     expect(formatCurrency(500)).toBe('500đ')
-    expect(formatCurrency(30000)).toBe('30,000đ')
+    expect(formatCurrency(30000)).toBe('30.000đ')
+  })
+})
+
+describe('formatNumber', () => {
+  it('groups with dot for vi locale', () => {
+    expect(formatNumber(150000, 'vi')).toBe('150.000')
+    expect(formatNumber(1000000, 'vi')).toBe('1.000.000')
+    expect(formatNumber(0, 'vi')).toBe('0')
+  })
+
+  it('groups with comma for en locale', () => {
+    expect(formatNumber(150000, 'en')).toBe('150,000')
+    expect(formatNumber(1000000, 'en')).toBe('1,000,000')
+    expect(formatNumber(0, 'en')).toBe('0')
+  })
+})
+
+describe('formatMoney', () => {
+  it('keeps VND suffix while switching grouping per locale', () => {
+    expect(formatMoney(150000, 'vi')).toBe('150.000đ')
+    expect(formatMoney(150000, 'en')).toBe('150,000đ')
+    expect(formatMoney(0, 'vi')).toBe('0đ')
+    expect(formatMoney(0, 'en')).toBe('0đ')
   })
 })
 

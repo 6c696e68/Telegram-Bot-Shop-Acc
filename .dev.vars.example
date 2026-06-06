@@ -6,3 +6,4 @@ JWT_SECRET=your_jwt_secret_at_least_32_chars
 BANK_NAME=Vietcombank
 BANK_ACCOUNT=1017588888
 BANK_OWNER=NGUYEN VAN A
+CRYPTO_PAY_API_TOKEN=your_crypto_pay_api_token

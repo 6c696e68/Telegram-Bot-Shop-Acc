@@ -13,7 +13,18 @@ export interface DbUser {
   is_active: number // 1 = hoạt động, 0 = bị ban
   banned_at: string | null // ISO 8601 UTC — thời điểm bị ban (null nếu đang hoạt động)
   last_interaction_at: string | null
+  region: 'vietnam' | 'international' | null // null = chưa onboarding
+  language: string | null // mã locale ('vi','en',...); null = dùng default_language
+  language_locked: number // 1 = user đã tự đổi ngôn ngữ
   created_at: string
+  updated_at: string
+}
+
+export interface DbProductTypeTemplate {
+  id: number
+  product_type_id: number
+  lang: string // mã locale
+  success_template: string | null
   updated_at: string
 }
 
@@ -76,11 +87,18 @@ export interface DbTransaction {
 export interface DbDeposit {
   id: number
   user_id: number
-  transfer_code: string
-  amount: number
-  status: 'pending' | 'completed' | 'expired' | 'cancelled'
+  provider: 'sepay' | 'cryptobot'
+  amount: number // VND kỳ vọng (lúc tạo) / VND đã cộng (sau hoàn tất)
+  status: 'pending' | 'completed' | 'expired' | 'cancelled' | 'awaiting_credit'
+  // SePay
+  transfer_code: string | null // null với provider != sepay
   sepay_transaction_id: string | null
   bank_ref: string | null
+  // CryptoBot
+  crypto_invoice_id: string | null // id invoice Crypto Pay (idempotency)
+  asset: string | null // 'USDT'
+  usdt_amount: string | null // chuỗi thập phân, giữ nguyên độ chính xác
+  exchange_rate: number | null // VND cho 1 USDT, áp lúc cộng tiền
   completed_at: string | null
   expired_at: string | null
   created_at: string

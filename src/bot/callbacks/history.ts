@@ -1,11 +1,13 @@
 /**
  * Callback handler: Lịch sử đơn hàng.
  * Hiển thị 10 orders gần nhất với thông tin category, qty, total, datetime.
- * Requirements: 4.7, 4.8
+ * Nội dung + định dạng tiền/ngày theo Language của user (R4.1, R4.6).
+ * Requirements: 4.1, 4.6, 4.7, 4.8
  */
 
 import { editOrSendMessage, buildInlineKeyboard, buildBackButton } from '../telegram-api'
-import { formatCurrency, formatDate } from '../../utils/format'
+import { formatMoney, formatDateTime } from '../../utils/format'
+import { t, type Lang } from '../i18n'
 
 interface OrderRow {
   quantity: number
@@ -24,7 +26,8 @@ export async function handleHistory(
   botToken: string,
   chatId: number,
   messageId: number | undefined,
-  userId: number
+  userId: number,
+  lang: Lang
 ): Promise<void> {
   const { results } = await db
     .prepare(
@@ -42,18 +45,18 @@ export async function handleHistory(
   let text: string
 
   if (!results || results.length === 0) {
-    text = '📜 Chưa có đơn hàng nào.'
+    text = t(lang, 'history.empty')
   } else {
     const lines = results.map((order) => {
-      const totalFormatted = formatCurrency(order.total_amount)
-      const dateFormatted = formatDate(order.created_at)
+      const totalFormatted = formatMoney(order.total_amount, lang)
+      const dateFormatted = formatDateTime(order.created_at, lang)
       return `${order.emoji} ${order.name} × ${order.quantity} — ${totalFormatted} | ${dateFormatted}`
     })
 
-    text = `📜 <b>Lịch sử đơn hàng</b>\n\n${lines.join('\n')}`
+    text = `${t(lang, 'history.title')}\n\n${lines.join('\n')}`
   }
 
-  const keyboard = buildInlineKeyboard([buildBackButton('menu:main')])
+  const keyboard = buildInlineKeyboard([buildBackButton('menu:main', lang)])
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
     parse_mode: 'HTML',

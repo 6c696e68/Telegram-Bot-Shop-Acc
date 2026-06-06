@@ -15,8 +15,10 @@
 import GlassButton from '@/components/GlassButton.vue'
 import { Lock } from '@lucide/vue'
 import { useUiStore } from '@/stores/ui'
+import { useI18n } from 'vue-i18n'
 
 const ui = useUiStore()
+const { t } = useI18n()
 
 /** Tải lại app để lấy initData mới; gỡ cờ trước khi reload phòng trường hợp reload bị chặn. */
 function reload(): void {
@@ -36,15 +38,14 @@ function reload(): void {
       }"
       role="alertdialog"
       aria-modal="true"
-      aria-label="Phiên đăng nhập đã hết hạn"
+      :aria-label="t('unauthorized.aria')"
     >
       <Lock :size="56" :stroke-width="1.5" class="text-hint" aria-hidden="true" />
-      <h1 class="text-ios-title text-text">Cần mở lại từ Telegram</h1>
+      <h1 class="text-ios-title text-text">{{ t('unauthorized.title') }}</h1>
       <p class="max-w-sm text-ios-body text-hint">
-        Phiên xác thực đã hết hạn hoặc không hợp lệ. Vui lòng đóng và mở lại Mini App từ bot
-        Telegram để tiếp tục. Bạn cũng có thể thử tải lại.
+        {{ t('unauthorized.desc') }}
       </p>
-      <GlassButton variant="primary" @click="reload">Tải lại</GlassButton>
+      <GlassButton variant="primary" @click="reload">{{ t('unauthorized.reload') }}</GlassButton>
     </div>
   </Transition>
 </template>

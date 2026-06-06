@@ -7,11 +7,9 @@
  *
  * Việc bật/tắt ban do CMS đảm nhận (`POST /api/admin/users/:id/ban|unban`), ghi kèm
  * `banned_at` + `ban_reason` để lưu vết. Module này chỉ chịu trách nhiệm KIỂM TRA
- * trạng thái và cung cấp thông điệp chuẩn, không tự thay đổi dữ liệu (SRP).
+ * trạng thái, không tự thay đổi dữ liệu (SRP). Thông điệp gửi user bị ban được render
+ * theo ngôn ngữ qua catalog i18n (`guard.ban_notice`) ở tầng webhook, không hardcode ở đây.
  */
-
-/** Thông điệp gửi cho user bị ban khi họ cố tương tác với bot. */
-export const BAN_NOTICE = 'Tài khoản của bạn đã bị khoá. Vui lòng liên hệ quản trị viên nếu cần hỗ trợ.'
 
 /**
  * Kiểm tra một telegram_id có đang bị ban hay không.

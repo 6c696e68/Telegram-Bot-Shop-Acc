@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import Icon from '@/components/Icon.vue'
+import { formatMoney } from '@/utils/format'
+
+const { t } = useI18n()
 
 interface Order {
   id: number
@@ -128,9 +132,6 @@ function goToPage(p: number) {
   loadOrders()
 }
 
-function formatCurrency(amount: number): string {
-  return amount.toLocaleString('vi-VN') + 'đ'
-}
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return ''
@@ -155,7 +156,7 @@ function statusBadge(status: string) {
 }
 
 function statusLabel(status: string) {
-  return status === 'completed' ? 'Hoàn thành' : 'Đã hoàn tiền'
+  return status === 'completed' ? t('orders.status_completed') : t('orders.status_refunded')
 }
 
 onMounted(() => {
@@ -169,8 +170,8 @@ onMounted(() => {
     <!-- Header -->
     <div class="page-head">
       <div>
-        <h1 class="page-title">Đơn hàng</h1>
-        <p class="page-subtitle">Tổng {{ total }} đơn</p>
+        <h1 class="page-title">{{ $t('orders.title') }}</h1>
+        <p class="page-subtitle">{{ $t('orders.subtitle', { count: total }) }}</p>
       </div>
     </div>
 
@@ -178,15 +179,15 @@ onMounted(() => {
     <div class="filters">
       <div class="field-wrap">
         <select v-model="filterStatus" class="field">
-          <option value="">Tất cả trạng thái</option>
-          <option value="completed">Hoàn thành</option>
-          <option value="refunded">Đã hoàn tiền</option>
+          <option value="">{{ $t('orders.filter_all_status') }}</option>
+          <option value="completed">{{ $t('orders.status_completed') }}</option>
+          <option value="refunded">{{ $t('orders.status_refunded') }}</option>
         </select>
       </div>
 
       <div class="field-wrap">
         <select v-model="filterCategoryId" class="field">
-          <option value="">Tất cả loại</option>
+          <option value="">{{ $t('orders.filter_all_category') }}</option>
           <option v-for="cat in categories" :key="cat.id" :value="String(cat.id)">
             {{ cat.name }}
           </option>
@@ -204,9 +205,9 @@ onMounted(() => {
       <div class="filter-actions">
         <button class="btn btn-primary" @click="applyFilters">
           <Icon name="search" :size="16" />
-          Lọc
+          {{ $t('common.filter') }}
         </button>
-        <button class="btn btn-secondary" @click="clearFilters">Xoá</button>
+        <button class="btn btn-secondary" @click="clearFilters">{{ $t('common.clear') }}</button>
       </div>
     </div>
 
@@ -215,13 +216,13 @@ onMounted(() => {
       <!-- Loading -->
       <div v-if="loading" class="state-block">
         <div class="spinner"></div>
-        <span>Đang tải…</span>
+        <span>{{ $t('common.loading') }}</span>
       </div>
 
       <!-- Empty -->
       <div v-else-if="orders.length === 0" class="state-block state-empty">
         <Icon name="receipt" :size="32" />
-        <p>Không có đơn hàng nào</p>
+        <p>{{ $t('orders.empty') }}</p>
       </div>
 
       <!-- Data -->
@@ -229,12 +230,12 @@ onMounted(() => {
         <thead>
           <tr>
             <th style="width: 64px">ID</th>
-            <th>Người mua</th>
-            <th>Sản phẩm</th>
-            <th style="width: 56px">SL</th>
-            <th>Tổng tiền</th>
-            <th>Trạng thái</th>
-            <th>Thời gian</th>
+            <th>{{ $t('orders.col_buyer') }}</th>
+            <th>{{ $t('orders.col_product') }}</th>
+            <th style="width: 56px">{{ $t('orders.col_qty') }}</th>
+            <th>{{ $t('orders.col_total') }}</th>
+            <th>{{ $t('common.status') }}</th>
+            <th>{{ $t('common.time') }}</th>
             <th style="width: 40px"></th>
           </tr>
         </thead>
@@ -252,7 +253,7 @@ onMounted(() => {
             </td>
             <td class="ink">{{ order.product_type_name }}</td>
             <td>{{ order.quantity }}</td>
-            <td class="ink amount-cell">{{ formatCurrency(order.total_amount) }}</td>
+            <td class="ink amount-cell">{{ formatMoney(order.total_amount) }}</td>
             <td>
               <span class="badge" :class="statusBadge(order.status)">
                 {{ statusLabel(order.status) }}
@@ -270,7 +271,7 @@ onMounted(() => {
     <!-- Pagination -->
     <div v-if="total > limit" class="pagination">
       <p class="page-info">
-        Trang {{ page }} / {{ totalPages() }} — Tổng {{ total }} đơn
+        {{ $t('orders.page_info', { page, total: totalPages(), count: total }) }}
       </p>
       <div class="page-actions">
         <button
@@ -279,14 +280,14 @@ onMounted(() => {
           @click="goToPage(page - 1)"
         >
           <Icon name="arrowLeft" :size="15" />
-          Trước
+          {{ $t('common.prev') }}
         </button>
         <button
           class="btn btn-secondary btn-sm"
           :disabled="page >= totalPages()"
           @click="goToPage(page + 1)"
         >
-          Sau
+          {{ $t('common.next') }}
           <Icon name="arrowRight" :size="15" />
         </button>
       </div>
@@ -297,7 +298,7 @@ onMounted(() => {
       <div class="card modal-panel">
         <!-- Header -->
         <div class="modal-head">
-          <h2 class="modal-title">Chi tiết đơn hàng #{{ selectedOrder?.id }}</h2>
+          <h2 class="modal-title">{{ $t('orders.detail', { id: selectedOrder?.id }) }}</h2>
           <button class="btn btn-ghost btn-icon" @click="closeDetail">
             <Icon name="close" :size="18" />
           </button>
@@ -306,7 +307,7 @@ onMounted(() => {
         <!-- Loading -->
         <div v-if="detailLoading" class="state-block">
           <div class="spinner"></div>
-          <span>Đang tải…</span>
+          <span>{{ $t('common.loading') }}</span>
         </div>
 
         <!-- Detail -->
@@ -314,30 +315,30 @@ onMounted(() => {
           <!-- Order Info -->
           <div class="info-grid">
             <div class="info-item">
-              <span class="label">Trạng thái</span>
+              <span class="label">{{ $t('common.status') }}</span>
               <span class="badge" :class="statusBadge(selectedOrder.status)">
                 {{ statusLabel(selectedOrder.status) }}
               </span>
             </div>
             <div class="info-item">
-              <span class="label">Thời gian</span>
+              <span class="label">{{ $t('common.time') }}</span>
               <span class="info-value">{{ formatDate(selectedOrder.created_at) }}</span>
             </div>
             <div class="info-item">
-              <span class="label">Sản phẩm</span>
+              <span class="label">{{ $t('orders.col_product') }}</span>
               <span class="info-value">{{ selectedOrder.product_type_name }}</span>
             </div>
             <div class="info-item">
-              <span class="label">Đơn giá</span>
-              <span class="info-value">{{ formatCurrency(selectedOrder.unit_price) }}</span>
+              <span class="label">{{ $t('orders.col_unit_price') }}</span>
+              <span class="info-value">{{ formatMoney(selectedOrder.unit_price) }}</span>
             </div>
             <div class="info-item">
-              <span class="label">Số lượng</span>
+              <span class="label">{{ $t('orders.col_qty') }}</span>
               <span class="info-value">{{ selectedOrder.quantity }}</span>
             </div>
             <div class="info-item">
-              <span class="label">Tổng tiền</span>
-              <span class="info-value strong">{{ formatCurrency(selectedOrder.total_amount) }}</span>
+              <span class="label">{{ $t('orders.col_total') }}</span>
+              <span class="info-value strong">{{ formatMoney(selectedOrder.total_amount) }}</span>
             </div>
           </div>
 
@@ -345,11 +346,11 @@ onMounted(() => {
           <div class="modal-section">
             <h3 class="section-title">
               <Icon name="user" :size="16" />
-              Thông tin người mua
+              {{ $t('orders.buyer_info') }}
             </h3>
             <div class="user-grid">
               <div class="user-row">
-                <span class="muted">Tên:</span>
+                <span class="muted">{{ $t('common.name') }}:</span>
                 <span class="ink">{{ selectedOrder.first_name || '—' }}</span>
               </div>
               <div class="user-row">
@@ -361,8 +362,8 @@ onMounted(() => {
                 <span class="ink">{{ selectedOrder.telegram_id }}</span>
               </div>
               <div class="user-row">
-                <span class="muted">Số dư hiện tại:</span>
-                <span class="ink">{{ formatCurrency(selectedOrder.user_balance) }}</span>
+                <span class="muted">{{ $t('orders.current_balance') }}:</span>
+                <span class="ink">{{ formatMoney(selectedOrder.user_balance) }}</span>
               </div>
             </div>
           </div>
@@ -371,7 +372,7 @@ onMounted(() => {
           <div class="modal-section">
             <h3 class="section-title">
               <Icon name="package" :size="16" />
-              Sản phẩm đã giao ({{ selectedOrder.items.length }})
+              {{ $t('orders.delivered_items', { count: selectedOrder.items.length }) }}
             </h3>
             <div class="items-list">
               <div
@@ -388,7 +389,7 @@ onMounted(() => {
                 </span>
               </div>
               <div v-if="selectedOrder.items.length === 0" class="items-empty">
-                Không có sản phẩm
+                {{ $t('orders.no_items') }}
               </div>
             </div>
           </div>
@@ -396,7 +397,7 @@ onMounted(() => {
 
         <!-- Footer -->
         <div class="modal-foot">
-          <button class="btn btn-secondary" @click="closeDetail">Đóng</button>
+          <button class="btn btn-secondary" @click="closeDetail">{{ $t('common.close') }}</button>
         </div>
       </div>
     </div>

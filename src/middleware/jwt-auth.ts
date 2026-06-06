@@ -35,7 +35,8 @@ export const jwtAuth = createMiddleware<JwtEnv>(async (c, next) => {
 
   try {
     const secret = new TextEncoder().encode(c.env.JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    // Pin thuật toán HS256 (khớp lúc ký) — chặn alg-confusion/`none` (defense-in-depth).
+    const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] })
 
     const adminId = payload.sub ? Number(payload.sub) : null
     const adminUsername = payload.username as string | undefined

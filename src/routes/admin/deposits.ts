@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { Bindings } from '../../types'
 import type { AdminVariables } from '../../middleware/jwt-auth'
 import { jwtAuth } from '../../middleware/jwt-auth'
-import { transactionService } from '../../services/transaction'
+import { completeDeposit } from '../../services/deposit-service'
 import type { DbDeposit } from '../../types/db'
 
 type DepositsEnv = {
@@ -27,7 +27,7 @@ depositsRoutes.get('/', async (c) => {
   const offset = (page - 1) * limit
   const status = c.req.query('status') // pending | completed | expired | cancelled
 
-  const validStatuses = ['pending', 'completed', 'expired', 'cancelled']
+  const validStatuses = ['pending', 'completed', 'expired', 'cancelled', 'awaiting_credit']
 
   let whereClause = ''
   const bindParams: (string | number)[] = []
@@ -68,7 +68,7 @@ depositsRoutes.get('/', async (c) => {
 /**
  * POST /deposits/:id/approve
  * Manually approve a pending deposit (fallback when SePay webhook missed).
- * Calls transactionService.executeDeposit, writes audit_log.
+ * Calls completeDeposit (provider='sepay'), writes audit_log.
  * Requirements: 11.9, 13.10
  */
 depositsRoutes.post('/:id/approve', async (c) => {
@@ -76,7 +76,7 @@ depositsRoutes.post('/:id/approve', async (c) => {
 
   if (!depositId || isNaN(depositId)) {
     return c.json(
-      { success: false, data: null, error: 'Invalid deposit ID' },
+      { success: false, data: null, error: 'invalid_deposit_id' },
       400
     )
   }
@@ -88,30 +88,40 @@ depositsRoutes.post('/:id/approve', async (c) => {
 
   if (!deposit) {
     return c.json(
-      { success: false, data: null, error: 'Deposit not found' },
+      { success: false, data: null, error: 'deposit_not_found' },
       404
     )
   }
 
   if (deposit.status !== 'pending') {
     return c.json(
-      { success: false, data: null, error: `Cannot approve deposit with status '${deposit.status}'` },
+      { success: false, data: null, error: 'deposit_not_pending' },
       400
     )
   }
 
-  // Execute deposit via TransactionService
-  const result = await transactionService.executeDeposit(
-    c.env.DB,
+  // Duyệt tay chỉ áp cho SePay (fallback khi webhook miss). CryptoBot hoàn tất qua webhook
+  // Crypto Pay (xác nhận thanh toán USDT + quy đổi) — không cộng tay để tránh sai provider/số tiền.
+  if (deposit.provider !== 'sepay') {
+    return c.json(
+      { success: false, data: null, error: 'manual_approve_sepay_only' },
+      400
+    )
+  }
+
+  // Execute deposit via DepositService (manual SePay tx id như cũ)
+  const result = await completeDeposit({
+    db: c.env.DB,
     depositId,
-    deposit.user_id,
-    deposit.amount,
-    'manual-approve'
-  )
+    userId: deposit.user_id,
+    creditVnd: deposit.amount,
+    provider: 'sepay',
+    sepayTransactionId: 'manual-approve',
+  })
 
   if (!result.success) {
     return c.json(
-      { success: false, data: null, error: `Approve failed: ${result.error}` },
+      { success: false, data: null, error: 'approve_failed' },
       400
     )
   }

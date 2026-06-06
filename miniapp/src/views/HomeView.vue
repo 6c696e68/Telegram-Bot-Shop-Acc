@@ -15,6 +15,7 @@
 
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ShoppingBag, CreditCard, ReceiptText, User } from '@lucide/vue'
 import type { Component } from 'vue'
 import BalanceBadge from '@/components/BalanceBadge.vue'
@@ -25,6 +26,7 @@ import { ApiError } from '@/api/client'
 const router = useRouter()
 const user = useUserStore()
 const ui = useUiStore()
+const { t } = useI18n()
 
 /** Read-only state người mua (telegramId/username/firstName/balance/balanceDisplay/loaded). */
 const state = user.state
@@ -36,17 +38,17 @@ const state = user.state
 interface Shortcut {
   /** Tên route đích (khớp `name` trong router). */
   route: 'shop' | 'deposit' | 'history' | 'account'
-  /** Nhãn tiếng Việt hiển thị trên thẻ. */
-  label: string
+  /** Key i18n nhãn hiển thị trên thẻ. */
+  labelKey: string
   /** Icon SVG (lucide) — màu phẳng, không gradient/emoji. */
   icon: Component
 }
 
 const shortcuts: readonly Shortcut[] = [
-  { route: 'shop', label: 'Mua hàng', icon: ShoppingBag },
-  { route: 'deposit', label: 'Nạp tiền', icon: CreditCard },
-  { route: 'history', label: 'Lịch sử', icon: ReceiptText },
-  { route: 'account', label: 'Tài khoản', icon: User },
+  { route: 'shop', labelKey: 'home.shop', icon: ShoppingBag },
+  { route: 'deposit', labelKey: 'home.deposit', icon: CreditCard },
+  { route: 'history', labelKey: 'home.history', icon: ReceiptText },
+  { route: 'account', labelKey: 'home.account', icon: User },
 ] as const
 
 /**
@@ -68,7 +70,7 @@ onMounted(async () => {
     await ui.withLoading(user.fetchMe())
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return
-    ui.toast('Không tải được số dư. Vui lòng thử lại.', 'error')
+    ui.toast(t('common.error'), 'error')
   }
 })
 </script>
@@ -78,25 +80,25 @@ onMounted(async () => {
     <!-- Lời chào + số dư (Req 4.1, 4.2) -->
     <header class="flex flex-col gap-3">
       <p v-if="state.firstName" class="text-ios-title text-text">
-        Xin chào, {{ state.firstName }}
+        {{ $t('home.hello', { name: state.firstName }) }}
       </p>
-      <BalanceBadge :balance="state.balance" :display="state.balanceDisplay" />
+      <BalanceBadge :balance="state.balance" />
     </header>
 
     <!-- Lối tắt nhanh (Req 4.3, 4.4) -->
-    <section class="flex flex-col gap-3" aria-label="Lối tắt nhanh">
-      <h2 class="px-1 text-ios-footnote text-hint">Lối tắt</h2>
+    <section class="flex flex-col gap-3" :aria-label="$t('home.shortcuts')">
+      <h2 class="px-1 text-ios-footnote text-hint">{{ $t('home.shortcuts') }}</h2>
       <div class="grid grid-cols-2 gap-3">
         <button
           v-for="s in shortcuts"
           :key="s.route"
           type="button"
           class="glass tap-target flex flex-col items-center justify-center gap-2 p-5 transition-transform duration-ios ease-ios active:scale-[0.97]"
-          :aria-label="`Mở ${s.label}`"
+          :aria-label="$t('home.open', { label: $t(s.labelKey) })"
           @click="goTo(s.route)"
         >
           <component :is="s.icon" :size="28" :stroke-width="1.75" class="text-accent" aria-hidden="true" />
-          <span class="text-ios-headline text-text">{{ s.label }}</span>
+          <span class="text-ios-headline text-text">{{ $t(s.labelKey) }}</span>
         </button>
       </div>
     </section>

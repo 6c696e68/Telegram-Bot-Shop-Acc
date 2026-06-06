@@ -10,8 +10,9 @@
  */
 
 import { reactive, readonly, type DeepReadonly } from 'vue'
-import { get } from '@/api/client'
+import { get, post, request } from '@/api/client'
 import { formatCurrency } from '@/utils/format'
+import { setLocale } from '@/i18n'
 import type { MeDto } from '@/types'
 
 export interface UserState {
@@ -20,6 +21,8 @@ export interface UserState {
   firstName: string | null
   balance: number
   balanceDisplay: string
+  region: 'vietnam' | 'international' | null
+  language: string | null
   /** `true` sau khi `fetchMe()` thành công lần đầu (để view phân biệt với trạng thái chưa nạp). */
   loaded: boolean
 }
@@ -30,6 +33,8 @@ const state = reactive<UserState>({
   firstName: null,
   balance: 0,
   balanceDisplay: '',
+  region: null,
+  language: null,
   loaded: false,
 })
 
@@ -41,7 +46,26 @@ async function fetchMe(): Promise<void> {
   state.firstName = me.first_name
   state.balance = me.balance
   state.balanceDisplay = me.balance_display
+  state.region = me.region
+  state.language = me.language
   state.loaded = true
+  // Đồng bộ ngôn ngữ hiển thị theo user (R17.2). Chưa xác định → giữ fallback en (R17.3).
+  setLocale(me.language)
+}
+
+/** Lưu vùng (R2.3, R2.4, R5.2) — set region + đồng bộ language/locale từ phản hồi server. */
+async function setRegion(region: 'vietnam' | 'international'): Promise<void> {
+  const me = await post<MeDto>('/region', { region })
+  state.region = me.region
+  state.language = me.language
+  setLocale(me.language)
+}
+
+/** Đổi ngôn ngữ hiển thị (R6.2) — lưu server + cập nhật locale reactive (R17.4). */
+async function setLanguage(language: string): Promise<void> {
+  await request<{ language: string }>('/language', { method: 'PUT', body: { language } })
+  state.language = language
+  setLocale(language)
 }
 
 /**
@@ -61,23 +85,29 @@ function reset(): void {
   state.firstName = null
   state.balance = 0
   state.balanceDisplay = ''
+  state.region = null
+  state.language = null
   state.loaded = false
 }
 
 /**
  * Composable truy cập user store.
- * `state` là read-only đối với view — chỉ được đổi qua `fetchMe`/`setBalance`/`reset`.
+ * `state` là read-only đối với view — chỉ được đổi qua các action bên dưới.
  */
 export function useUserStore(): {
   state: DeepReadonly<UserState>
   fetchMe: () => Promise<void>
   setBalance: (balance: number, display?: string) => void
+  setRegion: (region: 'vietnam' | 'international') => Promise<void>
+  setLanguage: (language: string) => Promise<void>
   reset: () => void
 } {
   return {
     state: readonly(state),
     fetchMe,
     setBalance,
+    setRegion,
+    setLanguage,
     reset,
   }
 }

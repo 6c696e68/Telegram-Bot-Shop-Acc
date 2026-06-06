@@ -21,6 +21,24 @@ export interface MeDto {
   first_name: string | null
   balance: number
   balance_display: string
+  region: 'vietnam' | 'international' | null
+  language: string | null
+}
+
+/** Phần tử `GET /api/app/deposit-methods` — phương thức nạp khả dụng theo vùng (Req 8.3). */
+export interface DepositMethodDto {
+  id: 'sepay' | 'cryptobot'
+  amount_unit: 'vnd' | 'usdt'
+}
+
+/** `POST /api/app/deposits` (method=cryptobot) — invoice Crypto Pay vừa tạo (Req 10.1, 10.3). */
+export interface CryptoDepositCreatedDto {
+  deposit_id: number
+  method: 'cryptobot'
+  pay_url: string
+  usdt_amount: string
+  invoice_id: string
+  status: 'pending'
 }
 
 /** Phần tử danh sách `GET /api/app/product-types` (Req 5.1, 5.2). Bao gồm cả loại hết hàng. */
@@ -73,9 +91,10 @@ export interface DepositCreatedDto {
 /** `GET /api/app/deposits/:id` — trạng thái yêu cầu nạp để frontend poll (Req 8.5, 9.1). */
 export interface DepositStatusDto {
   deposit_id: number
-  status: 'pending' | 'completed' | 'expired' | 'cancelled'
+  provider: 'sepay' | 'cryptobot'
+  status: 'pending' | 'completed' | 'expired' | 'cancelled' | 'awaiting_credit'
   amount: number
-  new_balance?: number // chỉ có khi status='completed' (đã cộng tiền qua /webhook/sepay)
+  new_balance?: number // chỉ có khi status='completed' (đã cộng tiền qua webhook)
 }
 
 /** Phần tử danh sách `GET /api/app/orders` — lịch sử đơn hàng (Req 11.1, 11.2). */

@@ -3,8 +3,12 @@ import { ref, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { api } from '@/api/client'
 import { Chart, registerables } from 'chart.js'
 import Icon from '@/components/Icon.vue'
+import { AVAILABLE_LOCALES } from '@/i18n'
+import { formatMoney } from '@/utils/format'
+import { useI18n } from 'vue-i18n'
 
 Chart.register(...registerables)
+const { t } = useI18n()
 
 const activeTab = ref<'config' | 'reports'>('config')
 
@@ -24,6 +28,10 @@ const form = ref({
   sepay_api_key: '',
   min_deposit: '20000',
   max_deposit: '100000000',
+  exchange_rate_usdt_vnd: '25000',
+  crypto_min_usdt: '5',
+  default_language: 'en',
+  payment_cryptobot_enabled: '0',
   admin_ids: '',
 })
 
@@ -48,12 +56,16 @@ async function loadConfig() {
       form.value.sepay_api_key = c.sepay_api_key ?? ''
       form.value.min_deposit = c.min_deposit ?? '20000'
       form.value.max_deposit = c.max_deposit ?? '100000000'
+      form.value.exchange_rate_usdt_vnd = c.exchange_rate_usdt_vnd ?? '25000'
+      form.value.crypto_min_usdt = c.crypto_min_usdt ?? '5'
+      form.value.default_language = c.default_language ?? 'en'
+      form.value.payment_cryptobot_enabled = c.payment_cryptobot_enabled ?? '0'
       form.value.admin_ids = c.admin_ids ?? ''
     } else {
-      configError.value = res.error || 'Không thể tải cấu hình'
+      configError.value = res.error || t('config.save_failed')
     }
   } catch {
-    configError.value = 'Lỗi kết nối'
+    configError.value = t('common.error')
   } finally {
     configLoading.value = false
   }
@@ -63,16 +75,24 @@ async function saveConfig() {
   configSaving.value = true
   configError.value = ''
   configSuccess.value = ''
+  // R20.7: từ chối lưu khi nạp tối đa nhỏ hơn nạp tối thiểu.
+  const minD = Number(form.value.min_deposit)
+  const maxD = Number(form.value.max_deposit)
+  if (Number.isFinite(minD) && Number.isFinite(maxD) && maxD < minD) {
+    configError.value = t('config.max_lt_min')
+    configSaving.value = false
+    return
+  }
   try {
     const res = await api.put<{ updated: number }>('/config', { configs: { ...form.value } })
     if (res.success) {
-      configSuccess.value = `Lưu thành công (${res.data?.updated ?? 0} thay đổi)`
+      configSuccess.value = t('config.saved_count', { count: res.data?.updated ?? 0 })
       setTimeout(() => { configSuccess.value = '' }, 3000)
     } else {
-      configError.value = res.error || 'Không thể lưu'
+      configError.value = res.error || t('config.save_failed')
     }
   } catch {
-    configError.value = 'Lỗi kết nối'
+    configError.value = t('common.error')
   } finally {
     configSaving.value = false
   }
@@ -116,7 +136,7 @@ async function loadReports() {
     await nextTick()
     renderRevenueChart()
   } catch {
-    reportsError.value = 'Lỗi kết nối'
+    reportsError.value = t('common.error')
   } finally {
     reportsLoading.value = false
   }
@@ -130,14 +150,14 @@ function renderRevenueChart() {
     data: {
       labels: revenueData.value.map(d => { const p = d.date.split('-'); return `${p[2]}/${p[1]}` }),
       datasets: [
-        { label: 'Doanh thu', data: revenueData.value.map(d => d.revenue), borderColor: '#1a1a18', backgroundColor: 'rgba(17,17,17,0.04)', fill: true, tension: 0.3, borderWidth: 2, pointRadius: 2 },
-        { label: 'Số đơn', data: revenueData.value.map(d => d.order_count), borderColor: '#9b9a97', fill: false, tension: 0.3, borderWidth: 1.5, pointRadius: 1, yAxisID: 'y1' },
+        { label: t('config.chart_revenue'), data: revenueData.value.map(d => d.revenue), borderColor: '#1a1a18', backgroundColor: 'rgba(17,17,17,0.04)', fill: true, tension: 0.3, borderWidth: 2, pointRadius: 2 },
+        { label: t('config.chart_orders'), data: revenueData.value.map(d => d.order_count), borderColor: '#9b9a97', fill: false, tension: 0.3, borderWidth: 1.5, pointRadius: 1, yAxisID: 'y1' },
       ],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.datasetIndex === 0 ? formatCurrency(ctx.parsed.y ?? 0) : `${ctx.parsed.y} đơn` } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.datasetIndex === 0 ? formatMoney(ctx.parsed.y ?? 0) : t('config.orders_unit', { count: ctx.parsed.y }) } } },
       scales: {
         x: { grid: { color: '#eaeaea' }, ticks: { color: '#787774' } },
         y: { grid: { color: '#eaeaea' }, ticks: { color: '#787774', callback: v => { const n = Number(v); return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'k' : String(n) } } },
@@ -147,7 +167,6 @@ function renderRevenueChart() {
   })
 }
 
-function formatCurrency(n: number) { return n.toLocaleString('vi-VN') + 'đ' }
 
 watch(activeTab, tab => { if (tab === 'reports' && revenueData.value.length === 0) loadReports() })
 onMounted(() => { loadConfig(); initDateRange() })
@@ -163,21 +182,21 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
         :class="{ active: activeTab === 'config' }"
         @click="activeTab = 'config'"
       >
-        <Icon name="settings" :size="16" /> Cấu hình
+        <Icon name="settings" :size="16" /> {{ $t('config.tab_config') }}
       </button>
       <button
         class="tab-btn"
         :class="{ active: activeTab === 'reports' }"
         @click="activeTab = 'reports'"
       >
-        <Icon name="trend" :size="16" /> Báo cáo
+        <Icon name="trend" :size="16" /> {{ $t('config.tab_reports') }}
       </button>
     </div>
 
     <!-- ========== CONFIG TAB ========== -->
     <div v-if="activeTab === 'config'">
       <div v-if="configLoading" class="flex flex-col items-center gap-3 py-16" style="color: var(--muted)">
-        <div class="spinner" /><span class="text-[13px]">Đang tải…</span>
+        <div class="spinner" /><span class="text-[13px]">{{ $t('config.loading') }}</span>
       </div>
 
       <form v-else class="max-w-2xl space-y-5" @submit.prevent="saveConfig">
@@ -191,15 +210,15 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
 
         <!-- Shop -->
         <section class="card p-5 space-y-4">
-          <h3 class="section-head"><Icon name="store" :size="18" /> Thông tin cửa hàng</h3>
-          <div><label class="label">Tên shop</label><input v-model="form.shop_name" class="field" placeholder="Shop Acc VN" /></div>
+          <h3 class="section-head"><Icon name="store" :size="18" /> {{ $t('config.shop_section') }}</h3>
+          <div><label class="label">{{ $t('config.shop_name') }}</label><input v-model="form.shop_name" class="field" placeholder="Shop Acc VN" /></div>
         </section>
 
         <!-- Telegram Bot -->
         <section class="card p-5 space-y-4">
-          <h3 class="section-head"><Icon name="settings" :size="18" /> Telegram Bot</h3>
+          <h3 class="section-head"><Icon name="settings" :size="18" /> {{ $t('config.telegram_section') }}</h3>
           <div>
-            <label class="label">Bot Token</label>
+            <label class="label">{{ $t('config.bot_token') }}</label>
             <div class="key-row">
               <input
                 v-model="form.bot_token"
@@ -209,122 +228,159 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
                 autocomplete="off"
                 spellcheck="false"
               />
-              <button type="button" class="key-toggle" :title="showBotToken ? 'Ẩn' : 'Hiện'" @click="showBotToken = !showBotToken">
+              <button type="button" class="key-toggle" :title="showBotToken ? $t('config.hide') : $t('config.show')" @click="showBotToken = !showBotToken">
                 <Icon :name="showBotToken ? 'eyeOff' : 'eye'" :size="16" />
               </button>
             </div>
-            <p class="hint">Token bot từ @BotFather. Để trống sẽ dùng secret BOT_TOKEN của Worker.</p>
+            <p class="hint">{{ $t('config.bot_token_hint') }}</p>
           </div>
           <div>
-            <label class="label">Webhook Secret Token</label>
+            <label class="label">{{ $t('config.tg_secret') }}</label>
             <div class="key-row">
               <input
                 v-model="form.telegram_secret_token"
                 :type="showTgSecret ? 'text' : 'password'"
                 class="field"
-                placeholder="Chuỗi bí mật xác thực webhook"
+                :placeholder="$t('config.ph_tg_secret')"
                 autocomplete="off"
                 spellcheck="false"
               />
-              <button type="button" class="key-toggle" :title="showTgSecret ? 'Ẩn' : 'Hiện'" @click="showTgSecret = !showTgSecret">
+              <button type="button" class="key-toggle" :title="showTgSecret ? $t('config.hide') : $t('config.show')" @click="showTgSecret = !showTgSecret">
                 <Icon :name="showTgSecret ? 'eyeOff' : 'eye'" :size="16" />
               </button>
             </div>
-            <p class="hint">Khớp secret_token khi setWebhook (header X-Telegram-Bot-Api-Secret-Token). Để trống sẽ dùng secret TELEGRAM_SECRET_TOKEN của Worker.</p>
+            <p class="hint">{{ $t('config.tg_secret_hint') }}</p>
           </div>
           <div>
-            <label class="label">Admin Telegram IDs</label>
+            <label class="label">{{ $t('config.admin_ids') }}</label>
             <input v-model="form.admin_ids" class="field" placeholder="123456789,987654321" />
-            <p class="hint">Phân tách bằng dấu phẩy. Để trống sẽ dùng var ADMIN_IDS của Worker.</p>
+            <p class="hint">{{ $t('config.admin_ids_hint') }}</p>
           </div>
         </section>
 
         <!-- Bank -->
         <section class="card p-5 space-y-4">
-          <h3 class="section-head"><Icon name="bank" :size="18" /> Thông tin ngân hàng</h3>
-          <div><label class="label">Tên ngân hàng</label><input v-model="form.bank_name" class="field" placeholder="Vietcombank" /></div>
-          <div><label class="label">Số tài khoản</label><input v-model="form.bank_account" class="field" placeholder="1017588888" /></div>
-          <div><label class="label">Chủ tài khoản</label><input v-model="form.bank_owner" class="field" placeholder="NGUYEN VAN A" /></div>
+          <h3 class="section-head"><Icon name="bank" :size="18" /> {{ $t('config.bank_section') }}</h3>
+          <div><label class="label">{{ $t('config.bank_name') }}</label><input v-model="form.bank_name" class="field" placeholder="Vietcombank" /></div>
+          <div><label class="label">{{ $t('config.bank_account') }}</label><input v-model="form.bank_account" class="field" placeholder="1017588888" /></div>
+          <div><label class="label">{{ $t('config.bank_owner') }}</label><input v-model="form.bank_owner" class="field" placeholder="NGUYEN VAN A" /></div>
         </section>
 
         <!-- SePay -->
         <section class="card p-5 space-y-4">
-          <h3 class="section-head"><Icon name="key" :size="18" /> Cổng thanh toán SePay</h3>
+          <h3 class="section-head"><Icon name="key" :size="18" /> {{ $t('config.sepay_section') }}</h3>
           <div>
-            <label class="label">SePay API Key</label>
+            <label class="label">{{ $t('config.sepay_key') }}</label>
             <div class="key-row">
               <input
                 v-model="form.sepay_api_key"
                 :type="showSepayKey ? 'text' : 'password'"
                 class="field"
-                placeholder="Nhập API key webhook SePay"
+                :placeholder="$t('config.ph_sepay_key')"
                 autocomplete="off"
                 spellcheck="false"
               />
               <button
                 type="button"
                 class="key-toggle"
-                :title="showSepayKey ? 'Ẩn key' : 'Hiện key'"
+                :title="showSepayKey ? $t('config.hide_key') : $t('config.show_key')"
                 @click="showSepayKey = !showSepayKey"
               >
                 <Icon :name="showSepayKey ? 'eyeOff' : 'eye'" :size="16" />
               </button>
             </div>
-            <p class="hint">Dùng để xác thực webhook SePay (header Authorization: Apikey ...). Khớp với API Key cấu hình trên my.sepay.vn. Để trống sẽ dùng secret SEPAY_API_KEY của Worker.</p>
+            <p class="hint">{{ $t('config.sepay_key_hint') }}</p>
           </div>
         </section>
 
         <!-- System -->
         <section class="card p-5 space-y-4">
-          <h3 class="section-head"><Icon name="settings" :size="18" /> Cài đặt hệ thống</h3>
+          <h3 class="section-head"><Icon name="settings" :size="18" /> {{ $t('config.system_section') }}</h3>
           <div class="grid grid-cols-2 gap-4">
-            <div><label class="label">Nạp tối thiểu (VNĐ)</label><input v-model="form.min_deposit" type="number" min="1000" class="field" /></div>
-            <div><label class="label">Nạp tối đa (VNĐ)</label><input v-model="form.max_deposit" type="number" min="1000" class="field" /></div>
+            <div><label class="label">{{ $t('config.min_deposit') }}</label><input v-model="form.min_deposit" type="number" min="1000" class="field" /></div>
+            <div><label class="label">{{ $t('config.max_deposit') }}</label><input v-model="form.max_deposit" type="number" min="1000" class="field" /></div>
           </div>
         </section>
 
-        <div class="flex justify-end"><button type="submit" class="btn btn-primary" :disabled="configSaving"><Icon name="check" :size="16" />{{ configSaving ? 'Đang lưu…' : 'Lưu cấu hình' }}</button></div>
+        <!-- Multi-region payment (R20.1-20.4) -->
+        <section class="card p-5 space-y-4">
+          <h3 class="section-head"><Icon name="key" :size="18" /> {{ $t('config.payment_section') }}</h3>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="label">{{ $t('config.exchange_rate') }}</label>
+              <input v-model="form.exchange_rate_usdt_vnd" type="number" min="1" class="field" />
+            </div>
+            <div>
+              <label class="label">{{ $t('config.crypto_min_usdt') }}</label>
+              <input v-model="form.crypto_min_usdt" type="number" min="1" step="0.01" class="field" />
+            </div>
+          </div>
+          <div>
+            <label class="label">{{ $t('config.default_language') }}</label>
+            <select v-model="form.default_language" class="field">
+              <option v-for="loc in AVAILABLE_LOCALES" :key="loc" :value="loc">{{ loc.toUpperCase() }}</option>
+            </select>
+          </div>
+          <div class="flex items-center justify-between" style="padding-top: 0.25rem">
+            <div>
+              <span class="label" style="margin-bottom: 0">{{ $t('config.crypto_enable') }}</span>
+              <p class="hint">{{ $t('config.crypto_enable_hint') }}</p>
+            </div>
+            <button
+              type="button"
+              class="toggle"
+              :class="{ 'is-on': form.payment_cryptobot_enabled === '1' }"
+              role="switch"
+              :aria-checked="form.payment_cryptobot_enabled === '1'"
+              @click="form.payment_cryptobot_enabled = form.payment_cryptobot_enabled === '1' ? '0' : '1'"
+            >
+              <span class="toggle-knob" />
+            </button>
+          </div>
+        </section>
+
+        <div class="flex justify-end"><button type="submit" class="btn btn-primary" :disabled="configSaving"><Icon name="check" :size="16" />{{ configSaving ? $t('common.saving') : $t('config.save_btn') }}</button></div>
       </form>
     </div>
 
     <!-- ========== REPORTS TAB ========== -->
     <div v-if="activeTab === 'reports'" class="space-y-5">
       <div v-if="reportsLoading" class="flex flex-col items-center gap-3 py-16" style="color: var(--muted)">
-        <div class="spinner" /><span class="text-[13px]">Đang tải…</span>
+        <div class="spinner" /><span class="text-[13px]">{{ $t('config.loading') }}</span>
       </div>
       <div v-if="reportsError" class="rounded-md px-3 py-2.5 text-[13px]" style="background: var(--red-bg); color: var(--red-fg)">{{ reportsError }}</div>
 
       <!-- Date range -->
       <div class="card p-4 flex flex-wrap items-end gap-3">
-        <div><label class="label">Từ ngày</label><input v-model="dateFrom" type="date" class="field" /></div>
-        <div><label class="label">Đến ngày</label><input v-model="dateTo" type="date" class="field" /></div>
-        <button class="btn btn-primary" :disabled="reportsLoading" @click="loadReports"><Icon name="refresh" :size="16" />Cập nhật</button>
+        <div><label class="label">{{ $t('config.reports_from') }}</label><input v-model="dateFrom" type="date" class="field" /></div>
+        <div><label class="label">{{ $t('config.reports_to') }}</label><input v-model="dateTo" type="date" class="field" /></div>
+        <button class="btn btn-primary" :disabled="reportsLoading" @click="loadReports"><Icon name="refresh" :size="16" />{{ $t('config.reports_update') }}</button>
       </div>
 
       <!-- Revenue chart -->
       <div class="card p-5">
-        <h3 class="text-[15px] font-semibold mb-4" style="color: var(--ink)">Doanh thu theo ngày</h3>
+        <h3 class="text-[15px] font-semibold mb-4" style="color: var(--ink)">{{ $t('config.revenue_by_day') }}</h3>
         <div class="h-64">
           <canvas v-if="revenueData.length > 0" ref="revenueChartRef" />
-          <div v-else class="flex items-center justify-center h-full text-[13px]" style="color: var(--faint)">Chưa có dữ liệu</div>
+          <div v-else class="flex items-center justify-center h-full text-[13px]" style="color: var(--faint)">{{ $t('config.no_data') }}</div>
         </div>
       </div>
 
       <!-- Top products -->
       <div class="card overflow-hidden">
         <div class="px-5 py-4" style="border-bottom: 1px solid var(--border)">
-          <h3 class="text-[15px] font-semibold" style="color: var(--ink)">Top sản phẩm bán chạy</h3>
+          <h3 class="text-[15px] font-semibold" style="color: var(--ink)">{{ $t('config.top_products') }}</h3>
         </div>
-        <div v-if="topProducts.length === 0" class="p-6 text-center text-[13px]" style="color: var(--faint)">Chưa có dữ liệu</div>
+        <div v-if="topProducts.length === 0" class="p-6 text-center text-[13px]" style="color: var(--faint)">{{ $t('config.no_data') }}</div>
         <table v-else class="data-table">
-          <thead><tr><th>#</th><th>Sản phẩm</th><th class="text-right">Giá</th><th class="text-right">Đã bán</th><th class="text-right">Doanh thu</th></tr></thead>
+          <thead><tr><th>#</th><th>{{ $t('config.col_product') }}</th><th class="text-right">{{ $t('config.col_price') }}</th><th class="text-right">{{ $t('config.col_sold') }}</th><th class="text-right">{{ $t('config.col_revenue') }}</th></tr></thead>
           <tbody>
             <tr v-for="(p, i) in topProducts" :key="p.id">
               <td style="color: var(--faint)">{{ i + 1 }}</td>
               <td style="font-weight: 500; color: var(--ink)">{{ p.name }}</td>
-              <td class="text-right" style="color: var(--muted)">{{ formatCurrency(p.price) }}</td>
+              <td class="text-right" style="color: var(--muted)">{{ formatMoney(p.price) }}</td>
               <td class="text-right" style="font-weight: 500; color: var(--ink)">{{ p.total_sold }}</td>
-              <td class="text-right" style="color: var(--green-fg); font-weight: 500">{{ formatCurrency(p.total_revenue) }}</td>
+              <td class="text-right" style="color: var(--green-fg); font-weight: 500">{{ formatMoney(p.total_revenue) }}</td>
             </tr>
           </tbody>
         </table>
@@ -333,11 +389,11 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
       <!-- Top users -->
       <div class="card overflow-hidden">
         <div class="px-5 py-4" style="border-bottom: 1px solid var(--border)">
-          <h3 class="text-[15px] font-semibold" style="color: var(--ink)">Top người dùng</h3>
+          <h3 class="text-[15px] font-semibold" style="color: var(--ink)">{{ $t('config.top_users') }}</h3>
         </div>
-        <div v-if="topUsers.length === 0" class="p-6 text-center text-[13px]" style="color: var(--faint)">Chưa có dữ liệu</div>
+        <div v-if="topUsers.length === 0" class="p-6 text-center text-[13px]" style="color: var(--faint)">{{ $t('config.no_data') }}</div>
         <table v-else class="data-table">
-          <thead><tr><th>#</th><th>Người dùng</th><th class="text-right">Số đơn</th><th class="text-right">Tổng chi tiêu</th></tr></thead>
+          <thead><tr><th>#</th><th>{{ $t('config.col_user') }}</th><th class="text-right">{{ $t('config.col_orders') }}</th><th class="text-right">{{ $t('config.col_spent') }}</th></tr></thead>
           <tbody>
             <tr v-for="(u, i) in topUsers" :key="u.id">
               <td style="color: var(--faint)">{{ i + 1 }}</td>
@@ -346,7 +402,7 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
                 <span class="ml-1.5 text-xs" style="color: var(--muted)">#{{ u.telegram_id }}</span>
               </td>
               <td class="text-right" style="color: var(--ink)">{{ u.order_count }}</td>
-              <td class="text-right" style="color: var(--green-fg); font-weight: 500">{{ formatCurrency(u.total_spent) }}</td>
+              <td class="text-right" style="color: var(--green-fg); font-weight: 500">{{ formatMoney(u.total_spent) }}</td>
             </tr>
           </tbody>
         </table>

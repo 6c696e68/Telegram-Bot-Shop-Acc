@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import fc from 'fast-check'
 import { TransactionService } from '../src/services/transaction'
+import { completeDeposit } from '../src/services/deposit-service'
 import type { DbUser, DbTransaction } from '../src/types/db'
 
 /**
@@ -269,15 +270,17 @@ describe('Property 2: Deposit cộng chính xác số tiền', () => {
           const depositId = await seedDeposit(env.DB, userId, depositAmount)
           const sepayTxId = `SEP${Date.now()}`
 
-          const result = await transactionService.executeDeposit(
-            env.DB,
+          const result = await completeDeposit({
+            db: env.DB,
             depositId,
             userId,
-            depositAmount,
-            sepayTxId
-          )
+            creditVnd: depositAmount,
+            provider: 'sepay',
+            sepayTransactionId: sepayTxId,
+          })
 
           expect(result.success).toBe(true)
+          if (!result.success) return
           expect(result.newBalance).toBe(initialBalance + depositAmount)
 
           const actualBalance = await getUserBalance(env.DB, userId)
@@ -415,13 +418,14 @@ describe('Property 5: Mỗi thay đổi balance có transaction record', () => {
           const depositId = await seedDeposit(env.DB, userId, depositAmount)
           const sepayTxId = `SEP${Date.now()}_${Math.random()}`
 
-          const result = await transactionService.executeDeposit(
-            env.DB,
+          const result = await completeDeposit({
+            db: env.DB,
             depositId,
             userId,
-            depositAmount,
-            sepayTxId
-          )
+            creditVnd: depositAmount,
+            provider: 'sepay',
+            sepayTransactionId: sepayTxId,
+          })
 
           expect(result.success).toBe(true)
 

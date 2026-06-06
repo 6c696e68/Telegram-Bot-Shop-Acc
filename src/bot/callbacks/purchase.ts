@@ -1,6 +1,7 @@
 /**
  * Purchase flow handlers — flow mua tài khoản.
- * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10, 3.11, 7.5, 7.6, 7.7
+ * Nội dung + định dạng tiền theo Language của user (R4.1, R4.6).
+ * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10, 3.11, 4.1, 4.6, 7.5, 7.6, 7.7
  */
 
 import type { DbProductType } from '../../types/db'
@@ -11,9 +12,12 @@ import {
   buildInlineKeyboard,
   buildBackButton,
 } from '../telegram-api'
-import { formatCurrency } from '../../utils/format'
+import { formatMoney } from '../../utils/format'
 import { transactionService } from '../../services/transaction'
 import { renderSuccessMessage } from '../../utils/telegram-template'
+import { loadProductTypeTemplates } from '../../services/product-template'
+import { resolveLang } from '../../services/user-locale'
+import { t, type Lang } from '../i18n'
 import { setSession } from '../session'
 import {
   consumeToken,
@@ -46,6 +50,7 @@ export async function handleCategoryList(
   botToken: string,
   chatId: number,
   messageId: number | undefined,
+  lang: Lang,
   page = 0
 ): Promise<void> {
   // Query categories có stock > 0
@@ -65,16 +70,10 @@ export async function handleCategoryList(
   const categories = result.results
 
   if (categories.length === 0) {
-    await editOrSendMessage(
-      botToken,
-      chatId,
-      messageId,
-      '📦 Hiện tại không có sản phẩm nào khả dụng.\n\nVui lòng quay lại sau!',
-      {
-        parse_mode: 'HTML',
-        reply_markup: buildInlineKeyboard([buildBackButton('menu:main')]),
-      }
-    )
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.empty'), {
+      parse_mode: 'HTML',
+      reply_markup: buildInlineKeyboard([buildBackButton('menu:main', lang)]),
+    })
     return
   }
 
@@ -86,7 +85,12 @@ export async function handleCategoryList(
   // Build category buttons (1 per row)
   const buttons: InlineKeyboardButton[][] = pageItems.map((cat) => [
     {
-      text: `${cat.emoji} ${cat.name} — ${formatCurrency(cat.price)} (còn ${cat.stock})`,
+      text: t(lang, 'shop.item_label', {
+        emoji: cat.emoji,
+        name: cat.name,
+        price: formatMoney(cat.price, lang),
+        stock: cat.stock,
+      }),
       callback_data: `cat:${cat.id}`,
     },
   ])
@@ -94,22 +98,22 @@ export async function handleCategoryList(
   // Pagination nav buttons
   const navRow: InlineKeyboardButton[] = []
   if (safePage > 0) {
-    navRow.push({ text: '⬅️ Trước', callback_data: `page:cat:${safePage - 1}` })
+    navRow.push({ text: t(lang, 'shop.prev'), callback_data: `page:cat:${safePage - 1}` })
   }
   if (safePage < totalPages - 1) {
-    navRow.push({ text: '➡️ Sau', callback_data: `page:cat:${safePage + 1}` })
+    navRow.push({ text: t(lang, 'shop.next'), callback_data: `page:cat:${safePage + 1}` })
   }
   if (navRow.length > 0) {
     buttons.push(navRow)
   }
 
   // Back button
-  buttons.push(buildBackButton('menu:main'))
+  buttons.push(buildBackButton('menu:main', lang))
 
   const text = [
-    '🛒 <b>Mua tài khoản</b>',
+    t(lang, 'shop.title'),
     '',
-    `📋 Danh sách sản phẩm (trang ${safePage + 1}/${totalPages}):`,
+    t(lang, 'shop.list_header', { page: safePage + 1, total: totalPages }),
   ].join('\n')
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
@@ -130,7 +134,8 @@ export async function handleCategoryDetail(
   chatId: number,
   messageId: number | undefined,
   categoryId: number,
-  userId: number
+  userId: number,
+  lang: Lang
 ): Promise<void> {
   // Query category info + stock count
   const category = await db
@@ -139,15 +144,9 @@ export async function handleCategoryDetail(
     .first<DbProductType>()
 
   if (!category) {
-    await editOrSendMessage(
-      botToken,
-      chatId,
-      messageId,
-      '❌ Không tìm thấy loại sản phẩm này.',
-      {
-        reply_markup: buildInlineKeyboard([buildBackButton('cat:list')]),
-      }
-    )
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.not_found'), {
+      reply_markup: buildInlineKeyboard([buildBackButton('cat:list', lang)]),
+    })
     return
   }
 
@@ -165,10 +164,10 @@ export async function handleCategoryDetail(
       botToken,
       chatId,
       messageId,
-      `${category.emoji} <b>${category.name}</b>\n\n⚠️ Sản phẩm này hiện đã hết hàng.`,
+      `${category.emoji} <b>${category.name}</b>\n\n${t(lang, 'shop.out_of_stock')}`,
       {
         parse_mode: 'HTML',
-        reply_markup: buildInlineKeyboard([buildBackButton('cat:list')]),
+        reply_markup: buildInlineKeyboard([buildBackButton('cat:list', lang)]),
       }
     )
     return
@@ -183,11 +182,11 @@ export async function handleCategoryDetail(
     `${category.emoji} <b>${category.name}</b>`,
     '',
     description,
-    `💰 Giá: <b>${formatCurrency(category.price)}</b>/sản phẩm`,
-    `📦 Còn lại: <b>${stock}</b> sản phẩm`,
+    t(lang, 'shop.detail_price', { price: formatMoney(category.price, lang) }),
+    t(lang, 'shop.detail_stock', { stock }),
     '',
-    '🔢 Chọn số lượng muốn mua:',
-    `💡 Hoặc nhập số lượng (1-${Math.min(MAX_QTY, stock)})`,
+    t(lang, 'shop.detail_choose_qty'),
+    t(lang, 'shop.detail_qty_hint', { max: Math.min(MAX_QTY, stock) }),
   ].join('\n')
 
   // Build qty grid 5×2 (rows of 5)
@@ -202,7 +201,7 @@ export async function handleCategoryDetail(
   }
 
   // Back button
-  qtyButtons.push(buildBackButton('cat:list'))
+  qtyButtons.push(buildBackButton('cat:list', lang))
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
     parse_mode: 'HTML',
@@ -213,7 +212,7 @@ export async function handleCategoryDetail(
 // --- 3. Quantity Select (Confirmation) ---
 
 /**
- * Hiển thị xác nhận: tổng tiền + nút "✅ Xác nhận mua".
+ * Hiển thị xác nhận: tổng tiền + nút xác nhận mua.
  * Callback: `qty:{catId}:{qty}`
  */
 export async function handleQuantitySelect(
@@ -223,7 +222,8 @@ export async function handleQuantitySelect(
   messageId: number | undefined,
   categoryId: number,
   quantity: number,
-  userId: number
+  userId: number,
+  lang: Lang
 ): Promise<void> {
   // Validate quantity
   if (!Number.isInteger(quantity) || quantity <= 0 || quantity > MAX_QTY) {
@@ -231,9 +231,9 @@ export async function handleQuantitySelect(
       botToken,
       chatId,
       messageId,
-      `⚠️ Số lượng không hợp lệ. Vui lòng chọn từ 1 đến ${MAX_QTY}.`,
+      t(lang, 'shop.qty_invalid', { max: MAX_QTY }),
       {
-        reply_markup: buildInlineKeyboard([buildBackButton(`cat:${categoryId}`)]),
+        reply_markup: buildInlineKeyboard([buildBackButton(`cat:${categoryId}`, lang)]),
       }
     )
     return
@@ -246,15 +246,9 @@ export async function handleQuantitySelect(
     .first<DbProductType>()
 
   if (!category) {
-    await editOrSendMessage(
-      botToken,
-      chatId,
-      messageId,
-      '❌ Không tìm thấy loại sản phẩm.',
-      {
-        reply_markup: buildInlineKeyboard([buildBackButton('cat:list')]),
-      }
-    )
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.type_not_found'), {
+      reply_markup: buildInlineKeyboard([buildBackButton('cat:list', lang)]),
+    })
     return
   }
 
@@ -273,18 +267,18 @@ export async function handleQuantitySelect(
     if (stock > 0) {
       buttons.push([
         {
-          text: `🛒 Mua ${stock} sản phẩm còn lại`,
+          text: t(lang, 'shop.buy_remaining', { stock }),
           callback_data: `qty:${categoryId}:${stock}`,
         },
       ])
     }
-    buttons.push(buildBackButton(`cat:${categoryId}`))
+    buttons.push(buildBackButton(`cat:${categoryId}`, lang))
 
     await editOrSendMessage(
       botToken,
       chatId,
       messageId,
-      `⚠️ Chỉ còn <b>${stock}</b> sản phẩm khả dụng.\n\nBạn yêu cầu ${quantity} nhưng kho không đủ.`,
+      t(lang, 'shop.stock_short', { stock, qty: quantity }),
       {
         parse_mode: 'HTML',
         reply_markup: buildInlineKeyboard(buttons),
@@ -296,19 +290,19 @@ export async function handleQuantitySelect(
   // Show confirmation
   const totalAmount = category.price * quantity
   const text = [
-    '🛒 <b>Xác nhận mua hàng</b>',
+    t(lang, 'shop.confirm_title'),
     '',
     `${category.emoji} ${category.name}`,
-    `📦 Số lượng: <b>${quantity}</b>`,
-    `💰 Đơn giá: ${formatCurrency(category.price)}`,
-    `💵 Tổng tiền: <b>${formatCurrency(totalAmount)}</b>`,
+    t(lang, 'shop.confirm_qty', { qty: quantity }),
+    t(lang, 'shop.confirm_unit', { price: formatMoney(category.price, lang) }),
+    t(lang, 'shop.confirm_total', { total: formatMoney(totalAmount, lang) }),
     '',
-    'Bấm nút bên dưới để xác nhận mua:',
+    t(lang, 'shop.confirm_hint'),
   ].join('\n')
 
   const buttons = [
-    [{ text: '✅ Xác nhận mua', callback_data: `buy:${categoryId}:${quantity}` }],
-    buildBackButton(`cat:${categoryId}`),
+    [{ text: t(lang, 'shop.confirm_btn'), callback_data: `buy:${categoryId}:${quantity}` }],
+    buildBackButton(`cat:${categoryId}`, lang),
   ]
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
@@ -330,7 +324,8 @@ export async function handlePurchaseConfirm(
   messageId: number | undefined,
   categoryId: number,
   quantity: number,
-  userId: number
+  userId: number,
+  lang: Lang
 ): Promise<void> {
   // Cooldown chặt cho thao tác đắt + nhạy cảm tài chính: chặn double-tap "Xác nhận mua".
   const verdict = consumeToken(`buy:${userId}`, PURCHASE_RULE)
@@ -339,7 +334,7 @@ export async function handlePurchaseConfirm(
       await sendMessage(
         botToken,
         chatId,
-        `⏳ Bạn vừa thực hiện giao dịch. Vui lòng chờ ${retryAfterSeconds(verdict.retryAfterMs)} giây rồi thử lại.`,
+        t(lang, 'shop.cooldown', { sec: retryAfterSeconds(verdict.retryAfterMs) }),
         { parse_mode: 'HTML' }
       )
     }
@@ -348,18 +343,18 @@ export async function handlePurchaseConfirm(
 
   // Query user by telegram_id to get internal user.id
   const user = await db
-    .prepare('SELECT id, balance FROM users WHERE telegram_id = ?')
+    .prepare('SELECT id, balance, language FROM users WHERE telegram_id = ?')
     .bind(userId)
-    .first<{ id: number; balance: number }>()
+    .first<{ id: number; balance: number; language: string | null }>()
 
   if (!user) {
     await editOrSendMessage(
       botToken,
       chatId,
       messageId,
-      '❌ Không tìm thấy tài khoản. Gõ /start để bắt đầu.',
+      t(lang, 'deposit.account_not_found'),
       {
-        reply_markup: buildInlineKeyboard([buildBackButton('menu:main')]),
+        reply_markup: buildInlineKeyboard([buildBackButton('menu:main', lang)]),
       }
     )
     return
@@ -372,15 +367,9 @@ export async function handlePurchaseConfirm(
     .first<DbProductType>()
 
   if (!category) {
-    await editOrSendMessage(
-      botToken,
-      chatId,
-      messageId,
-      '❌ Không tìm thấy loại sản phẩm.',
-      {
-        reply_markup: buildInlineKeyboard([buildBackButton('cat:list')]),
-      }
-    )
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.type_not_found'), {
+      reply_markup: buildInlineKeyboard([buildBackButton('cat:list', lang)]),
+    })
     return
   }
 
@@ -399,16 +388,16 @@ export async function handlePurchaseConfirm(
     if (result.error === 'insufficient_balance') {
       const shortfall = totalAmount - user.balance
       const text = [
-        '❌ <b>Số dư không đủ</b>',
+        t(lang, 'shop.insufficient_title'),
         '',
-        `💰 Số dư hiện tại: ${formatCurrency(user.balance)}`,
-        `💵 Cần thanh toán: ${formatCurrency(totalAmount)}`,
-        `📌 Cần nạp thêm: <b>${formatCurrency(shortfall)}</b>`,
+        t(lang, 'shop.insufficient_balance', { balance: formatMoney(user.balance, lang) }),
+        t(lang, 'shop.insufficient_need', { total: formatMoney(totalAmount, lang) }),
+        t(lang, 'shop.insufficient_topup', { shortfall: formatMoney(shortfall, lang) }),
       ].join('\n')
 
       const buttons = [
-        [{ text: '💰 Nạp tiền', callback_data: 'dep:menu' }],
-        buildBackButton(`cat:${categoryId}`),
+        [{ text: t(lang, 'menu.deposit'), callback_data: 'dep:menu' }],
+        buildBackButton(`cat:${categoryId}`, lang),
       ]
 
       await editOrSendMessage(botToken, chatId, messageId, text, {
@@ -433,18 +422,18 @@ export async function handlePurchaseConfirm(
       if (remaining > 0) {
         buttons.push([
           {
-            text: `🛒 Mua ${remaining} sản phẩm còn lại`,
+            text: t(lang, 'shop.buy_remaining', { stock: remaining }),
             callback_data: `qty:${categoryId}:${remaining}`,
           },
         ])
       }
-      buttons.push(buildBackButton(`cat:${categoryId}`))
+      buttons.push(buildBackButton(`cat:${categoryId}`, lang))
 
       await editOrSendMessage(
         botToken,
         chatId,
         messageId,
-        `⚠️ Chỉ còn <b>${remaining}</b> sản phẩm khả dụng.\n\nVui lòng chọn số lượng phù hợp.`,
+        t(lang, 'shop.stock_short2', { stock: remaining }),
         {
           parse_mode: 'HTML',
           reply_markup: buildInlineKeyboard(buttons),
@@ -454,15 +443,9 @@ export async function handlePurchaseConfirm(
     }
 
     // db_error or unknown
-    await editOrSendMessage(
-      botToken,
-      chatId,
-      messageId,
-      '❌ Đã xảy ra lỗi khi xử lý giao dịch. Vui lòng thử lại sau.',
-      {
-        reply_markup: buildInlineKeyboard([buildBackButton('menu:main')]),
-      }
-    )
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.tx_error'), {
+      reply_markup: buildInlineKeyboard([buildBackButton('menu:main', lang)]),
+    })
     return
   }
 
@@ -470,20 +453,26 @@ export async function handlePurchaseConfirm(
   const products = result.products ?? []
   const balanceAfter = user.balance - totalAmount
 
-  // Render tin nhắn thành công theo template của category (fallback mặc định)
-  const contentText = renderSuccessMessage(category.success_template, {
-    emoji: category.emoji,
-    name: category.name,
-    quantity,
-    totalAmount,
-    balanceAfter,
-    contents: products.map((p) => p.content),
-  })
+  // Render tin nhắn thành công theo template đa ngôn ngữ của category (R16.5)
+  const templatesByLang = await loadProductTypeTemplates(db, category.id)
+  const successLang = await resolveLang(db, user)
+  const contentText = renderSuccessMessage(
+    templatesByLang,
+    {
+      emoji: category.emoji,
+      name: category.name,
+      quantity,
+      totalAmount,
+      balanceAfter,
+      contents: products.map((p) => p.content),
+    },
+    successLang
+  )
 
   const successButtons = [
     [
-      { text: '🛒 Mua thêm', callback_data: 'cat:list' },
-      { text: '🔙 Quay lại', callback_data: 'menu:main' },
+      { text: t(successLang, 'shop.buy_more'), callback_data: 'cat:list' },
+      { text: t(successLang, 'common.back'), callback_data: 'menu:main' },
     ],
   ]
 
@@ -505,20 +494,17 @@ export async function handlePurchaseTextInput(
   chatId: number,
   userId: number,
   text: string,
-  categoryId: number
+  categoryId: number,
+  lang: Lang
 ): Promise<void> {
   const qty = parseInt(text, 10)
 
   // Validate: integer, 1-50
   if (isNaN(qty) || !Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) {
-    await sendMessage(
-      botToken,
-      chatId,
-      `⚠️ Số lượng không hợp lệ. Vui lòng nhập số nguyên từ 1 đến ${MAX_QTY}.`
-    )
+    await sendMessage(botToken, chatId, t(lang, 'shop.qty_invalid_input', { max: MAX_QTY }))
     return
   }
 
   // Delegate to quantity select handler (confirmation screen)
-  await handleQuantitySelect(db, botToken, chatId, undefined, categoryId, qty, userId)
+  await handleQuantitySelect(db, botToken, chatId, undefined, categoryId, qty, userId, lang)
 }

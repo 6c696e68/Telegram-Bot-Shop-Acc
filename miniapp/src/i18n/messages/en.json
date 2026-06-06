@@ -1,0 +1,131 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save",
+    "back": "Back",
+    "error": "Something went wrong. Please try again."
+  },
+  "onboarding": {
+    "title": "Choose your region",
+    "subtitle": "We use your region to show the right language and payment methods.",
+    "region_vietnam": "Vietnam",
+    "region_international": "International",
+    "continue": "Continue"
+  },
+  "settings": {
+    "title": "Settings",
+    "region": "Region",
+    "language": "Language",
+    "region_vietnam": "Vietnam",
+    "region_international": "International",
+    "language_vi": "Vietnamese",
+    "language_en": "English",
+    "saved": "Saved"
+  },
+  "home": {
+    "hello": "Hello, {name}",
+    "shortcuts": "Shortcuts",
+    "shop": "Shop",
+    "deposit": "Deposit",
+    "history": "History",
+    "account": "Account",
+    "open": "Open {label}"
+  },
+  "shop": {
+    "title": "Shop",
+    "list_label": "Product list",
+    "empty_title": "No products",
+    "empty_desc": "There are no products available to buy yet.",
+    "load_error": "Could not load the product list. Please try again."
+  },
+  "product": {
+    "in_stock": "{count} in stock",
+    "out_of_stock": "Out of stock",
+    "quantity": "Quantity",
+    "total": "Total",
+    "confirm_buy": "Confirm purchase",
+    "sold_out_block": "This product is sold out and cannot be purchased.",
+    "success_title": "Purchase successful",
+    "success_sub": "Bought {quantity} × {name}",
+    "your_account": "Your account",
+    "remaining_balance": "Remaining balance",
+    "bought_ok": "Purchase successful.",
+    "load_error": "Could not load product details. Please try again.",
+    "not_found": "Product not found.",
+    "err_insufficient_balance": "Insufficient balance for this transaction.",
+    "err_insufficient_stock": "Not enough stock for this product.",
+    "err_validation": "Invalid quantity.",
+    "err_rate_limited": "You are acting too fast. Please try again shortly.",
+    "err_generic": "Purchase failed. Please try again."
+  },
+  "history": {
+    "title": "Order history",
+    "list_label": "Orders",
+    "qty": "Qty: {count}",
+    "empty_title": "No orders",
+    "empty_desc": "You have not bought anything yet. Visit the Shop.",
+    "load_error": "Could not load order history. Please try again."
+  },
+  "order": {
+    "quantity": "Quantity",
+    "status": "Status",
+    "time": "Time",
+    "your_account": "Your account",
+    "not_found": "Order not found.",
+    "load_error": "Could not load order details. Please try again."
+  },
+  "status": {
+    "completed": "Completed",
+    "refunded": "Refunded"
+  },
+  "account": {
+    "title": "Account",
+    "subtitle": "Your account information and balance.",
+    "identity": "Identity",
+    "telegram_id": "Telegram ID",
+    "username": "Username",
+    "name": "Name",
+    "username_unset": "Not set",
+    "balance": "Balance",
+    "load_error": "Could not load account info. Please try again."
+  },
+  "deposit": {
+    "title": "Deposit",
+    "choose_method": "Choose a deposit method",
+    "method_sepay": "Bank transfer (VietQR)",
+    "method_cryptobot": "USDT (Crypto Pay)",
+    "amount_vnd": "Amount (VND)",
+    "amount_usdt": "Amount (USDT)",
+    "amount_placeholder": "Enter amount",
+    "min_usdt": "Minimum {min} USDT",
+    "create": "Create deposit",
+    "pay_crypto": "Pay with Crypto Pay",
+    "scan_qr": "Scan the QR code to transfer",
+    "transfer_code": "Transfer note",
+    "waiting": "Waiting for payment...",
+    "success": "Deposit successful",
+    "method_unavailable": "This method is not available for your region."
+  },
+  "qr": {
+    "bank": "Bank",
+    "account": "Account number",
+    "owner": "Account holder",
+    "amount": "Amount",
+    "note": "Transfer note",
+    "copied": "Copied"
+  },
+  "unauthorized": {
+    "title": "Please reopen from Telegram",
+    "desc": "Your session has expired or is invalid. Please close and reopen the Mini App from the Telegram bot to continue. You can also try reloading.",
+    "reload": "Reload",
+    "aria": "Session expired"
+  },
+  "a11y": {
+    "loading": "Loading"
+  },
+  "balance": {
+    "default": "Balance"
+  }
+}

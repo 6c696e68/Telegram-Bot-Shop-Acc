@@ -22,6 +22,7 @@
 
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import GlassCard from '@/components/GlassCard.vue'
 import QtyStepper from '@/components/QtyStepper.vue'
 import BalanceBadge from '@/components/BalanceBadge.vue'
@@ -41,6 +42,7 @@ const props = defineProps<{
 const router = useRouter()
 const ui = useUiStore()
 const user = useUserStore()
+const { t } = useI18n()
 
 /** Chi tiết loại sản phẩm; `null` cho tới khi tải xong. */
 const detail = ref<ProductTypeDetailDto | null>(null)
@@ -69,21 +71,21 @@ const total = computed(() => (detail.value ? detail.value.price * quantity.value
 /** Tổng tiền đã định dạng tiền tệ thống nhất với hệ thống. */
 const totalDisplay = computed(() => formatCurrency(total.value))
 
-/** Map mã lỗi nghiệp vụ của server sang thông báo tiếng Việt cho người mua. */
+/** Map mã lỗi nghiệp vụ của server sang thông báo cho người mua (theo locale). */
 function purchaseErrorMessage(code: string): string {
   switch (code) {
     case 'insufficient_balance':
-      return 'Số dư không đủ để thực hiện giao dịch.'
+      return t('product.err_insufficient_balance')
     case 'insufficient_stock':
-      return 'Sản phẩm không còn đủ số lượng trong kho.'
+      return t('product.err_insufficient_stock')
     case 'validation_error':
-      return 'Số lượng không hợp lệ.'
+      return t('product.err_validation')
     case 'not_found':
-      return 'Không tìm thấy sản phẩm.'
+      return t('product.not_found')
     case 'rate_limited':
-      return 'Bạn thao tác quá nhanh. Vui lòng thử lại sau giây lát.'
+      return t('product.err_rate_limited')
     default:
-      return 'Mua hàng thất bại. Vui lòng thử lại.'
+      return t('product.err_generic')
   }
 }
 
@@ -104,7 +106,7 @@ async function submitPurchase(): Promise<void> {
     result.value = res
     user.setBalance(res.new_balance, res.new_balance_display) // Req 6.7
     ui.haptic('success') // Req 13.5
-    ui.toast('Mua hàng thành công.', 'success')
+    ui.toast(t('product.bought_ok'), 'success')
     // Ẩn MainButton sau khi mua để tránh mua lại trên màn kết quả.
     cleanupMain()
     cleanupMain = () => {}
@@ -114,7 +116,7 @@ async function submitPurchase(): Promise<void> {
       if (err.status === 401) return // client đã xử lý màn "Mở lại từ Telegram"
       ui.toast(purchaseErrorMessage(err.error), 'error')
     } else {
-      ui.toast('Mua hàng thất bại. Vui lòng thử lại.', 'error')
+      ui.toast(t('product.err_generic'), 'error')
     }
   } finally {
     submitting.value = false
@@ -130,7 +132,7 @@ function setupMainButton(): void {
   cleanupMain()
   cleanupMain = () => {}
   if (!detail.value || !detail.value.in_stock || result.value) return
-  cleanupMain = showMainButton('Xác nhận mua', () => {
+  cleanupMain = showMainButton(t('product.confirm_buy'), () => {
     void submitPurchase()
   })
 }
@@ -147,11 +149,11 @@ async function load(): Promise<void> {
     if (err instanceof ApiError) {
       if (err.status === 401) return
       if (err.status === 404) {
-        ui.toast('Không tìm thấy sản phẩm.', 'error')
+        ui.toast(t('product.not_found'), 'error')
         return
       }
     }
-    ui.toast('Không tải được chi tiết sản phẩm. Vui lòng thử lại.', 'error')
+    ui.toast(t('product.load_error'), 'error')
   }
 }
 
@@ -173,7 +175,7 @@ onUnmounted(() => {
       <header class="flex flex-col items-center gap-2 text-center">
         <span class="text-6xl leading-none" aria-hidden="true">{{ detail.emoji }}</span>
         <h1 class="text-ios-title text-text">{{ detail.name }}</h1>
-        <p class="text-ios-title tabular-nums text-accent">{{ detail.price_display }}</p>
+        <p class="text-ios-title tabular-nums text-accent">{{ formatCurrency(detail.price) }}</p>
       </header>
 
       <!-- Mô tả + tồn kho (Req 5.3, 5.4) -->
@@ -185,7 +187,7 @@ onUnmounted(() => {
           class="text-ios-footnote"
           :class="[detail.description ? 'mt-2' : '', detail.in_stock ? 'text-hint' : 'text-ios-red']"
         >
-          {{ detail.in_stock ? `Còn ${detail.stock} sản phẩm` : 'Hết hàng' }}
+          {{ detail.in_stock ? $t('product.in_stock', { count: detail.stock }) : $t('product.out_of_stock') }}
         </p>
       </GlassCard>
 
@@ -193,14 +195,14 @@ onUnmounted(() => {
       <section
         v-if="detail.in_stock && !result"
         class="flex flex-col gap-3"
-        aria-label="Chọn số lượng"
+        :aria-label="$t('product.quantity')"
       >
         <div class="flex items-center justify-between px-1">
-          <span class="text-ios-headline text-text">Số lượng</span>
+          <span class="text-ios-headline text-text">{{ $t('product.quantity') }}</span>
           <QtyStepper v-model:quantity="quantity" :min="1" :max="maxQty" />
         </div>
         <div class="glass flex items-center justify-between p-4">
-          <span class="text-ios-headline text-text">Tổng tiền</span>
+          <span class="text-ios-headline text-text">{{ $t('product.total') }}</span>
           <span class="text-ios-title tabular-nums text-accent">{{ totalDisplay }}</span>
         </div>
       </section>
@@ -208,24 +210,24 @@ onUnmounted(() => {
       <!-- Hết hàng: chặn mua (Req 5.4) -->
       <GlassCard v-else-if="!detail.in_stock && !result">
         <p class="text-center text-ios-body text-ios-red">
-          Sản phẩm đã hết hàng, không thể mua.
+          {{ $t('product.sold_out_block') }}
         </p>
       </GlassCard>
 
       <!-- Sau khi mua thành công: nội dung tài khoản + số dư mới (Req 6.6, 6.7) -->
-      <section v-if="result" class="flex flex-col gap-4" aria-label="Kết quả mua hàng">
+      <section v-if="result" class="flex flex-col gap-4" :aria-label="$t('product.success_title')">
         <GlassCard>
           <div class="flex flex-col items-center gap-2 text-center">
             <CircleCheck :size="40" :stroke-width="1.75" class="text-ios-green" aria-hidden="true" />
-            <h2 class="text-ios-headline text-text">Mua hàng thành công</h2>
+            <h2 class="text-ios-headline text-text">{{ $t('product.success_title') }}</h2>
             <p class="text-ios-footnote text-hint">
-              Đã mua {{ result.quantity }} × {{ detail.name }}
+              {{ $t('product.success_sub', { quantity: result.quantity, name: detail.name }) }}
             </p>
           </div>
         </GlassCard>
 
         <div class="flex flex-col gap-2">
-          <h3 class="px-1 text-ios-footnote text-hint">Tài khoản của bạn</h3>
+          <h3 class="px-1 text-ios-footnote text-hint">{{ $t('product.your_account') }}</h3>
           <p
             v-for="(content, idx) in result.contents"
             :key="idx"
@@ -237,8 +239,7 @@ onUnmounted(() => {
 
         <BalanceBadge
           :balance="result.new_balance"
-          :display="result.new_balance_display"
-          label="Số dư còn lại"
+          :label="$t('product.remaining_balance')"
         />
       </section>
     </template>

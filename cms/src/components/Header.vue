@@ -1,26 +1,38 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { removeToken } from '@/api/client'
+import { AVAILABLE_LOCALES, setLocale } from '@/i18n'
 import Icon from './Icon.vue'
 
 defineEmits<{ toggleSidebar: [] }>()
 
 const router = useRouter()
 const route = useRoute()
+const { t, locale } = useI18n()
 
-const TITLES: Record<string, string> = {
-  dashboard: 'Tổng quan',
-  users: 'Người dùng',
-  categories: 'Danh mục',
-  products: 'Sản phẩm',
-  orders: 'Đơn hàng',
-  transactions: 'Giao dịch',
-  deposits: 'Nạp tiền',
-  config: 'Cấu hình & Báo cáo',
+const currentLocale = computed(() => locale.value)
+
+function onLocaleChange(event: Event): void {
+  setLocale((event.target as HTMLSelectElement).value)
 }
 
-const pageTitle = computed(() => TITLES[route.name as string] || 'Shop Admin')
+const TITLES: Record<string, string> = {
+  dashboard: 'nav.dashboard',
+  users: 'nav.users',
+  categories: 'nav.categories',
+  products: 'nav.products',
+  orders: 'nav.orders',
+  transactions: 'nav.transactions',
+  deposits: 'nav.deposits',
+  config: 'nav.config',
+}
+
+const pageTitle = computed(() => {
+  const key = TITLES[route.name as string]
+  return key ? t(key) : 'Shop Admin'
+})
 
 function logout() {
   removeToken()
@@ -44,6 +56,14 @@ function logout() {
     <div class="flex-1" />
 
     <div class="flex items-center gap-2">
+      <select
+        :value="currentLocale"
+        class="btn btn-secondary btn-sm"
+        :aria-label="$t('common.language')"
+        @change="onLocaleChange"
+      >
+        <option v-for="loc in AVAILABLE_LOCALES" :key="loc" :value="loc">{{ loc.toUpperCase() }}</option>
+      </select>
       <div class="hidden items-center gap-2 rounded-md px-2.5 py-1.5 sm:flex" style="background: var(--surface-alt)">
         <div class="flex h-6 w-6 items-center justify-center rounded-full text-white" style="background: var(--accent)">
           <Icon name="user" :size="14" />
@@ -52,7 +72,7 @@ function logout() {
       </div>
       <button class="btn btn-secondary btn-sm" @click="logout">
         <Icon name="logout" :size="15" />
-        <span class="hidden sm:inline">Đăng xuất</span>
+        <span class="hidden sm:inline">{{ $t('common.logout') }}</span>
       </button>
     </div>
   </header>

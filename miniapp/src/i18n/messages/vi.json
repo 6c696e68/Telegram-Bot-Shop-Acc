@@ -1,0 +1,131 @@
+{
+  "common": {
+    "loading": "Đang tải...",
+    "retry": "Thử lại",
+    "cancel": "Huỷ",
+    "save": "Lưu",
+    "back": "Quay lại",
+    "error": "Đã có lỗi xảy ra. Vui lòng thử lại."
+  },
+  "onboarding": {
+    "title": "Chọn khu vực của bạn",
+    "subtitle": "Khu vực giúp hiển thị đúng ngôn ngữ và phương thức nạp phù hợp.",
+    "region_vietnam": "Việt Nam",
+    "region_international": "Quốc tế",
+    "continue": "Tiếp tục"
+  },
+  "settings": {
+    "title": "Thiết lập",
+    "region": "Khu vực",
+    "language": "Ngôn ngữ",
+    "region_vietnam": "Việt Nam",
+    "region_international": "Quốc tế",
+    "language_vi": "Tiếng Việt",
+    "language_en": "Tiếng Anh",
+    "saved": "Đã lưu"
+  },
+  "home": {
+    "hello": "Xin chào, {name}",
+    "shortcuts": "Lối tắt",
+    "shop": "Mua hàng",
+    "deposit": "Nạp tiền",
+    "history": "Lịch sử",
+    "account": "Tài khoản",
+    "open": "Mở {label}"
+  },
+  "shop": {
+    "title": "Mua hàng",
+    "list_label": "Danh sách sản phẩm",
+    "empty_title": "Chưa có sản phẩm",
+    "empty_desc": "Hiện chưa có loại sản phẩm nào để mua.",
+    "load_error": "Không tải được danh sách sản phẩm. Vui lòng thử lại."
+  },
+  "product": {
+    "in_stock": "Còn {count} sản phẩm",
+    "out_of_stock": "Hết hàng",
+    "quantity": "Số lượng",
+    "total": "Tổng tiền",
+    "confirm_buy": "Xác nhận mua",
+    "sold_out_block": "Sản phẩm đã hết hàng, không thể mua.",
+    "success_title": "Mua hàng thành công",
+    "success_sub": "Đã mua {quantity} × {name}",
+    "your_account": "Tài khoản của bạn",
+    "remaining_balance": "Số dư còn lại",
+    "bought_ok": "Mua hàng thành công.",
+    "load_error": "Không tải được chi tiết sản phẩm. Vui lòng thử lại.",
+    "not_found": "Không tìm thấy sản phẩm.",
+    "err_insufficient_balance": "Số dư không đủ để thực hiện giao dịch.",
+    "err_insufficient_stock": "Sản phẩm không còn đủ số lượng trong kho.",
+    "err_validation": "Số lượng không hợp lệ.",
+    "err_rate_limited": "Bạn thao tác quá nhanh. Vui lòng thử lại sau giây lát.",
+    "err_generic": "Mua hàng thất bại. Vui lòng thử lại."
+  },
+  "history": {
+    "title": "Lịch sử đơn hàng",
+    "list_label": "Danh sách đơn hàng",
+    "qty": "SL: {count}",
+    "empty_title": "Chưa có đơn hàng",
+    "empty_desc": "Bạn chưa mua sản phẩm nào. Hãy ghé mục Mua hàng nhé.",
+    "load_error": "Không tải được lịch sử đơn hàng. Vui lòng thử lại."
+  },
+  "order": {
+    "quantity": "Số lượng",
+    "status": "Trạng thái",
+    "time": "Thời gian",
+    "your_account": "Tài khoản của bạn",
+    "not_found": "Không tìm thấy đơn hàng.",
+    "load_error": "Không tải được chi tiết đơn hàng. Vui lòng thử lại."
+  },
+  "status": {
+    "completed": "Hoàn thành",
+    "refunded": "Đã hoàn tiền"
+  },
+  "account": {
+    "title": "Tài khoản",
+    "subtitle": "Thông tin tài khoản và số dư của bạn.",
+    "identity": "Thông tin định danh",
+    "telegram_id": "ID Telegram",
+    "username": "Tên người dùng",
+    "name": "Tên",
+    "username_unset": "Chưa đặt",
+    "balance": "Số dư",
+    "load_error": "Không tải được thông tin tài khoản. Vui lòng thử lại."
+  },
+  "deposit": {
+    "title": "Nạp tiền",
+    "choose_method": "Chọn phương thức nạp",
+    "method_sepay": "Chuyển khoản ngân hàng (VietQR)",
+    "method_cryptobot": "USDT (Crypto Pay)",
+    "amount_vnd": "Số tiền (VND)",
+    "amount_usdt": "Số tiền (USDT)",
+    "amount_placeholder": "Nhập số tiền",
+    "min_usdt": "Tối thiểu {min} USDT",
+    "create": "Tạo yêu cầu nạp",
+    "pay_crypto": "Thanh toán qua Crypto Pay",
+    "scan_qr": "Quét mã QR để chuyển khoản",
+    "transfer_code": "Nội dung chuyển khoản",
+    "waiting": "Đang chờ thanh toán...",
+    "success": "Nạp tiền thành công",
+    "method_unavailable": "Phương thức này không khả dụng cho khu vực của bạn."
+  },
+  "qr": {
+    "bank": "Ngân hàng",
+    "account": "Số tài khoản",
+    "owner": "Chủ tài khoản",
+    "amount": "Số tiền",
+    "note": "Nội dung CK",
+    "copied": "Đã chép"
+  },
+  "unauthorized": {
+    "title": "Cần mở lại từ Telegram",
+    "desc": "Phiên xác thực đã hết hạn hoặc không hợp lệ. Vui lòng đóng và mở lại Mini App từ bot Telegram để tiếp tục. Bạn cũng có thể thử tải lại.",
+    "reload": "Tải lại",
+    "aria": "Phiên đăng nhập đã hết hạn"
+  },
+  "a11y": {
+    "loading": "Đang tải"
+  },
+  "balance": {
+    "default": "Số dư"
+  }
+}

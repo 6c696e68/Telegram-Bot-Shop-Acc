@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import Icon from '@/components/Icon.vue'
 import TelegramEditor from '@/components/TelegramEditor.vue'
+import { AVAILABLE_LOCALES } from '@/i18n'
+import { formatMoney } from '@/utils/format'
+
+const { t } = useI18n()
 
 interface Category {
   id: number
@@ -25,8 +30,10 @@ interface CategoryForm {
   price: number | null
   emoji: string
   is_visible: number
-  success_template: string
 }
+
+/** Các tab ngôn ngữ sinh từ locale CMS (đồng bộ SUPPORTED_LANGUAGES) — R16.2. */
+const LANG_TABS = AVAILABLE_LOCALES
 
 const categories = ref<Category[]>([])
 const loading = ref(false)
@@ -46,8 +53,12 @@ const form = ref<CategoryForm>({
   price: null,
   emoji: '',
   is_visible: 1,
-  success_template: '',
 })
+
+/** Template bán hàng theo từng ngôn ngữ (R16.1, R16.2) — key = mã locale. */
+const templatesByLang = ref<Record<string, string>>({})
+/** Tab ngôn ngữ đang chỉnh trong trình soạn template. */
+const activeLang = ref<string>(LANG_TABS[0] ?? 'vi')
 
 // Delete confirmation
 const showDeleteConfirm = ref(false)
@@ -66,24 +77,32 @@ async function fetchCategories() {
     if (res.success && res.data) {
       categories.value = res.data
     } else {
-      error.value = res.error || 'Không thể tải danh sách'
+      error.value = res.error || t('common.error')
     }
   } catch {
-    error.value = 'Lỗi kết nối server'
+    error.value = t('common.error')
   } finally {
     loading.value = false
   }
 }
 
+function emptyTemplates(): Record<string, string> {
+  const obj: Record<string, string> = {}
+  for (const lang of LANG_TABS) obj[lang] = ''
+  return obj
+}
+
 function openCreateModal() {
   modalMode.value = 'create'
   editingId.value = null
-  form.value = { name: '', description: '', price: null, emoji: '', is_visible: 1, success_template: '' }
+  form.value = { name: '', description: '', price: null, emoji: '', is_visible: 1 }
+  templatesByLang.value = emptyTemplates()
+  activeLang.value = LANG_TABS[0] ?? 'vi'
   formError.value = ''
   showModal.value = true
 }
 
-function openEditModal(cat: Category) {
+async function openEditModal(cat: Category) {
   modalMode.value = 'edit'
   editingId.value = cat.id
   form.value = {
@@ -92,10 +111,27 @@ function openEditModal(cat: Category) {
     price: cat.price,
     emoji: cat.emoji,
     is_visible: cat.is_visible,
-    success_template: cat.success_template || '',
   }
+  templatesByLang.value = emptyTemplates()
+  activeLang.value = LANG_TABS[0] ?? 'vi'
   formError.value = ''
   showModal.value = true
+
+  // Nạp template đa ngôn ngữ hiện có (R16.2).
+  try {
+    const res = await api.get<{ lang: string; success_template: string | null }[]>(
+      `/product-types/${cat.id}/templates`
+    )
+    if (res.success && res.data) {
+      for (const row of res.data) {
+        if (row.lang in templatesByLang.value) {
+          templatesByLang.value[row.lang] = row.success_template ?? ''
+        }
+      }
+    }
+  } catch {
+    // giữ template rỗng nếu tải lỗi
+  }
 }
 
 function closeModal() {
@@ -108,24 +144,26 @@ async function saveCategory() {
 
   // Client validation
   if (!form.value.name.trim()) {
-    formError.value = 'Tên không được để trống'
+    formError.value = t('categories.err_name_empty')
     return
   }
   if (form.value.name.trim().length > 100) {
-    formError.value = 'Tên tối đa 100 ký tự'
+    formError.value = t('categories.err_name_long')
     return
   }
   if (form.value.description.length > 500) {
-    formError.value = 'Mô tả tối đa 500 ký tự'
+    formError.value = t('categories.err_desc_long')
     return
   }
   if (!form.value.price || form.value.price < 1000 || form.value.price > 999999999) {
-    formError.value = 'Giá phải từ 1,000 đến 999,999,999'
+    formError.value = t('categories.err_price')
     return
   }
-  if (form.value.success_template.length > 3500) {
-    formError.value = 'Template tin nhắn tối đa 3500 ký tự'
-    return
+  for (const lang of LANG_TABS) {
+    if ((templatesByLang.value[lang] ?? '').length > 3500) {
+      formError.value = t('categories.err_tpl_long', { lang: lang.toUpperCase() })
+      return
+    }
   }
 
   saving.value = true
@@ -136,25 +174,46 @@ async function saveCategory() {
       price: form.value.price,
       emoji: form.value.emoji.trim() || '',
       is_visible: form.value.is_visible,
-      success_template: form.value.success_template.trim() || null,
     }
 
-    let res
+    let typeId = editingId.value
     if (modalMode.value === 'create') {
-      res = await api.post<Category>('/product-types', payload)
+      const res = await api.post<Category>('/product-types', payload)
+      if (!res.success || !res.data) {
+        formError.value = res.error || t('common.error')
+        saving.value = false
+        return
+      }
+      typeId = res.data.id
     } else {
-      res = await api.put<Category>(`/product-types/${editingId.value}`, payload)
+      const res = await api.put<Category>(`/product-types/${editingId.value}`, payload)
+      if (!res.success) {
+        formError.value = res.error || t('common.error')
+        saving.value = false
+        return
+      }
     }
 
-    if (res.success) {
-      showModal.value = false
-      showSuccess(modalMode.value === 'create' ? 'Tạo category thành công' : 'Cập nhật thành công')
-      await fetchCategories()
-    } else {
-      formError.value = res.error || 'Có lỗi xảy ra'
+    // Lưu template từng ngôn ngữ qua endpoint product_type_templates (R16.2).
+    if (typeId) {
+      for (const lang of LANG_TABS) {
+        const tplRes = await api.put(`/product-types/${typeId}/templates`, {
+          lang,
+          success_template: templatesByLang.value[lang]?.trim() || null,
+        })
+        if (!tplRes.success) {
+          formError.value = tplRes.error || t('categories.err_tpl_long', { lang: lang.toUpperCase() })
+          saving.value = false
+          return
+        }
+      }
     }
+
+    showModal.value = false
+    showSuccess(modalMode.value === 'create' ? t('categories.created_ok') : t('categories.updated_ok'))
+    await fetchCategories()
   } catch {
-    formError.value = 'Lỗi kết nối server'
+    formError.value = t('common.error')
   } finally {
     saving.value = false
   }
@@ -173,14 +232,14 @@ async function deleteCategory() {
     if (res.success) {
       showDeleteConfirm.value = false
       deletingCategory.value = null
-      showSuccess('Xoá category thành công')
+      showSuccess(t('categories.deleted_ok'))
       await fetchCategories()
     } else {
-      error.value = res.error || 'Không thể xoá'
+      error.value = res.error || t('common.error')
       showDeleteConfirm.value = false
     }
   } catch {
-    error.value = 'Lỗi kết nối server'
+    error.value = t('common.error')
     showDeleteConfirm.value = false
   } finally {
     deleting.value = false
@@ -194,10 +253,10 @@ async function toggleVisibility(cat: Category) {
     if (res.success) {
       cat.is_visible = newValue
     } else {
-      error.value = res.error || 'Không thể thay đổi trạng thái'
+      error.value = res.error || t('common.error')
     }
   } catch {
-    error.value = 'Lỗi kết nối server'
+    error.value = t('common.error')
   }
 }
 
@@ -231,16 +290,13 @@ async function swapSortOrder(indexA: number, indexB: number) {
     if (resA.success && resB.success) {
       await fetchCategories()
     } else {
-      error.value = 'Không thể thay đổi thứ tự'
+      error.value = t('common.error')
     }
   } catch {
-    error.value = 'Lỗi kết nối server'
+    error.value = t('common.error')
   }
 }
 
-function formatPrice(price: number): string {
-  return price.toLocaleString('vi-VN') + 'đ'
-}
 
 function showSuccess(msg: string) {
   successMsg.value = msg
@@ -253,12 +309,12 @@ function showSuccess(msg: string) {
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h1 class="page-title">Danh mục</h1>
-        <p class="page-subtitle">Quản lý loại sản phẩm</p>
+        <h1 class="page-title">{{ $t('categories.title') }}</h1>
+        <p class="page-subtitle">{{ $t('categories.subtitle') }}</p>
       </div>
       <button class="btn btn-primary" @click="openCreateModal">
         <Icon name="plus" :size="16" />
-        Thêm danh mục
+        {{ $t('categories.add') }}
       </button>
     </div>
 
@@ -272,7 +328,7 @@ function showSuccess(msg: string) {
     <div v-if="error" class="toast toast-error">
       <Icon name="warning" :size="16" />
       <span class="flex-1">{{ error }}</span>
-      <button class="toast-close" @click="error = ''" aria-label="Đóng">
+      <button class="toast-close" @click="error = ''" :aria-label="$t('common.close')">
         <Icon name="close" :size="14" />
       </button>
     </div>
@@ -280,13 +336,13 @@ function showSuccess(msg: string) {
     <!-- Loading -->
     <div v-if="loading" class="state-block">
       <Icon name="refresh" :size="20" />
-      <span>Đang tải...</span>
+      <span>{{ $t('common.loading') }}</span>
     </div>
 
     <!-- Empty state -->
     <div v-else-if="categories.length === 0" class="state-block state-empty">
       <Icon name="package" :size="48" />
-      <p>Chưa có danh mục nào. Bấm "Thêm danh mục" để bắt đầu.</p>
+      <p>{{ $t('categories.empty') }}</p>
     </div>
 
     <!-- Categories table -->
@@ -294,12 +350,12 @@ function showSuccess(msg: string) {
       <table class="data-table">
         <thead>
           <tr>
-            <th style="width: 64px">Thứ tự</th>
-            <th>Tên</th>
-            <th>Giá</th>
-            <th style="text-align: center">Tồn kho</th>
-            <th style="text-align: center">Hiển thị</th>
-            <th style="text-align: right">Thao tác</th>
+            <th style="width: 64px">{{ $t('categories.col_order') }}</th>
+            <th>{{ $t('categories.col_name') }}</th>
+            <th>{{ $t('categories.col_price') }}</th>
+            <th style="text-align: center">{{ $t('categories.col_stock') }}</th>
+            <th style="text-align: center">{{ $t('categories.col_visible') }}</th>
+            <th style="text-align: right">{{ $t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -310,7 +366,7 @@ function showSuccess(msg: string) {
                 <button
                   class="btn btn-ghost btn-icon"
                   :disabled="index === 0"
-                  title="Lên"
+                  :title="$t('categories.up')"
                   @click="moveUp(index)"
                 >
                   <Icon name="chevronRight" :size="16" :style="{ transform: 'rotate(-90deg)' }" />
@@ -318,7 +374,7 @@ function showSuccess(msg: string) {
                 <button
                   class="btn btn-ghost btn-icon"
                   :disabled="index === categories.length - 1"
-                  title="Xuống"
+                  :title="$t('categories.down')"
                   @click="moveDown(index)"
                 >
                   <Icon name="chevronRight" :size="16" :style="{ transform: 'rotate(90deg)' }" />
@@ -338,7 +394,7 @@ function showSuccess(msg: string) {
             </td>
 
             <!-- Price -->
-            <td class="price-cell">{{ formatPrice(cat.price) }}</td>
+            <td class="price-cell">{{ formatMoney(cat.price) }}</td>
 
             <!-- Stock -->
             <td style="text-align: center">
@@ -355,7 +411,7 @@ function showSuccess(msg: string) {
                 :class="{ 'is-on': cat.is_visible }"
                 role="switch"
                 :aria-checked="!!cat.is_visible"
-                title="Bật/tắt hiển thị"
+                :title="$t('categories.toggle_visible')"
                 @click="toggleVisibility(cat)"
               >
                 <span class="toggle-knob" />
@@ -367,7 +423,7 @@ function showSuccess(msg: string) {
               <div class="actions-cell">
                 <button class="btn btn-ghost btn-sm" @click="openEditModal(cat)">
                   <Icon name="edit" :size="15" />
-                  Sửa
+                  {{ $t('common.edit') }}
                 </button>
                 <button
                   class="btn btn-ghost btn-sm"
@@ -375,7 +431,7 @@ function showSuccess(msg: string) {
                   @click="confirmDelete(cat)"
                 >
                   <Icon name="trash" :size="15" />
-                  Xoá
+                  {{ $t('common.delete') }}
                 </button>
               </div>
             </td>
@@ -390,9 +446,9 @@ function showSuccess(msg: string) {
         <!-- Sticky header -->
         <header class="cat-modal-head">
           <h2 class="cat-modal-title">
-            {{ modalMode === 'create' ? 'Thêm danh mục mới' : 'Chỉnh sửa danh mục' }}
+            {{ modalMode === 'create' ? $t('categories.create_title') : $t('categories.edit_title') }}
           </h2>
-          <button type="button" class="btn btn-ghost btn-icon" @click="closeModal" aria-label="Đóng">
+          <button type="button" class="btn btn-ghost btn-icon" @click="closeModal" :aria-label="$t('common.close')">
             <Icon name="close" :size="18" />
           </button>
         </header>
@@ -406,7 +462,7 @@ function showSuccess(msg: string) {
           <!-- Emoji + Name -->
           <div class="field-row">
             <div class="field-col" style="flex: 0 0 72px">
-              <label class="label">Emoji</label>
+              <label class="label">{{ $t('categories.emoji') }}</label>
               <input
                 v-model="form.emoji"
                 type="text"
@@ -415,28 +471,28 @@ function showSuccess(msg: string) {
               />
             </div>
             <div class="field-col" style="flex: 1">
-              <label class="label">Tên danh mục *</label>
+              <label class="label">{{ $t('categories.name') }}</label>
               <input
                 v-model="form.name"
                 type="text"
                 required
                 maxlength="100"
                 class="field"
-                placeholder="VD: Gmail cổ, Outlook…"
+                :placeholder="$t('categories.name_ph')"
               />
             </div>
           </div>
 
           <!-- Description -->
           <div class="field-col">
-            <label class="label">Mô tả</label>
+            <label class="label">{{ $t('categories.description') }}</label>
             <textarea
               v-model="form.description"
               rows="2"
               maxlength="500"
               class="field"
               style="resize: none"
-              placeholder="Mô tả ngắn về loại sản phẩm…"
+              :placeholder="$t('categories.description_ph')"
             />
             <p class="char-count">{{ form.description.length }}/500</p>
           </div>
@@ -444,7 +500,7 @@ function showSuccess(msg: string) {
           <!-- Price + Visibility -->
           <div class="field-row field-row-bottom">
             <div class="field-col" style="flex: 1">
-              <label class="label">Giá (VNĐ) *</label>
+              <label class="label">{{ $t('categories.price') }}</label>
               <input
                 v-model.number="form.price"
                 type="number"
@@ -457,7 +513,7 @@ function showSuccess(msg: string) {
               />
             </div>
             <div class="visibility-box">
-              <span class="label" style="margin-bottom: 0">Hiển thị trên bot</span>
+              <span class="label" style="margin-bottom: 0">{{ $t('categories.visible') }}</span>
               <button
                 type="button"
                 class="toggle"
@@ -471,22 +527,32 @@ function showSuccess(msg: string) {
             </div>
           </div>
 
-          <!-- Success message template -->
+          <!-- Success message template — theo tab ngôn ngữ (R16.2) -->
           <div class="field-col tpl-section">
-            <label class="label">Tin nhắn khi mua thành công</label>
-            <p class="tpl-help">
-              Phần header (✅ Mua hàng thành công + tên SP + 📋 Nội dung) luôn tự động hiển thị.
-              Đây là phần <b>thân</b> bên dưới. Để trống = mẫu mặc định. Dùng <code>[content]</code> để chèn danh sách tài khoản.
-            </p>
-            <TelegramEditor v-model="form.success_template" />
+            <label class="label">{{ $t('categories.tpl_label') }}</label>
+            <p class="tpl-help">{{ $t('categories.tpl_help') }}</p>
+            <!-- Tab ngôn ngữ -->
+            <div class="lang-tabs">
+              <button
+                v-for="lang in LANG_TABS"
+                :key="lang"
+                type="button"
+                class="lang-tab"
+                :class="{ active: activeLang === lang }"
+                @click="activeLang = lang"
+              >
+                {{ lang.toUpperCase() }}
+              </button>
+            </div>
+            <TelegramEditor v-model="templatesByLang[activeLang]" />
           </div>
         </form>
 
         <!-- Sticky footer -->
         <footer class="cat-modal-foot">
-          <button type="button" class="btn btn-secondary" @click="closeModal">Huỷ</button>
+          <button type="button" class="btn btn-secondary" @click="closeModal">{{ $t('common.cancel') }}</button>
           <button type="button" class="btn btn-primary" :disabled="saving" @click="saveCategory">
-            {{ saving ? 'Đang lưu…' : (modalMode === 'create' ? 'Tạo mới' : 'Lưu thay đổi') }}
+            {{ saving ? $t('common.saving') : (modalMode === 'create' ? $t('categories.create_btn') : $t('categories.save_btn')) }}
           </button>
         </footer>
       </div>
@@ -495,9 +561,9 @@ function showSuccess(msg: string) {
     <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
       <div class="card modal-panel" style="max-width: 24rem; padding: 1.5rem">
-        <h2 class="modal-title">Xác nhận xoá</h2>
+        <h2 class="modal-title">{{ $t('categories.delete_title') }}</h2>
         <p class="confirm-text">
-          Bạn có chắc muốn xoá danh mục
+          {{ $t('categories.delete_confirm') }}
           <strong>{{ deletingCategory?.emoji }} {{ deletingCategory?.name }}</strong>?
         </p>
         <div
@@ -505,17 +571,14 @@ function showSuccess(msg: string) {
           class="warning-line"
         >
           <Icon name="warning" :size="16" :style="{ color: 'var(--yellow-fg)', flexShrink: 0 }" />
-          <span>
-            Danh mục này còn {{ deletingCategory.available_count }} sản phẩm khả dụng. Cần xoá hết
-            sản phẩm trước.
-          </span>
+          <span>{{ $t('categories.delete_warning', { count: deletingCategory.available_count }) }}</span>
         </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" @click="showDeleteConfirm = false">
-            Huỷ
+            {{ $t('common.cancel') }}
           </button>
           <button class="btn btn-danger" :disabled="deleting" @click="deleteCategory">
-            {{ deleting ? 'Đang xoá...' : 'Xoá' }}
+            {{ deleting ? $t('common.processing') : $t('common.delete') }}
           </button>
         </div>
       </div>
@@ -781,6 +844,26 @@ function showSuccess(msg: string) {
   padding: 0.05rem 0.3rem;
   border-radius: 4px;
   color: var(--blue-fg);
+}
+.lang-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.625rem;
+}
+.lang-tab {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.lang-tab.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 .visibility-box {
   display: flex;

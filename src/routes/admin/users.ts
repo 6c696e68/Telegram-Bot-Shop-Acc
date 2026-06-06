@@ -77,7 +77,7 @@ usersRoutes.get('/:id', async (c) => {
   const userId = Number(c.req.param('id'))
 
   if (!userId || isNaN(userId)) {
-    return c.json({ success: false, data: null, error: 'Invalid user ID' }, 400)
+    return c.json({ success: false, data: null, error: 'invalid_user_id' }, 400)
   }
 
   const user = await c.env.DB.prepare(
@@ -85,7 +85,7 @@ usersRoutes.get('/:id', async (c) => {
   ).bind(userId).first<DbUser>()
 
   if (!user) {
-    return c.json({ success: false, data: null, error: 'User not found' }, 404)
+    return c.json({ success: false, data: null, error: 'user_not_found' }, 404)
   }
 
   // Recent transactions (limit 20)
@@ -123,24 +123,24 @@ usersRoutes.post('/:id/adjust-balance', async (c) => {
   const userId = Number(c.req.param('id'))
 
   if (!userId || isNaN(userId)) {
-    return c.json({ success: false, data: null, error: 'Invalid user ID' }, 400)
+    return c.json({ success: false, data: null, error: 'invalid_user_id' }, 400)
   }
 
   const body = await c.req.json<{ amount?: number; reason?: string }>()
 
   if (body.amount === undefined || body.amount === null || typeof body.amount !== 'number') {
-    return c.json({ success: false, data: null, error: 'Amount is required and must be a number' }, 400)
+    return c.json({ success: false, data: null, error: 'amount_required' }, 400)
   }
 
   if (!body.reason || body.reason.trim().length === 0) {
-    return c.json({ success: false, data: null, error: 'Reason is required' }, 400)
+    return c.json({ success: false, data: null, error: 'reason_required' }, 400)
   }
 
   const { amount, reason } = body
 
   // amount can be positive (add) or negative (deduct)
   if (!Number.isInteger(amount)) {
-    return c.json({ success: false, data: null, error: 'Amount must be an integer' }, 400)
+    return c.json({ success: false, data: null, error: 'amount_must_be_integer' }, 400)
   }
 
   const user = await c.env.DB.prepare(
@@ -148,7 +148,7 @@ usersRoutes.post('/:id/adjust-balance', async (c) => {
   ).bind(userId).first<DbUser>()
 
   if (!user) {
-    return c.json({ success: false, data: null, error: 'User not found' }, 404)
+    return c.json({ success: false, data: null, error: 'user_not_found' }, 404)
   }
 
   const balanceBefore = user.balance
@@ -156,7 +156,7 @@ usersRoutes.post('/:id/adjust-balance', async (c) => {
 
   if (balanceAfter < 0) {
     return c.json(
-      { success: false, data: null, error: 'Adjustment would result in negative balance' },
+      { success: false, data: null, error: 'adjustment_negative_balance' },
       400
     )
   }
@@ -211,7 +211,7 @@ usersRoutes.post('/:id/ban', async (c) => {
   const userId = Number(c.req.param('id'))
 
   if (!userId || isNaN(userId)) {
-    return c.json({ success: false, data: null, error: 'Invalid user ID' }, 400)
+    return c.json({ success: false, data: null, error: 'invalid_user_id' }, 400)
   }
 
   const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?')
@@ -219,11 +219,11 @@ usersRoutes.post('/:id/ban', async (c) => {
     .first<DbUser>()
 
   if (!user) {
-    return c.json({ success: false, data: null, error: 'User not found' }, 404)
+    return c.json({ success: false, data: null, error: 'user_not_found' }, 404)
   }
 
   if (user.is_active === 0) {
-    return c.json({ success: false, data: null, error: 'User đã bị khoá trước đó' }, 409)
+    return c.json({ success: false, data: null, error: 'user_already_banned' }, 409)
   }
 
   const now = new Date().toISOString()
@@ -263,7 +263,7 @@ usersRoutes.post('/:id/unban', async (c) => {
   const userId = Number(c.req.param('id'))
 
   if (!userId || isNaN(userId)) {
-    return c.json({ success: false, data: null, error: 'Invalid user ID' }, 400)
+    return c.json({ success: false, data: null, error: 'invalid_user_id' }, 400)
   }
 
   const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?')
@@ -271,11 +271,11 @@ usersRoutes.post('/:id/unban', async (c) => {
     .first<DbUser>()
 
   if (!user) {
-    return c.json({ success: false, data: null, error: 'User not found' }, 404)
+    return c.json({ success: false, data: null, error: 'user_not_found' }, 404)
   }
 
   if (user.is_active === 1) {
-    return c.json({ success: false, data: null, error: 'User đang hoạt động, không cần mở khoá' }, 409)
+    return c.json({ success: false, data: null, error: 'user_not_banned' }, 409)
   }
 
   const now = new Date().toISOString()
@@ -305,6 +305,51 @@ usersRoutes.post('/:id/unban', async (c) => {
     data: { user_id: userId, is_active: 1 },
     error: null,
   })
+})
+
+/**
+ * PUT /users/:id/region
+ * Cập nhật Region của user (R5.4). Giữ nguyên số dư + ngôn ngữ (ngôn ngữ độc lập vùng).
+ * Validate region thuộc {vietnam, international}; viết audit_log.
+ */
+usersRoutes.put('/:id/region', async (c) => {
+  const userId = Number(c.req.param('id'))
+  if (!userId || isNaN(userId)) {
+    return c.json({ success: false, data: null, error: 'invalid_user_id' }, 400)
+  }
+
+  const body = await c.req.json<{ region?: unknown }>().catch(() => ({ region: undefined }))
+  const region = body.region
+  if (region !== 'vietnam' && region !== 'international') {
+    return c.json({ success: false, data: null, error: 'region_invalid' }, 400)
+  }
+
+  const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first<DbUser>()
+  if (!user) {
+    return c.json({ success: false, data: null, error: 'user_not_found' }, 404)
+  }
+
+  const now = new Date().toISOString()
+  const adminId = c.get('adminId')
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE users SET region = ?, updated_at = ? WHERE id = ?').bind(region, now, userId),
+    c.env.DB.prepare(
+      `INSERT INTO audit_logs (admin_id, action, resource_type, resource_id, old_value, new_value, ip_address, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      adminId,
+      'update_region',
+      'user',
+      userId,
+      JSON.stringify({ region: user.region }),
+      JSON.stringify({ region }),
+      c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || null,
+      now
+    ),
+  ])
+
+  return c.json({ success: true, data: { user_id: userId, region }, error: null })
 })
 
 export { usersRoutes }

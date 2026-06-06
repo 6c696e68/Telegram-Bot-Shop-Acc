@@ -8,6 +8,7 @@ import type {
   InlineKeyboardButton,
   ReplyKeyboardMarkup,
 } from '../types/telegram'
+import { t, type Lang } from './i18n'
 
 // --- Telegram API response ---
 
@@ -174,12 +175,16 @@ export function buildInlineKeyboard(
 /**
  * Reply Keyboard cố định cho menu chính.
  * Hiển thị 4 nút: Mua hàng, Nạp tiền, Lịch sử, Số dư (2×2 grid).
+ *
+ * Nhãn render theo `lang` qua catalog i18n. Reply-keyboard dùng CHÍNH text làm
+ * khóa routing nên router tra `MENU_ACTION_BY_LABEL` (gộp nhãn mọi locale) để
+ * khớp đúng bất kể ngôn ngữ. Bản `vi` giữ nhãn emoji cũ (không gián đoạn UX).
  */
-export function buildMainMenu(): ReplyKeyboardMarkup {
+export function buildMainMenu(lang: Lang): ReplyKeyboardMarkup {
   return {
     keyboard: [
-      [{ text: '🛒 Mua hàng' }, { text: '💰 Nạp tiền' }],
-      [{ text: '📜 Lịch sử' }, { text: '👤 Số dư' }],
+      [{ text: t(lang, 'menu.shop') }, { text: t(lang, 'menu.deposit') }],
+      [{ text: t(lang, 'menu.history') }, { text: t(lang, 'menu.account') }],
     ],
     resize_keyboard: true,
     is_persistent: true,
@@ -187,8 +192,8 @@ export function buildMainMenu(): ReplyKeyboardMarkup {
 }
 
 /**
- * Tạo một hàng nút "🔙 Quay lại" inline keyboard.
+ * Tạo một hàng nút "Quay lại" inline keyboard, nhãn theo `lang` (catalog `common.back`).
  */
-export function buildBackButton(callbackData: string): InlineKeyboardButton[] {
-  return [{ text: '🔙 Quay lại', callback_data: callbackData }]
+export function buildBackButton(callbackData: string, lang: Lang): InlineKeyboardButton[] {
+  return [{ text: t(lang, 'common.back'), callback_data: callbackData }]
 }

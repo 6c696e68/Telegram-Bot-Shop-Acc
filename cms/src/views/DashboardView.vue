@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { Chart, registerables } from 'chart.js'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import Icon from '@/components/Icon.vue'
+import { formatMoney, formatNumber } from '@/utils/format'
 
 Chart.register(...registerables)
+const { t } = useI18n()
 
 interface DashboardData {
   revenue: {
@@ -37,9 +40,6 @@ const error = ref('')
 let chartInstance: Chart | null = null
 const chartCanvas = ref<HTMLCanvasElement | null>(null)
 
-function formatCurrency(amount: number): string {
-  return amount.toLocaleString('vi-VN') + 'đ'
-}
 
 function formatDate(dateStr: string): string {
   const [, m, d] = dateStr.split('-')
@@ -52,10 +52,10 @@ async function fetchDashboard() {
     if (res.success && res.data) {
       dashboard.value = res.data
     } else {
-      error.value = res.error || 'Không tải được dữ liệu dashboard'
+      error.value = res.error || t('dashboard.load_error')
     }
   } catch {
-    error.value = 'Lỗi kết nối server'
+    error.value = t('common.error')
   }
 }
 
@@ -92,9 +92,8 @@ function renderChart() {
       labels,
       datasets: [
         {
-          label: 'Doanh thu (VNĐ)',
-          data,
-          borderColor: '#1a1a18',
+          label: t('dashboard.revenue_label'),
+          data,          borderColor: '#1a1a18',
           backgroundColor: 'rgba(17, 17, 17, 0.04)',
           fill: true,
           tension: 0.3,
@@ -112,7 +111,7 @@ function renderChart() {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: (ctx) => formatCurrency(ctx.parsed.y ?? 0),
+            label: (ctx) => formatMoney(ctx.parsed.y ?? 0),
           },
         },
       },
@@ -162,8 +161,8 @@ onUnmounted(() => {
   <div class="animate-in">
     <!-- Page header -->
     <div class="mb-6">
-      <h1 class="text-[15px] font-semibold" style="color: var(--ink)">Dashboard</h1>
-      <p class="mt-1 text-[13px]" style="color: var(--muted)">Tổng quan hệ thống</p>
+      <h1 class="text-[15px] font-semibold" style="color: var(--ink)">{{ $t('dashboard.title') }}</h1>
+      <p class="mt-1 text-[13px]" style="color: var(--muted)">{{ $t('dashboard.subtitle') }}</p>
     </div>
 
     <!-- Loading state -->
@@ -172,7 +171,7 @@ onUnmounted(() => {
         class="h-8 w-8 rounded-full animate-spin"
         style="border: 2px solid var(--border); border-top-color: var(--ink)"
       ></div>
-      <p class="mt-3 text-[13px]" style="color: var(--muted)">Đang tải dữ liệu...</p>
+      <p class="mt-3 text-[13px]" style="color: var(--muted)">{{ $t('dashboard.loading') }}</p>
     </div>
 
     <!-- Error state -->
@@ -191,7 +190,7 @@ onUnmounted(() => {
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div class="card p-5">
           <div class="flex items-start justify-between">
-            <p class="text-[13px]" style="color: var(--muted)">Hôm nay</p>
+            <p class="text-[13px]" style="color: var(--muted)">{{ $t('dashboard.revenue_today') }}</p>
             <span
               class="inline-flex items-center justify-center h-9 w-9 rounded-full"
               style="background: var(--green-bg); color: var(--green-fg)"
@@ -200,13 +199,13 @@ onUnmounted(() => {
             </span>
           </div>
           <p class="mt-3 text-2xl font-semibold" style="color: var(--ink)">
-            {{ formatCurrency(dashboard.revenue.today) }}
+            {{ formatMoney(dashboard.revenue.today) }}
           </p>
         </div>
 
         <div class="card p-5">
           <div class="flex items-start justify-between">
-            <p class="text-[13px]" style="color: var(--muted)">7 ngày</p>
+            <p class="text-[13px]" style="color: var(--muted)">{{ $t('dashboard.revenue_7d') }}</p>
             <span
               class="inline-flex items-center justify-center h-9 w-9 rounded-full"
               style="background: var(--blue-bg); color: var(--blue-fg)"
@@ -215,13 +214,13 @@ onUnmounted(() => {
             </span>
           </div>
           <p class="mt-3 text-2xl font-semibold" style="color: var(--ink)">
-            {{ formatCurrency(dashboard.revenue.last7days) }}
+            {{ formatMoney(dashboard.revenue.last7days) }}
           </p>
         </div>
 
         <div class="card p-5">
           <div class="flex items-start justify-between">
-            <p class="text-[13px]" style="color: var(--muted)">30 ngày</p>
+            <p class="text-[13px]" style="color: var(--muted)">{{ $t('dashboard.revenue_30d') }}</p>
             <span
               class="inline-flex items-center justify-center h-9 w-9 rounded-full"
               style="background: var(--yellow-bg); color: var(--yellow-fg)"
@@ -230,13 +229,13 @@ onUnmounted(() => {
             </span>
           </div>
           <p class="mt-3 text-2xl font-semibold" style="color: var(--ink)">
-            {{ formatCurrency(dashboard.revenue.last30days) }}
+            {{ formatMoney(dashboard.revenue.last30days) }}
           </p>
         </div>
 
         <div class="card p-5">
           <div class="flex items-start justify-between">
-            <p class="text-[13px]" style="color: var(--muted)">Tổng</p>
+            <p class="text-[13px]" style="color: var(--muted)">{{ $t('dashboard.revenue_all') }}</p>
             <span
               class="inline-flex items-center justify-center h-9 w-9 rounded-full"
               style="background: var(--gray-bg); color: var(--gray-fg)"
@@ -245,7 +244,7 @@ onUnmounted(() => {
             </span>
           </div>
           <p class="mt-3 text-2xl font-semibold" style="color: var(--ink)">
-            {{ formatCurrency(dashboard.revenue.allTime) }}
+            {{ formatMoney(dashboard.revenue.allTime) }}
           </p>
         </div>
       </div>
@@ -261,9 +260,9 @@ onUnmounted(() => {
               <Icon name="users" :size="20" />
             </span>
             <div>
-              <p class="text-[13px]" style="color: var(--muted)">Tổng users</p>
+              <p class="text-[13px]" style="color: var(--muted)">{{ $t('dashboard.total_users') }}</p>
               <p class="text-2xl font-semibold" style="color: var(--ink)">
-                {{ dashboard.totalUsers.toLocaleString('vi-VN') }}
+                {{ formatNumber(dashboard.totalUsers) }}
               </p>
             </div>
           </div>
@@ -278,9 +277,9 @@ onUnmounted(() => {
               <Icon name="receipt" :size="20" />
             </span>
             <div>
-              <p class="text-[13px]" style="color: var(--muted)">Tổng orders</p>
+              <p class="text-[13px]" style="color: var(--muted)">{{ $t('dashboard.total_orders') }}</p>
               <p class="text-2xl font-semibold" style="color: var(--ink)">
-                {{ dashboard.totalOrders.toLocaleString('vi-VN') }}
+                {{ formatNumber(dashboard.totalOrders) }}
               </p>
             </div>
           </div>
@@ -295,9 +294,9 @@ onUnmounted(() => {
               <Icon name="category" :size="20" />
             </span>
             <div>
-              <p class="text-[13px]" style="color: var(--muted)">Số danh mục</p>
+              <p class="text-[13px]" style="color: var(--muted)">{{ $t('dashboard.total_categories') }}</p>
               <p class="text-2xl font-semibold" style="color: var(--ink)">
-                {{ dashboard.productsPerCategory.length.toLocaleString('vi-VN') }}
+                {{ formatNumber(dashboard.productsPerCategory.length) }}
               </p>
             </div>
           </div>
@@ -307,7 +306,7 @@ onUnmounted(() => {
       <!-- Revenue chart -->
       <div class="card p-5 mb-6">
         <h2 class="text-[15px] font-semibold mb-4" style="color: var(--ink)">
-          Doanh thu 30 ngày qua
+          {{ $t('dashboard.revenue_chart') }}
         </h2>
         <div class="h-64">
           <canvas v-if="revenueData.length > 0" ref="chartCanvas"></canvas>
@@ -316,7 +315,7 @@ onUnmounted(() => {
             class="flex items-center justify-center h-full text-[13px]"
             style="color: var(--faint)"
           >
-            Chưa có dữ liệu doanh thu
+            {{ $t('dashboard.no_revenue') }}
           </div>
         </div>
       </div>
@@ -324,14 +323,14 @@ onUnmounted(() => {
       <!-- Products per category -->
       <div class="card p-5">
         <h2 class="text-[15px] font-semibold mb-4" style="color: var(--ink)">
-          Sản phẩm theo danh mục
+          {{ $t('dashboard.products_per_category') }}
         </h2>
         <div
           v-if="dashboard.productsPerCategory.length === 0"
           class="text-[13px]"
           style="color: var(--faint)"
         >
-          Chưa có danh mục nào
+          {{ $t('dashboard.no_category') }}
         </div>
         <div v-else>
           <div
@@ -351,7 +350,7 @@ onUnmounted(() => {
               class="badge"
               :class="cat.available_count > 0 ? 'badge-green' : 'badge-red'"
             >
-              {{ cat.available_count }} còn lại
+              {{ $t('dashboard.remaining', { count: cat.available_count }) }}
             </span>
           </div>
         </div>

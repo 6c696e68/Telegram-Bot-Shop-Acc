@@ -48,6 +48,9 @@ const SCHEMA_STATEMENTS = [
     first_name TEXT,
     balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
     is_active INTEGER DEFAULT 1,
+    region TEXT CHECK(region IN ('vietnam','international')),
+    language TEXT,
+    language_locked INTEGER NOT NULL DEFAULT 0,
     last_interaction_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -55,9 +58,10 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS deposits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
+    provider TEXT NOT NULL DEFAULT 'sepay' CHECK(provider IN ('sepay','cryptobot')),
     transfer_code TEXT UNIQUE NOT NULL,
     amount INTEGER NOT NULL CHECK(amount > 0),
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
     sepay_transaction_id TEXT,
     bank_ref TEXT,
     completed_at TEXT,
@@ -117,8 +121,8 @@ async function seedDepositLimits(min: number, max: number): Promise<void> {
 async function seedBuyer(telegramId: number): Promise<void> {
   const now = new Date().toISOString()
   await env.DB.prepare(
-    `INSERT INTO users (telegram_id, username, first_name, balance, is_active, last_interaction_at, created_at, updated_at)
-     VALUES (?, 'buyer', 'Buyer', 0, 1, ?, ?, ?)`
+    `INSERT INTO users (telegram_id, username, first_name, balance, is_active, region, language, last_interaction_at, created_at, updated_at)
+     VALUES (?, 'buyer', 'Buyer', 0, 1, 'vietnam', 'vi', ?, ?, ?)`
   )
     .bind(telegramId, now, now, now)
     .run()

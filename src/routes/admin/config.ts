@@ -18,36 +18,46 @@ interface SystemConfigRow {
 
 const configRoutes = new Hono<ConfigEnv>()
 
+/**
+ * Các key cấu hình mang giá trị nhạy cảm (secret/token). KHÔNG bao giờ trả giá trị
+ * thật ra response (kể cả cho admin đã đăng nhập) để tránh lộ secret ra client; chỉ
+ * báo "đã đặt hay chưa" qua `secrets_set`. PUT bỏ qua giá trị rỗng cho các key này
+ * (rỗng = giữ nguyên — vì GET luôn mask thành rỗng, lưu form sẽ không vô tình xoá secret).
+ */
+const SECRET_CONFIG_KEYS = new Set(['bot_token', 'telegram_secret_token', 'sepay_api_key'])
+
 // All config routes require JWT auth
 configRoutes.use('/*', jwtAuth)
 
 /**
  * GET /config
  * Return all system_config rows as key-value object.
- * Requirements: 11.10, 13.1
+ * Secret keys được mask (trả rỗng) + cờ `secrets_set` cho biết đã có giá trị hiệu lực.
+ * Requirements: 11.10, 13.1, 19.5 (không lộ secret ra response)
  */
 configRoutes.get('/', async (c) => {
   const rows = await c.env.DB.prepare(
     'SELECT key, value, description, updated_at, updated_by FROM system_config'
   ).all<SystemConfigRow>()
 
-  // Build key-value map
+  // Build key-value map. Secret keys → mask thành '' (không lộ giá trị thật).
   const configs: Record<string, string> = {}
+  const secretsSet: Record<string, boolean> = {}
   for (const row of rows.results) {
-    configs[row.key] = row.value
+    if (SECRET_CONFIG_KEYS.has(row.key)) {
+      secretsSet[row.key] = row.value.trim() !== ''
+      configs[row.key] = ''
+    } else {
+      configs[row.key] = row.value
+    }
   }
 
-  // Hiển thị GIÁ TRỊ HIỆU LỰC (DB-first, fallback env): với các key được backing bằng
-  // secret/var của Worker, nếu DB trống thì điền giá trị env để CMS không hiển thị trống
-  // và admin có thể lưu lại (promote env -> DB). Khớp logic resolve ở runtime.
+  // Env fallback CHỈ cho key KHÔNG nhạy cảm (để CMS hiển thị giá trị hiệu lực, promote env→DB).
   const envFallback: Record<string, string | undefined> = {
     bank_name: c.env.BANK_NAME,
     bank_account: c.env.BANK_ACCOUNT,
     bank_owner: c.env.BANK_OWNER,
-    bot_token: c.env.BOT_TOKEN,
-    telegram_secret_token: c.env.TELEGRAM_SECRET_TOKEN,
     admin_ids: c.env.ADMIN_IDS,
-    sepay_api_key: c.env.SEPAY_API_KEY,
   }
   for (const [key, envValue] of Object.entries(envFallback)) {
     const current = configs[key]
@@ -56,9 +66,21 @@ configRoutes.get('/', async (c) => {
     }
   }
 
+  // Secret coi như "đã đặt" nếu có ở DB hoặc env (không lộ giá trị, chỉ cờ boolean).
+  const secretEnv: Record<string, string | undefined> = {
+    bot_token: c.env.BOT_TOKEN,
+    telegram_secret_token: c.env.TELEGRAM_SECRET_TOKEN,
+    sepay_api_key: c.env.SEPAY_API_KEY,
+  }
+  for (const key of SECRET_CONFIG_KEYS) {
+    if (!secretsSet[key] && (secretEnv[key]?.trim() ?? '') !== '') {
+      secretsSet[key] = true
+    }
+  }
+
   return c.json({
     success: true,
-    data: { configs },
+    data: { configs, secrets_set: secretsSet },
     error: null,
   })
 })
@@ -75,7 +97,7 @@ configRoutes.put('/', async (c) => {
 
   if (!body.configs || typeof body.configs !== 'object') {
     return c.json(
-      { success: false, data: null, error: 'Field "configs" is required and must be an object' },
+      { success: false, data: null, error: 'configs_required' },
       400
     )
   }
@@ -109,6 +131,12 @@ configRoutes.put('/', async (c) => {
   let updatedCount = 0
 
   for (const [key, newValue] of entries) {
+    // Secret key + giá trị rỗng → BỎ QUA (GET mask secret thành rỗng; lưu form không
+    // được vô tình xoá secret đang có). Muốn đổi secret thì admin nhập giá trị mới.
+    if (SECRET_CONFIG_KEYS.has(key) && String(newValue).trim() === '') {
+      continue
+    }
+
     const oldValue = currentMap.get(key)
 
     // Only update if key exists and value actually changed
