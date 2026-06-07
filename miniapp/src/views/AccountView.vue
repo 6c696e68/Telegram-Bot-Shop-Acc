@@ -1,59 +1,37 @@
 <script setup lang="ts">
 /**
- * AccountView — thông tin tài khoản người mua (Req 12).
+ * AccountView — "Cá nhân", tab cấp 1 (Req 12, R5.2, R6.2).
  *
- *  - Nạp thông tin người mua qua `useUserStore().fetchMe()` (GET /api/app/me) khi mở
- *    màn hình NẾU store chưa có dữ liệu (`!state.loaded`) — tránh fetch thừa khi điều
- *    hướng từ trang chủ vốn đã nạp sẵn; bọc trong `ui.withLoading` để đồng bộ cờ loading
- *    toàn cục.
- *  - Hiển thị số dư qua `BalanceBadge` dùng chuỗi `balanceDisplay` đã format sẵn từ server
- *    để giữ định dạng tiền tệ thống nhất với hệ thống (Req 12.1).
- *  - Hiển thị thông tin định danh lấy từ `GET /api/app/me`: `telegram_id`, `username`,
- *    `first_name` dưới dạng các hàng nhãn–giá trị trong một thẻ kính (Req 12.2). Giá trị
- *    rỗng được thay bằng placeholder tiếng Việt ('Chưa đặt' cho username, '—' cho tên).
- *  - TUYỆT ĐỐI KHÔNG có bất kỳ chức năng/đường dẫn quản trị nào — màn hình chỉ đọc (Req 12.3).
- *  - BackButton của Telegram quay lại trang trước; handler được gỡ trong `onUnmounted`.
- *
- * Bố cục mobile-first iOS HIG, chỉ dùng màu phẳng + lớp `.glass` — KHÔNG gradient (Req 13).
+ *  - Thông tin định danh (ID Telegram / Username / Tên) — chỉ đọc, KHÔNG admin (Req 12.3).
+ *  - Cài đặt vùng (R5.2) + ngôn ngữ (R6.2) inline: chọn → lưu qua store, cập nhật locale
+ *    reactive không reload (R17.4). Region và language độc lập.
+ *  - Là route cấp 1 (tab) nên KHÔNG dùng Telegram BackButton. Màu phẳng, không gradient.
  */
-
-import { computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import BalanceBadge from '@/components/BalanceBadge.vue'
-import GlassCard from '@/components/GlassCard.vue'
-import GlassButton from '@/components/GlassButton.vue'
+import { Check } from '@lucide/vue'
+import ListSection from '@/components/ListSection.vue'
+import ListRow from '@/components/ListRow.vue'
+import BalanceHero from '@/components/BalanceHero.vue'
 import { useUserStore } from '@/stores/user'
 import { useUiStore } from '@/stores/ui'
 import { ApiError } from '@/api/client'
-import { showBackButton, type Cleanup } from '@/telegram/sdk'
+import { AVAILABLE_LOCALES } from '@/i18n'
 
-const router = useRouter()
 const user = useUserStore()
 const ui = useUiStore()
 const { t } = useI18n()
 
-/** Read-only state người mua (telegramId/username/firstName/balance/balanceDisplay/loaded). */
 const state = user.state
+const regions = ['vietnam', 'international'] as const
 
-/** Một hàng thông tin định danh (nhãn tiếng Việt + giá trị hiển thị). */
 interface IdentityRow {
-  /** Khoá ổn định cho v-for. */
   key: string
-  /** Nhãn tiếng Việt (Req 12.2). */
   label: string
-  /** Giá trị hiển thị (đã thay placeholder khi rỗng). */
   value: string
-  /** Dùng chữ số bảng (canh cột) cho giá trị thuần số như `telegram_id`. */
   mono?: boolean
 }
 
-/**
- * Các hàng thông tin định danh từ `GET /me` (Req 12.2):
- *  - ID Telegram: `telegram_id` (số) — '—' khi chưa nạp.
- *  - Tên người dùng: `username` — 'Chưa đặt' khi người dùng không có username Telegram.
- *  - Tên: `first_name` — '—' khi rỗng.
- */
 const identityRows = computed<IdentityRow[]>(() => [
   {
     key: 'telegram_id',
@@ -61,31 +39,35 @@ const identityRows = computed<IdentityRow[]>(() => [
     value: state.telegramId !== null ? String(state.telegramId) : '—',
     mono: true,
   },
-  {
-    key: 'username',
-    label: t('account.username'),
-    value: state.username ?? t('account.username_unset'),
-  },
-  {
-    key: 'first_name',
-    label: t('account.name'),
-    value: state.firstName ?? '—',
-  },
+  { key: 'username', label: t('account.username'), value: state.username ?? t('account.username_unset') },
+  { key: 'first_name', label: t('account.name'), value: state.firstName ?? '—' },
 ])
 
-// ── Dọn dẹp nút Telegram ──────────────────────────────────────────────────────────────
+async function chooseRegion(region: 'vietnam' | 'international'): Promise<void> {
+  if (state.region === region) return
+  ui.haptic('light')
+  try {
+    await ui.withLoading(user.setRegion(region))
+    ui.toast(t('settings.saved'), 'success')
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return
+    ui.toast(t('common.error'), 'error')
+  }
+}
 
-let cleanupBack: Cleanup = () => {}
+async function chooseLanguage(lang: string): Promise<void> {
+  if (state.language === lang) return
+  ui.haptic('light')
+  try {
+    await ui.withLoading(user.setLanguage(lang))
+    ui.toast(t('settings.saved'), 'success')
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return
+    ui.toast(t('common.error'), 'error')
+  }
+}
 
-/**
- * Khi mở màn hình:
- *  - Hiển thị BackButton của Telegram (quay lại trang trước).
- *  - Nạp thông tin tài khoản nếu store chưa có (Req 12.1, 12.2). Lỗi 401 do API client
- *    tự bật cờ `unauthorized` → bỏ qua toast để tránh nhiễu; lỗi khác hiển thị toast.
- */
 onMounted(async () => {
-  cleanupBack = showBackButton(() => router.back())
-
   if (state.loaded) return
   try {
     await ui.withLoading(user.fetchMe())
@@ -94,50 +76,74 @@ onMounted(async () => {
     ui.toast(t('account.load_error'), 'error')
   }
 })
-
-onUnmounted(() => {
-  cleanupBack()
-})
 </script>
 
 <template>
-  <main class="flex flex-col gap-5 px-4 py-6">
-    <header class="flex flex-col gap-1">
-      <h1 class="text-ios-title text-text">{{ $t('account.title') }}</h1>
-      <p class="text-ios-footnote text-hint">{{ $t('account.subtitle') }}</p>
+  <main class="flex flex-col gap-6 px-4 pb-2 pt-6">
+    <header class="px-1">
+      <h1 class="text-ios-large-title text-text">{{ $t('account.title') }}</h1>
     </header>
 
-    <!-- Số dư hiện tại (Req 12.1) -->
-    <BalanceBadge :balance="state.balance" :display="state.balanceDisplay" />
+    <!-- Số dư -->
+    <BalanceHero :balance="state.balance" :display="state.balanceDisplay" />
 
-    <!-- Thông tin định danh (Req 12.2) — màn hình chỉ đọc, KHÔNG có chức năng quản trị (Req 12.3) -->
-    <section class="flex flex-col gap-3" :aria-label="$t('account.identity')">
-      <h2 class="px-1 text-ios-footnote text-hint">{{ $t('account.identity') }}</h2>
-      <GlassCard>
-        <dl class="flex flex-col">
-          <template v-for="(row, index) in identityRows" :key="row.key">
-            <div
-              v-if="index > 0"
-              class="h-px bg-[var(--glass-stroke)]"
-              aria-hidden="true"
-            />
-            <div class="flex items-center justify-between gap-4 py-3">
-              <dt class="text-ios-body text-hint">{{ row.label }}</dt>
-              <dd
-                class="break-all text-right text-ios-body text-text"
-                :class="row.mono ? 'tabular-nums' : ''"
-              >
-                {{ row.value }}
-              </dd>
-            </div>
-          </template>
-        </dl>
-      </GlassCard>
-    </section>
+    <!-- Thông tin định danh (Req 12.2) -->
+    <ListSection :title="$t('account.identity')">
+      <ListRow
+        v-for="row in identityRows"
+        :key="row.key"
+        :title="row.label"
+      >
+        <template #trailing>
+          <span class="text-right text-ios-body text-hint" :class="row.mono ? 'tabular-nums' : ''">
+            {{ row.value }}
+          </span>
+        </template>
+      </ListRow>
+    </ListSection>
 
-    <!-- Thiết lập vùng + ngôn ngữ (R5.2, R6.2) -->
-    <GlassButton variant="secondary" block @click="router.push({ name: 'settings' })">
-      {{ $t('settings.title') }}
-    </GlassButton>
+    <!-- Khu vực (R5.2) -->
+    <ListSection :title="$t('settings.region')">
+      <ListRow
+        v-for="r in regions"
+        :key="r"
+        clickable
+        :chevron="false"
+        :title="$t(`settings.region_${r}`)"
+        @click="chooseRegion(r)"
+      >
+        <template #trailing>
+          <Check
+            v-if="state.region === r"
+            :size="20"
+            :stroke-width="2.25"
+            class="shrink-0 text-accent"
+            aria-hidden="true"
+          />
+        </template>
+      </ListRow>
+    </ListSection>
+
+    <!-- Ngôn ngữ (R6.2) -->
+    <ListSection :title="$t('settings.language')">
+      <ListRow
+        v-for="l in AVAILABLE_LOCALES"
+        :key="l"
+        clickable
+        :chevron="false"
+        :title="$t(`settings.language_${l}`)"
+        @click="chooseLanguage(l)"
+      >
+        <template #trailing>
+          <Check
+            v-if="state.language === l"
+            :size="20"
+            :stroke-width="2.25"
+            class="shrink-0 text-accent"
+            aria-hidden="true"
+          />
+        </template>
+      </ListRow>
+    </ListSection>
   </main>
 </template>

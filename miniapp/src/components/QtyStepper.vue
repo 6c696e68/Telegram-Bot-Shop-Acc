@@ -45,7 +45,7 @@ function increment(): void {
 </script>
 
 <template>
-  <div class="glass inline-flex items-center gap-1 p-1">
+  <div class="inline-flex items-center gap-1 rounded-ios bg-surface p-1 shadow-ios">
     <button
       type="button"
       class="tap-target flex items-center justify-center rounded-ios text-accent transition-transform duration-ios ease-ios active:scale-90 disabled:opacity-30"

@@ -7,6 +7,12 @@
     "back": "Quay lại",
     "error": "Đã có lỗi xảy ra. Vui lòng thử lại."
   },
+  "nav": {
+    "label": "Điều hướng",
+    "home": "Cửa hàng",
+    "wallet": "Ví",
+    "account": "Cá nhân"
+  },
   "onboarding": {
     "title": "Chọn khu vực của bạn",
     "subtitle": "Khu vực giúp hiển thị đúng ngôn ngữ và phương thức nạp phù hợp.",
@@ -31,11 +37,23 @@
     "deposit": "Nạp tiền",
     "history": "Lịch sử",
     "account": "Tài khoản",
-    "open": "Mở {label}"
+    "open": "Mở {label}",
+    "intro_title": "Cửa hàng",
+    "intro_subtitle": "Chọn sản phẩm bên dưới để mua nhanh bằng số dư của bạn.",
+    "promo_deposit_title": "Nạp tiền vào ví",
+    "promo_deposit_sub": "Nạp qua chuyển khoản ngân hàng hoặc USDT để mua hàng.",
+    "view_all": "Xem tất cả",
+    "featured": "Sản phẩm nổi bật"
+  },
+  "wallet": {
+    "recent_orders": "Đơn gần đây"
   },
   "shop": {
-    "title": "Mua hàng",
+    "title": "Cửa hàng",
     "list_label": "Danh sách sản phẩm",
+    "search_placeholder": "Tìm sản phẩm",
+    "search_empty_title": "Không tìm thấy",
+    "search_empty_desc": "Không có sản phẩm nào khớp với tìm kiếm của bạn.",
     "empty_title": "Chưa có sản phẩm",
     "empty_desc": "Hiện chưa có loại sản phẩm nào để mua.",
     "load_error": "Không tải được danh sách sản phẩm. Vui lòng thử lại."

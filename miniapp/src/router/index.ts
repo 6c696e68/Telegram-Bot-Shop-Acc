@@ -13,25 +13,22 @@ const router = createRouter({
       component: () => import('@/views/OnboardingView.vue'),
     },
     {
-      path: '/settings',
-      name: 'settings',
-      component: () => import('@/views/SettingsView.vue'),
-    },
-    {
       path: '/',
       name: 'home',
       component: () => import('@/views/HomeView.vue'),
+      meta: { tab: true },
     },
     {
-      path: '/shop',
-      name: 'shop',
-      component: () => import('@/views/ShopView.vue'),
-    },
-    {
-      path: '/shop/:id',
+      path: '/product/:id',
       name: 'product-detail',
       component: () => import('@/views/ProductDetailView.vue'),
       props: true,
+    },
+    {
+      path: '/wallet',
+      name: 'wallet',
+      component: () => import('@/views/WalletView.vue'),
+      meta: { tab: true },
     },
     {
       path: '/deposit',
@@ -53,6 +50,7 @@ const router = createRouter({
       path: '/account',
       name: 'account',
       component: () => import('@/views/AccountView.vue'),
+      meta: { tab: true },
     },
   ],
 })

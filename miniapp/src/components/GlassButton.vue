@@ -47,10 +47,10 @@ function onClick(ev: MouseEvent): void {
   <button
     :type="type"
     :disabled="disabled || loading"
-    class="tap-target inline-flex items-center justify-center gap-2 rounded-ios px-5 font-ios text-ios-headline transition-[transform,opacity] duration-ios ease-ios active:scale-[0.97] disabled:opacity-40"
+    class="tap-target inline-flex items-center justify-center gap-2 rounded-ios px-5 py-3 font-ios text-ios-headline transition-[transform,opacity] duration-ios ease-ios active:scale-[0.97] disabled:opacity-40"
     :class="[
       block ? 'w-full' : '',
-      variant === 'primary' ? 'bg-accent text-accent-text' : 'glass text-text',
+      variant === 'primary' ? 'bg-accent text-accent-text' : 'bg-surface text-text shadow-ios',
     ]"
     @click="onClick"
   >

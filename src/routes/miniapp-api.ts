@@ -32,6 +32,7 @@ import type {
   DepositStatusDto,
   OrderListItemDto,
   OrderDetailDto,
+  BannerDto,
 } from '../types/miniapp'
 import { miniAppAuth, type MiniAppVariables } from '../middleware/miniapp-auth'
 import { formatMoney, formatMoneyFor, buildCurrencyContext } from '../utils/format'
@@ -151,6 +152,27 @@ miniAppApi.get('/home', async (c) => {
     error: null,
   }
 
+  return c.json(body)
+})
+
+/**
+ * GET /banners — ảnh banner giới thiệu cho storefront (Req storefront redesign).
+ *
+ * Chỉ trả banner `is_active = 1`, sắp theo `sort_order`. `image_url` là data URL (base64)
+ * hoặc URL HTTPS do admin cấu hình qua CMS. Chưa có banner → mảng rỗng (frontend ẩn carousel).
+ */
+miniAppApi.get('/banners', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, image_data, link_url FROM banners WHERE is_active = 1 ORDER BY sort_order ASC, id ASC'
+  ).all<{ id: number; image_data: string; link_url: string | null }>()
+
+  const data: BannerDto[] = results.map((r) => ({
+    id: r.id,
+    image_url: r.image_data,
+    link_url: r.link_url,
+  }))
+
+  const body: ApiResponse<BannerDto[]> = { success: true, data, error: null }
   return c.json(body)
 })
 

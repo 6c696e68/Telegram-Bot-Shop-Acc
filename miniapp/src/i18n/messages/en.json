@@ -7,6 +7,12 @@
     "back": "Back",
     "error": "Something went wrong. Please try again."
   },
+  "nav": {
+    "label": "Navigation",
+    "home": "Shop",
+    "wallet": "Wallet",
+    "account": "Profile"
+  },
   "onboarding": {
     "title": "Choose your region",
     "subtitle": "We use your region to show the right language and payment methods.",
@@ -31,11 +37,23 @@
     "deposit": "Deposit",
     "history": "History",
     "account": "Account",
-    "open": "Open {label}"
+    "open": "Open {label}",
+    "intro_title": "Shop",
+    "intro_subtitle": "Pick a product below to buy instantly with your balance.",
+    "promo_deposit_title": "Top up your wallet",
+    "promo_deposit_sub": "Add funds via bank transfer or USDT to make purchases.",
+    "view_all": "View all",
+    "featured": "Featured products"
+  },
+  "wallet": {
+    "recent_orders": "Recent orders"
   },
   "shop": {
     "title": "Shop",
     "list_label": "Product list",
+    "search_placeholder": "Search products",
+    "search_empty_title": "No results",
+    "search_empty_desc": "No products match your search.",
     "empty_title": "No products",
     "empty_desc": "There are no products available to buy yet.",
     "load_error": "Could not load the product list. Please try again."

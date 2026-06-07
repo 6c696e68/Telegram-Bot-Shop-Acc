@@ -76,10 +76,15 @@ onUnmounted(() => {
   <main class="flex flex-col gap-5 px-4 py-6">
     <template v-if="order">
       <!-- Tóm tắt đơn (Req 11.2, 11.3) -->
-      <header class="flex flex-col items-center gap-2 text-center">
-        <span class="text-6xl leading-none" aria-hidden="true">{{ order.emoji }}</span>
+      <header class="flex flex-col items-center gap-3 text-center">
+        <span
+          class="flex h-20 w-20 items-center justify-center rounded-full bg-accent-soft text-5xl leading-none"
+          aria-hidden="true"
+        >
+          {{ order.emoji }}
+        </span>
         <h1 class="text-ios-title text-text">{{ order.product_name }}</h1>
-        <p class="text-ios-title tabular-nums text-accent">{{ order.total_display }}</p>
+        <p class="text-ios-large-title tabular-nums text-accent">{{ order.total_display }}</p>
       </header>
 
       <GlassCard>
@@ -105,7 +110,7 @@ onUnmounted(() => {
         <p
           v-for="(content, idx) in order.contents"
           :key="idx"
-          class="glass select-all whitespace-pre-wrap break-all p-4 text-ios-body text-text"
+          class="surface-card select-all whitespace-pre-wrap break-all p-4 text-ios-body text-text"
         >
           {{ content }}
         </p>

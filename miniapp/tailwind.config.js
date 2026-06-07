@@ -15,11 +15,15 @@ export default {
       // Màu phẳng ánh xạ sang CSS variables (light/dark tự đồng bộ qua biến).
       colors: {
         bg: 'var(--tg-bg)',
+        app: 'var(--app-bg)',
+        surface: 'var(--surface)',
         'secondary-bg': 'var(--tg-secondary-bg)',
+        separator: 'var(--separator)',
         text: 'var(--tg-text)',
         hint: 'var(--tg-hint)',
         accent: 'var(--tg-accent)',
         'accent-text': 'var(--tg-accent-text)',
+        'accent-soft': 'var(--accent-soft)',
         'ios-green': '#34c759',
         'ios-red': '#ff3b30',
         'ios-orange': '#ff9500',
@@ -56,6 +60,7 @@ export default {
       },
       // Thang chữ kiểu iOS.
       fontSize: {
+        'ios-hero': ['44px', { lineHeight: '52px', fontWeight: '700', letterSpacing: '-0.02em' }],
         'ios-large-title': ['34px', { lineHeight: '41px', fontWeight: '700' }],
         'ios-title': ['22px', { lineHeight: '28px', fontWeight: '600' }],
         'ios-headline': ['17px', { lineHeight: '22px', fontWeight: '600' }],

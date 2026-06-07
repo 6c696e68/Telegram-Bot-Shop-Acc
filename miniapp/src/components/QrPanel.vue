@@ -41,7 +41,7 @@ async function copy(field: string, value: string): Promise<void> {
 </script>
 
 <template>
-  <div class="glass flex flex-col gap-4 p-5">
+  <div class="surface-card flex flex-col gap-4 p-5">
     <!-- Ảnh VietQR trên nền trắng phẳng (tương phản cho máy quét). -->
     <div class="mx-auto rounded-ios bg-white p-3">
       <img

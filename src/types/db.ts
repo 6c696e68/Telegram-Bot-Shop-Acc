@@ -134,3 +134,16 @@ export interface DbAuditLog {
   ip_address: string | null
   created_at: string
 }
+
+/** Bảng `banners` — ảnh banner giới thiệu cho Mini App storefront (migration 0011). */
+export interface DbBanner {
+  id: number
+  /** data URL (data:image/...;base64,...) hoặc URL HTTPS. */
+  image_data: string
+  /** Link mở khi chạm banner (tuỳ chọn). */
+  link_url: string | null
+  sort_order: number
+  /** 1 = hiển thị, 0 = ẩn. */
+  is_active: number
+  created_at: string
+}

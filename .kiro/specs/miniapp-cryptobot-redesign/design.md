@@ -42,17 +42,19 @@ OCR bằng Apple Vision). Đặc trưng thị giác chính:
 
 ## Architecture
 
-### Điều hướng — thêm Bottom Tab Bar
+### Điều hướng — Bottom Tab Bar (3 tab)
 
-Hiện điều hướng bằng grid lối tắt + Telegram BackButton. Thêm **thanh tab dưới** cố định
-cho màn cấp 1; màn cấp 2 (chi tiết) ẩn tab bar và dùng Back.
+Thêm **thanh tab dưới** cố định cho màn cấp 1; màn cấp 2 (chi tiết) ẩn tab bar và dùng Back.
 
-- Tabs (4): **Trang chủ** (`home`), **Cửa hàng** (`shop`), **Lịch sử** (`history`),
-  **Tài khoản** (`account`).
-- Hiển thị tab bar ở `home/shop/history/account`. Ẩn ở `onboarding/product-detail/
-  deposit/order-detail/settings`.
-- Cơ chế: thêm `meta: { tab: true }` trên route cấp 1; `App.vue` đọc `route.meta.tab` để
-  render `TabBar.vue` và áp `padding-bottom` động (chiều cao tab bar + `--safe-bottom`).
+- Tabs (3): **Cửa hàng** (`home`, storefront: giới thiệu + banner + danh sách sản phẩm),
+  **Ví** (`wallet`, số dư + nạp + lịch sử), **Cá nhân** (`account`, thông tin + cài đặt
+  vùng/ngôn ngữ).
+- Hiển thị tab bar ở `home/wallet/account`. Ẩn ở `onboarding/product-detail/deposit/
+  history/order-detail`.
+- Cơ chế: `meta: { tab: true }` trên route cấp 1; `App.vue` đọc `route.meta.tab` để render
+  `TabBar.vue` và áp `padding-bottom` động (`.pb-tabbar`).
+- Shop được gộp vào `home` (storefront); Settings được gộp inline vào `account`. Lịch sử
+  và Nạp tiền là màn cấp 2 mở từ tab Ví.
 
 ### Tầng layout & nền
 
@@ -110,25 +112,25 @@ lớn hơn (40–44px qua util tuỳ biến). Padding ngang `px-4`, khoảng cá
 
 ### Bố cục từng màn hình
 
-- **HomeView ("Ví")**: lời chào → `BalanceHero` → hàng `CircleAction` (Nạp tiền/Mua
-  hàng/Lịch sử) → `PromoBanner` (hướng dẫn) → `ListSection "Sản phẩm nổi bật >"` (vài loại
-  đầu từ `product-types`, "Xem tất cả" → tab Cửa hàng).
-- **ShopView**: tiêu đề; (tuỳ chọn) ô lọc theo tên client-side; `ListSection` toàn bộ loại
-  (gồm hết hàng, disable + nhãn đỏ); trống → `EmptyState`.
+- **HomeView ("Cửa hàng" — storefront)**: giới thiệu (tiêu đề + phụ đề) → `PromoBanner`
+  (hướng dẫn nạp) → ô tìm kiếm → `ListSection` danh sách sản phẩm (gồm hết hàng, disable +
+  nhãn đỏ); trống → `EmptyState`.
+- **WalletView ("Ví")**: `BalanceHero` (số dư) + hàng `CircleAction` (Nạp tiền → deposit,
+  Lịch sử → history) → `ListSection "Đơn gần đây"` (vài đơn mới nhất, "Xem tất cả" →
+  history).
+- **AccountView ("Cá nhân")**: `BalanceHero` thu gọn + `ListSection "Thông tin"` (ID/
+  Username/Tên) + `ListSection "Khu vực"` (chọn vùng, có dấu check) + `ListSection "Ngôn
+  ngữ"` (chọn ngôn ngữ, có dấu check). KHÔNG có admin. Settings được gộp vào đây.
 - **ProductDetailView**: header avatar tròn lớn + tên + giá; card mô tả + tồn kho;
   `QtyStepper` + dòng Tổng tiền; mua qua Telegram MainButton; sau mua: card thành công +
   `contents` (select-all) + số dư mới.
 - **DepositView**: `SegmentedControl` chọn phương thức (khi >1); SePay lưới mệnh giá + ô
   nhập "đ"; CryptoBot ô nhập USDT + quy đổi VND; nút "Tạo yêu cầu"; sau tạo: card trạng
   thái + QrPanel/nút pay_url + Huỷ/Quay lại (giữ polling).
-- **HistoryView**: `ListSection` các đơn (avatar emoji + tên + (số lượng · thời gian) +
-  tổng tiền accent + chevron, nhãn trạng thái); trống → `EmptyState`.
-- **OrderDetailView**: header (emoji + tên + tổng tiền); card thông tin row nhãn–giá trị;
-  `contents` select-all; Back.
-- **AccountView ("More")**: `BalanceHero` thu gọn; `ListSection "Thông tin"` (ID/Username/
-  Tên); `ListSection "Cài đặt"` (Vùng/Ngôn ngữ → settings, có chevron). KHÔNG có admin.
-- **SettingsView**: `ListSection` kiểu CryptoBot — row Vùng + row Ngôn ngữ, mỗi lựa chọn
-  có dấu check khi active; lưu qua store.
+- **HistoryView**: `ListSection` các đơn (avatar emoji + tên + (số lượng · trạng thái) +
+  tổng tiền + thời gian); trống → `EmptyState`. Mở từ Ví → dùng Back.
+- **OrderDetailView**: header (avatar tròn + tên + tổng tiền); card thông tin row
+  nhãn–giá trị; `contents` select-all; Back.
 - **OnboardingView**: chọn vùng căn giữa (tiêu đề + phụ đề + 2 nút lớn), giữ logic.
 
 ### i18n
@@ -199,3 +201,19 @@ chỉ hiện ở màn cấp 1.
 Component nâng cấp giữ nguyên props/slot/emit với code gọi hiện tại để không vỡ import.
 
 **Validates: Requirements 13.1** (telegram-mini-app)
+
+## Banner ảnh storefront (bổ sung)
+
+Banner giới thiệu ở tab Cửa hàng là **ảnh** (carousel), quản trị qua CMS.
+
+- **DB**: bảng `banners` (migration `0011`) — `image_data` (data URL base64 hoặc URL HTTPS),
+  `link_url?`, `sort_order`, `is_active`, `created_at`. Lưu data URL để không cần R2.
+- **Admin API**: `GET /api/admin/banners` (list), `PUT /api/admin/banners` (thay toàn bộ
+  tập, atomic batch; validate ảnh data:image|https, trần 12 banner, mỗi ảnh ≤ ~700KB).
+- **App API**: `GET /api/app/banners` → `BannerDto[]` (chỉ `is_active=1`, theo `sort_order`).
+- **CMS**: tab "Banner" trong ConfigView — repeater upload ảnh (nén client-side qua canvas
+  về JPEG ≤ ~600KB), nhập link tuỳ chọn, bật/tắt hiển thị, sắp xếp lên/xuống, xoá, lưu.
+- **Mini App**: `BannerCarousel.vue` cuộn ngang snap + chấm chỉ vị trí + auto-slide; ẩn khi
+  chưa có banner. HomeView nạp `/banners` và hiển thị phía trên danh sách sản phẩm.
+- Lưu ý vận hành: trước khi deploy cần chạy `npm run db:migrate:remote` để tạo bảng
+  `banners` trên D1 production.

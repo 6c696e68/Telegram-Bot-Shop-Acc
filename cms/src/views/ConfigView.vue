@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick, onUnmounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { api } from '@/api/client'
 import { Chart, registerables } from 'chart.js'
 import Icon from '@/components/Icon.vue'
@@ -14,7 +14,7 @@ const { t } = useI18n()
 // các view khác đọc lại cùng ref. rate=null → formatMoney hiển thị VND-only (R4.4).
 const { rate, load: loadRate } = useExchangeRate()
 
-const activeTab = ref<'config' | 'reports'>('config')
+const activeTab = ref<'config' | 'banners' | 'reports'>('config')
 
 // --- Config state ---
 const configLoading = ref(false)
@@ -45,6 +45,34 @@ const showBotToken = ref(false)
 const showTgSecret = ref(false)
 const showSepayKey = ref(false)
 const showCryptoToken = ref(false)
+
+// --- Webhook URLs (cùng origin với CMS — để admin copy dán vào SePay/Crypto Pay) ---
+const webhookBase = computed(() => window.location.origin)
+const sepayWebhookUrl = computed(() => `${webhookBase.value}/webhook/sepay`)
+const cryptoWebhookUrl = computed(() => `${webhookBase.value}/webhook/cryptopay`)
+
+// Key của ô vừa copy (để hiện phản hồi "đã copy" tạm thời).
+const copiedKey = ref('')
+let copyTimer: ReturnType<typeof setTimeout> | undefined
+
+async function copyText(key: string, text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // Fallback khi clipboard API không khả dụng (vd http) — dùng textarea tạm.
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    try { document.execCommand('copy') } catch { /* bỏ qua */ }
+    document.body.removeChild(ta)
+  }
+  copiedKey.value = key
+  if (copyTimer) clearTimeout(copyTimer)
+  copyTimer = setTimeout(() => { copiedKey.value = '' }, 1800)
+}
 
 async function loadConfig() {
   configLoading.value = true
@@ -102,6 +130,134 @@ async function saveConfig() {
     configError.value = t('common.error')
   } finally {
     configSaving.value = false
+  }
+}
+
+// --- Banners (repeater ảnh banner storefront) ---
+interface BannerItem {
+  image_data: string
+  link_url: string
+  is_active: boolean
+}
+
+const MAX_BANNERS = 12
+const bannersLoading = ref(false)
+const bannersSaving = ref(false)
+const bannersError = ref('')
+const bannersSuccess = ref('')
+const banners = ref<BannerItem[]>([])
+const bannerFileInput = ref<HTMLInputElement | null>(null)
+
+async function loadBanners() {
+  bannersLoading.value = true
+  bannersError.value = ''
+  try {
+    const res = await api.get<{ image_data: string; link_url: string | null; is_active: number }[]>('/banners')
+    if (res.success && res.data) {
+      banners.value = res.data.map((b) => ({
+        image_data: b.image_data,
+        link_url: b.link_url ?? '',
+        is_active: b.is_active !== 0,
+      }))
+    } else {
+      bannersError.value = res.error || t('common.error')
+    }
+  } catch {
+    bannersError.value = t('common.error')
+  } finally {
+    bannersLoading.value = false
+  }
+}
+
+/** Nén ảnh client-side: scale max 1280px chiều rộng, xuất JPEG q~0.82 (data URL). */
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('read_failed'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('decode_failed'))
+      img.onload = () => {
+        const maxW = 1280
+        const scale = Math.min(1, maxW / img.width)
+        const w = Math.round(img.width * scale)
+        const h = Math.round(img.height * scale)
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return reject(new Error('canvas_failed'))
+        // JPEG không hỗ trợ alpha → tô nền trắng trước để ảnh PNG trong suốt không bị nền đen.
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, w, h)
+        ctx.drawImage(img, 0, 0, w, h)
+        // Giảm dần chất lượng tới khi < 600KB (tránh vượt trần backend 700KB).
+        let q = 0.85
+        let out = canvas.toDataURL('image/jpeg', q)
+        while (out.length > 600_000 && q > 0.4) {
+          q -= 0.1
+          out = canvas.toDataURL('image/jpeg', q)
+        }
+        resolve(out)
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+async function onBannerFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  bannersError.value = ''
+  for (const file of files) {
+    if (banners.value.length >= MAX_BANNERS) {
+      bannersError.value = t('config.banner_max', { max: MAX_BANNERS })
+      break
+    }
+    if (!file.type.startsWith('image/')) continue
+    try {
+      const dataUrl = await compressImage(file)
+      banners.value.push({ image_data: dataUrl, link_url: '', is_active: true })
+    } catch {
+      bannersError.value = t('config.banner_read_error')
+    }
+  }
+  input.value = '' // cho phép chọn lại cùng file
+}
+
+function removeBanner(idx: number) {
+  banners.value.splice(idx, 1)
+}
+
+function moveBanner(idx: number, dir: -1 | 1) {
+  const to = idx + dir
+  if (to < 0 || to >= banners.value.length) return
+  const arr = banners.value
+  ;[arr[idx], arr[to]] = [arr[to], arr[idx]]
+}
+
+async function saveBanners() {
+  bannersSaving.value = true
+  bannersError.value = ''
+  bannersSuccess.value = ''
+  try {
+    const payload = banners.value.map((b) => ({
+      image_data: b.image_data,
+      link_url: b.link_url.trim() || null,
+      is_active: b.is_active,
+    }))
+    const res = await api.put<{ count: number }>('/banners', { banners: payload })
+    if (res.success) {
+      bannersSuccess.value = t('config.banner_saved', { count: res.data?.count ?? payload.length })
+      setTimeout(() => { bannersSuccess.value = '' }, 3000)
+    } else {
+      bannersError.value = res.error || t('config.save_failed')
+    }
+  } catch {
+    bannersError.value = t('common.error')
+  } finally {
+    bannersSaving.value = false
   }
 }
 
@@ -175,9 +331,12 @@ function renderRevenueChart() {
 }
 
 
-watch(activeTab, tab => { if (tab === 'reports' && revenueData.value.length === 0) loadReports() })
+watch(activeTab, tab => {
+  if (tab === 'reports' && revenueData.value.length === 0) loadReports()
+  if (tab === 'banners' && banners.value.length === 0 && !bannersLoading.value) loadBanners()
+})
 onMounted(() => { loadConfig(); loadRate(); initDateRange() })
-onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = null } })
+onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = null }; if (copyTimer) clearTimeout(copyTimer) })
 </script>
 
 <template>
@@ -190,6 +349,13 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
         @click="activeTab = 'config'"
       >
         <Icon name="settings" :size="16" /> {{ $t('config.tab_config') }}
+      </button>
+      <button
+        class="tab-btn"
+        :class="{ active: activeTab === 'banners' }"
+        @click="activeTab = 'banners'"
+      >
+        <Icon name="image" :size="16" /> {{ $t('config.tab_banners') }}
       </button>
       <button
         class="tab-btn"
@@ -368,8 +534,113 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
           </div>
         </section>
 
+        <!-- Webhook URLs (read-only, copy cho dễ cấu hình SePay/Crypto Pay) -->
+        <section class="card p-5 space-y-4">
+          <h3 class="section-head"><Icon name="link" :size="18" /> {{ $t('config.webhook_section') }}</h3>
+          <p class="hint" style="margin-top: -0.25rem">{{ $t('config.webhook_hint') }}</p>
+          <div>
+            <label class="label">{{ $t('config.webhook_sepay') }}</label>
+            <div class="key-row">
+              <input :value="sepayWebhookUrl" class="field" readonly @focus="(e) => (e.target as HTMLInputElement).select()" />
+              <button
+                type="button"
+                class="key-toggle"
+                :title="$t('config.copy')"
+                @click="copyText('sepay', sepayWebhookUrl)"
+              >
+                <Icon :name="copiedKey === 'sepay' ? 'check' : 'copy'" :size="16" />
+              </button>
+            </div>
+            <p v-if="copiedKey === 'sepay'" class="hint" style="color: var(--green-fg)">{{ $t('config.copied') }}</p>
+          </div>
+          <div>
+            <label class="label">{{ $t('config.webhook_crypto') }}</label>
+            <div class="key-row">
+              <input :value="cryptoWebhookUrl" class="field" readonly @focus="(e) => (e.target as HTMLInputElement).select()" />
+              <button
+                type="button"
+                class="key-toggle"
+                :title="$t('config.copy')"
+                @click="copyText('crypto', cryptoWebhookUrl)"
+              >
+                <Icon :name="copiedKey === 'crypto' ? 'check' : 'copy'" :size="16" />
+              </button>
+            </div>
+            <p v-if="copiedKey === 'crypto'" class="hint" style="color: var(--green-fg)">{{ $t('config.copied') }}</p>
+          </div>
+        </section>
+
         <div class="flex justify-end"><button type="submit" class="btn btn-primary" :disabled="configSaving"><Icon name="check" :size="16" />{{ configSaving ? $t('common.saving') : $t('config.save_btn') }}</button></div>
       </form>
+    </div>
+
+    <!-- ========== BANNERS TAB ========== -->
+    <div v-if="activeTab === 'banners'">
+      <div v-if="bannersLoading" class="flex flex-col items-center gap-3 py-16" style="color: var(--muted)">
+        <div class="spinner" /><span class="text-[13px]">{{ $t('config.loading') }}</span>
+      </div>
+
+      <div v-else class="max-w-2xl space-y-5">
+        <div v-if="bannersError" class="flex items-center gap-2 rounded-md px-3 py-2.5 text-[13px]" style="background: var(--red-bg); color: var(--red-fg)">
+          <Icon name="warning" :size="16" /><span>{{ bannersError }}</span>
+        </div>
+        <div v-if="bannersSuccess" class="flex items-center gap-2 rounded-md px-3 py-2.5 text-[13px]" style="background: var(--green-bg); color: var(--green-fg)">
+          <Icon name="check" :size="16" /><span>{{ bannersSuccess }}</span>
+        </div>
+
+        <section class="card p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="section-head" style="margin-bottom:0"><Icon name="image" :size="18" /> {{ $t('config.banner_section') }}</h3>
+            <span class="text-[12px]" style="color: var(--faint)">{{ banners.length }}/{{ MAX_BANNERS }}</span>
+          </div>
+          <p class="hint" style="margin-top:0">{{ $t('config.banner_hint') }}</p>
+
+          <!-- Danh sách banner (repeater) -->
+          <div v-if="banners.length" class="space-y-3">
+            <div
+              v-for="(b, i) in banners"
+              :key="i"
+              class="flex gap-3 rounded-lg p-3"
+              style="border: 1px solid var(--border)"
+            >
+              <img :src="b.image_data" alt="" class="h-20 w-32 shrink-0 rounded-md object-cover" style="background: var(--bg-soft)" />
+              <div class="flex min-w-0 flex-1 flex-col gap-2">
+                <input v-model="b.link_url" class="field" :placeholder="$t('config.banner_link_ph')" />
+                <div class="flex items-center gap-3">
+                  <label class="flex items-center gap-1.5 text-[12px]" style="color: var(--muted); cursor:pointer">
+                    <input type="checkbox" v-model="b.is_active" /> {{ $t('config.banner_active') }}
+                  </label>
+                  <span class="flex-1"></span>
+                  <button type="button" class="key-toggle" :title="$t('config.banner_up')" :disabled="i === 0" @click="moveBanner(i, -1)"><Icon name="arrowUp" :size="15" /></button>
+                  <button type="button" class="key-toggle" :title="$t('config.banner_down')" :disabled="i === banners.length - 1" @click="moveBanner(i, 1)"><Icon name="arrowDown" :size="15" /></button>
+                  <button type="button" class="key-toggle" :title="$t('config.banner_remove')" @click="removeBanner(i)"><Icon name="trash" :size="15" /></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="rounded-lg p-6 text-center text-[13px]" style="border: 1px dashed var(--border-strong); color: var(--faint)">
+            {{ $t('config.banner_empty') }}
+          </div>
+
+          <!-- Thêm ảnh -->
+          <input ref="bannerFileInput" type="file" accept="image/*" multiple class="hidden" @change="onBannerFiles" />
+          <button
+            type="button"
+            class="btn"
+            style="border:1px solid var(--border-strong)"
+            :disabled="banners.length >= MAX_BANNERS"
+            @click="bannerFileInput?.click()"
+          >
+            <Icon name="upload" :size="16" /> {{ $t('config.banner_add') }}
+          </button>
+        </section>
+
+        <div class="flex justify-end">
+          <button type="button" class="btn btn-primary" :disabled="bannersSaving" @click="saveBanners">
+            <Icon name="check" :size="16" />{{ bannersSaving ? $t('common.saving') : $t('config.save_btn') }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- ========== REPORTS TAB ========== -->

@@ -2,24 +2,16 @@
 /**
  * HistoryView — lịch sử đơn hàng của Buyer (Req 11.1, 11.2, 11.4).
  *
- *  - Khi mở: gọi `GET /api/app/orders` (bọc `ui.withLoading`) lấy danh sách đơn của
- *    người mua hiện tại, đã được server lọc theo `telegram_id` và sắp xếp theo thời gian
- *    tạo giảm dần (Req 11.1) — frontend chỉ render theo đúng thứ tự nhận được.
- *  - Mỗi đơn render trong một `GlassCard`: emoji + tên loại sản phẩm, số lượng, tổng tiền
- *    (chuỗi `total_display` đã format từ server), trạng thái (map sang nhãn tiếng Việt) và
- *    thời gian tạo (format `DD/MM/YYYY HH:mm` qua `formatDate`) (Req 11.2).
- *  - Chạm vào một đơn → điều hướng sang màn chi tiết (`order-detail` với `id` dạng chuỗi
- *    để khớp prop route `props: true`); phát haptic('light') cho phản hồi kiểu iOS.
- *  - Chưa có đơn nào → `EmptyState` (Req 11.4). Lỗi tải (khác 401) → toast lỗi.
- *  - BackButton của Telegram để quay lại trang chủ; gỡ khi rời màn hình qua cleanup.
- *
- * Bố cục mobile-first iOS HIG, chỉ dùng màu phẳng + lớp `.glass` — KHÔNG gradient (Req 13).
+ *  - `GET /api/app/orders` (bọc `ui.withLoading`) — server đã lọc theo `telegram_id` và
+ *    sắp giảm dần theo thời gian. Render trong `ListSection` (row `ListRow`).
+ *  - Chạm vào đơn → màn chi tiết (`order-detail`). Trống → `EmptyState` (Req 11.4).
+ *  - Màn cấp 2 (mở từ Ví) → dùng Telegram BackButton. Màu phẳng, không gradient.
  */
-
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import GlassCard from '@/components/GlassCard.vue'
+import ListSection from '@/components/ListSection.vue'
+import ListRow from '@/components/ListRow.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { ReceiptText } from '@lucide/vue'
 import { get, ApiError } from '@/api/client'
@@ -31,29 +23,19 @@ const router = useRouter()
 const ui = useUiStore()
 const { t } = useI18n()
 
-/** Danh sách đơn hàng (đã sắp xếp giảm dần theo thời gian từ server — Req 11.1). */
 const orders = ref<OrderListItemDto[]>([])
-/** `true` sau khi request đầu tiên hoàn tất — tránh nháy EmptyState trong lúc đang tải. */
 const loaded = ref(false)
 
-/** Dọn dẹp BackButton (gỡ handler + ẩn) khi rời màn hình. */
 let cleanupBack: Cleanup = () => {}
 
-/** Map trạng thái đơn của server sang key i18n nhãn hiển thị (Req 11.2). */
 function statusKey(status: OrderListItemDto['status']): string {
   return status === 'completed' || status === 'refunded' ? `status.${status}` : status
 }
 
-/**
- * Mở màn chi tiết của một đơn hàng (Req 11.3). `id` truyền dạng chuỗi để khớp prop
- * route (`props: true`). Phát haptic('light') cho phản hồi chạm kiểu iOS (Req 13.5).
- */
 function openDetail(order: OrderListItemDto): void {
-  ui.haptic('light')
   router.push({ name: 'order-detail', params: { id: String(order.id) } })
 }
 
-/** Nạp lịch sử đơn từ server; 401 do client tự xử lý (bỏ qua toast), lỗi khác → toast. */
 async function load(): Promise<void> {
   try {
     orders.value = await ui.withLoading(get<OrderListItemDto[]>('/orders'))
@@ -78,46 +60,35 @@ onUnmounted(() => {
 <template>
   <main class="flex flex-col gap-4 px-4 py-6">
     <header class="px-1">
-      <h1 class="text-ios-title text-text">{{ $t('history.title') }}</h1>
+      <h1 class="text-ios-large-title text-text">{{ $t('history.title') }}</h1>
     </header>
 
-    <!-- Danh sách đơn (Req 11.1, 11.2); sắp xếp giảm dần theo thời gian từ server -->
-    <section
-      v-if="orders.length"
-      class="flex flex-col gap-3"
-      :aria-label="$t('history.list_label')"
-    >
-      <GlassCard
+    <ListSection v-if="orders.length" :title="$t('history.list_label')">
+      <ListRow
         v-for="order in orders"
         :key="order.id"
-        as="button"
-        class="tap-target w-full text-left transition-transform duration-ios ease-ios active:scale-[0.98]"
-        :aria-label="order.product_name"
+        clickable
+        :title="order.product_name"
+        :subtitle="t('history.qty', { count: order.quantity }) + ' · ' + $t(statusKey(order.status))"
         @click="openDetail(order)"
       >
-        <div class="flex items-center gap-3">
-          <span class="text-3xl leading-none" aria-hidden="true">{{ order.emoji }}</span>
-
-          <div class="flex min-w-0 flex-1 flex-col gap-1">
-            <div class="flex items-baseline justify-between gap-2">
-              <span class="truncate text-ios-headline text-text">{{ order.product_name }}</span>
-              <span class="shrink-0 tabular-nums text-ios-headline text-accent">
-                {{ order.total_display }}
-              </span>
-            </div>
-
-            <div class="flex items-center justify-between gap-2 text-ios-footnote text-hint">
-              <span>{{ $t('history.qty', { count: order.quantity }) }}</span>
-              <span>{{ $t(statusKey(order.status)) }}</span>
-            </div>
-
+        <template #leading>
+          <span
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-2xl leading-none"
+            aria-hidden="true"
+          >
+            {{ order.emoji }}
+          </span>
+        </template>
+        <template #trailing>
+          <span class="flex flex-col items-end">
+            <span class="shrink-0 text-ios-headline tabular-nums text-accent">{{ order.total_display }}</span>
             <span class="text-ios-caption text-hint">{{ $d(new Date(order.created_at), 'short') }}</span>
-          </div>
-        </div>
-      </GlassCard>
-    </section>
+          </span>
+        </template>
+      </ListRow>
+    </ListSection>
 
-    <!-- Trạng thái trống khi chưa có đơn nào (Req 11.4) -->
     <EmptyState
       v-else-if="loaded"
       :icon="ReceiptText"

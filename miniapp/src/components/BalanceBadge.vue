@@ -38,7 +38,7 @@ const text = computed(() =>
 </script>
 
 <template>
-  <div class="glass flex flex-col gap-1 p-5">
+  <div class="surface-card flex flex-col gap-1 p-5">
     <span class="text-ios-footnote text-hint">{{ labelText }}</span>
     <span class="text-ios-large-title tabular-nums text-text">{{ text }}</span>
   </div>

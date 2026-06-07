@@ -17,6 +17,7 @@ import { useI18n } from 'vue-i18n'
 import GlassCard from '@/components/GlassCard.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import QrPanel from '@/components/QrPanel.vue'
+import SegmentedControl from '@/components/SegmentedControl.vue'
 import { CircleCheck } from '@lucide/vue'
 import { get, post, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
@@ -53,6 +54,14 @@ const submitting = ref(false)
 const cancelling = ref(false)
 
 const isCrypto = computed(() => selectedMethod.value === 'cryptobot')
+
+/** Lựa chọn cho SegmentedControl phương thức nạp (label theo locale). */
+const methodOptions = computed(() =>
+  methods.value.map((m) => ({
+    value: m.id,
+    label: m.id === 'sepay' ? t('deposit.method_sepay') : t('deposit.method_cryptobot'),
+  }))
+)
 const created = computed(() => createdSepay.value !== null || createdCrypto.value !== null)
 
 /** Số tiền hợp lệ: sepay = số nguyên VND; crypto = số dương (cho phép thập phân USDT). */
@@ -270,19 +279,11 @@ onUnmounted(() => {
       <!-- Chọn phương thức (chỉ hiện khi >1 phương thức) (R8.3) -->
       <section v-if="methods.length > 1" class="flex flex-col gap-2" aria-label="method">
         <h2 class="px-1 text-ios-footnote text-hint">{{ $t('deposit.choose_method') }}</h2>
-        <div class="grid grid-cols-2 gap-3">
-          <button
-            v-for="m in methods"
-            :key="m.id"
-            type="button"
-            class="tap-target rounded-ios px-4 py-3 text-ios-headline transition-transform active:scale-[0.97]"
-            :class="selectedMethod === m.id ? 'bg-accent text-accent-text' : 'glass text-text'"
-            :aria-pressed="selectedMethod === m.id"
-            @click="selectMethod(m.id)"
-          >
-            {{ m.id === 'sepay' ? $t('deposit.method_sepay') : $t('deposit.method_cryptobot') }}
-          </button>
-        </div>
+        <SegmentedControl
+          :model-value="selectedMethod"
+          :options="methodOptions"
+          @update:model-value="selectMethod($event as 'sepay' | 'cryptobot')"
+        />
       </section>
 
       <!-- SePay: grid mệnh giá -->
@@ -292,8 +293,8 @@ onUnmounted(() => {
             v-for="preset in PRESET_AMOUNTS"
             :key="preset"
             type="button"
-            class="tap-target rounded-ios px-4 py-3 text-ios-headline tabular-nums transition-transform active:scale-[0.97]"
-            :class="amount === preset ? 'bg-accent text-accent-text' : 'glass text-text'"
+            class="tap-target rounded-ios px-4 py-3 text-ios-headline tabular-nums shadow-ios transition-transform active:scale-[0.97]"
+            :class="amount === preset ? 'bg-accent text-accent-text' : 'bg-surface text-text'"
             :aria-pressed="amount === preset"
             @click="selectPreset(preset)"
           >
@@ -307,7 +308,7 @@ onUnmounted(() => {
         <h2 class="px-1 text-ios-footnote text-hint">
           {{ isCrypto ? $t('deposit.amount_usdt') : $t('deposit.amount_vnd') }}
         </h2>
-        <div class="glass flex items-center gap-2 px-4 py-3">
+        <div class="surface-card flex items-center gap-2 px-4 py-3">
           <input
             :value="amountInput"
             type="text"

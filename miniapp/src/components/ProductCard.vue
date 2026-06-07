@@ -1,12 +1,15 @@
 <script setup lang="ts">
 /**
- * ProductCard — một loại sản phẩm trong danh mục (Req 5.1, 5.2, 5.4).
- *  - hiển thị emoji, tên, giá (đã format) và tồn kho.
- *  - khi hết hàng (!inStock): hiển thị nhãn "Hết hàng" + vô hiệu hoá bấm (Req 5.4).
- *  - phát haptic('light') + emit('click') khi còn hàng; màu phẳng, không chuyển-màu-nền.
+ * ProductCard — một loại sản phẩm dạng row CryptoBot (Req 5.1, 5.2, 5.4).
+ *  - avatar tròn (emoji) trái | tên + giá (accent) | tồn kho/`Hết hàng` phải + chevron.
+ *  - hết hàng (!inStock) → nhãn đỏ + disable bấm (Req 5.4).
+ *  - haptic('light') + emit('click') khi còn hàng. Màu phẳng, không gradient.
+ *  - Giữ nguyên props/emit để không vỡ ShopView/HomeView. Dùng trong ListSection (tự kẻ
+ *    separator giữa các row).
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ChevronRight } from '@lucide/vue'
 import { haptic } from '@/telegram/sdk'
 import { formatCurrency } from '@/utils/format'
 
@@ -14,15 +17,15 @@ const props = withDefaults(
   defineProps<{
     /** Tên loại sản phẩm. */
     name: string
-    /** Emoji minh hoạ. */
+    /** Emoji minh hoạ (dữ liệu admin). */
     emoji?: string
-    /** Giá dạng số (đồng) — fallback format CLIENT-SIDE khi không có `priceDisplay`. */
+    /** Giá dạng số (đồng) — fallback khi không có `priceDisplay`. */
     price: number
     /** Chuỗi giá region-aware từ server; có giá trị → render verbatim (R1.1). */
     priceDisplay?: string
-    /** Số lượng còn lại (products status='available'). */
+    /** Số lượng còn lại. */
     stock?: number
-    /** Còn hàng hay không (stock > 0). */
+    /** Còn hàng hay không. */
     inStock?: boolean
   }>(),
   { emoji: '', stock: 0, inStock: true }
@@ -32,7 +35,6 @@ const emit = defineEmits<{ (e: 'click'): void }>()
 
 const { t } = useI18n()
 
-/** Giá hiển thị: ưu tiên `priceDisplay` từ server (verbatim), thiếu thì format VNĐ theo locale. */
 const priceText = computed(() =>
   props.priceDisplay && props.priceDisplay.length > 0 ? props.priceDisplay : formatCurrency(props.price)
 )
@@ -52,19 +54,33 @@ function onClick(): void {
   <button
     type="button"
     :disabled="!inStock"
-    class="glass tap-target flex w-full items-center gap-3 p-4 text-left transition-transform duration-ios ease-ios active:scale-[0.98] disabled:opacity-50"
+    class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-app disabled:opacity-50 tap-target"
     @click="onClick"
   >
-    <span class="text-3xl leading-none" aria-hidden="true">{{ emoji }}</span>
+    <span
+      class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-2xl leading-none"
+      aria-hidden="true"
+    >
+      {{ emoji }}
+    </span>
+
     <span class="flex min-w-0 flex-1 flex-col">
       <span class="truncate text-ios-headline text-text">{{ name }}</span>
-      <span class="text-ios-body tabular-nums text-accent">{{ priceText }}</span>
+      <span class="text-ios-footnote tabular-nums text-accent">{{ priceText }}</span>
     </span>
+
     <span
       class="shrink-0 text-ios-footnote"
       :class="inStock ? 'text-hint' : 'text-ios-red'"
     >
       {{ stockText }}
     </span>
+    <ChevronRight
+      v-if="inStock"
+      :size="18"
+      :stroke-width="2"
+      class="shrink-0 text-hint"
+      aria-hidden="true"
+    />
   </button>
 </template>

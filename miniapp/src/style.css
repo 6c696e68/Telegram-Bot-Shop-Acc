@@ -1,11 +1,11 @@
 /*
- * Design system — Telegram Mini App
- * iOS HIG + liquid glass. Chỉ dùng MÀU PHẲNG + lớp kính translucent
- * (alpha thấp + blur). KHÔNG dùng hiệu ứng chuyển-màu-nền (Req 13.2, 13.3).
+ * Design system — Telegram Mini App (phong cách CryptoBot, biến thể shop)
+ * iOS HIG grouped-list. Mô hình "card trên nền": nền app = secondary-bg (grouped),
+ * thẻ/section = surface (bg). Chỉ MÀU PHẲNG + alpha + lớp kính cho overlay.
+ * KHÔNG dùng hiệu ứng chuyển-màu-nền (Req 13.2, 13.3).
  *
- * CSS variables được đổ từ Telegram themeParams lúc runtime
- * (xem src/telegram/theme.ts). Giá trị dưới đây là fallback hợp lý
- * cho light/dark khi thiếu param.
+ * CSS variables được đổ từ Telegram themeParams lúc runtime (xem src/telegram/theme.ts).
+ * Giá trị dưới đây là fallback hợp lý cho light/dark khi thiếu param.
  */
 @tailwind base;
 @tailwind components;
@@ -14,22 +14,40 @@
 :root {
   /* Nền & chữ — đổ từ themeParams (Req 13.6), fallback màu phẳng iOS. */
   --tg-bg: var(--tg-theme-bg-color, #ffffff);
-  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #f2f2f7); /* iOS systemGray6 */
+  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #f2f2f7); /* iOS systemGroupedBackground */
   --tg-text: var(--tg-theme-text-color, #1c1c1e);
   --tg-hint: var(--tg-theme-hint-color, #8e8e93); /* iOS systemGray */
   --tg-accent: var(--tg-theme-button-color, #007aff); /* iOS systemBlue */
   --tg-accent-text: var(--tg-theme-button-text-color, #ffffff);
 
-  /* Vật liệu liquid glass — màu phẳng + alpha (KHÔNG phủ hiệu ứng chuyển màu). */
-  --glass-fill: rgba(255, 255, 255, 0.55);
+  /* Mô hình grouped-list kiểu CryptoBot:
+   *  - --app-bg  : nền sau các section (grouped background).
+   *  - --surface : mặt thẻ/section/row (cell).
+   *  - --separator: đường kẻ mảnh giữa các row trong một section. */
+  --app-bg: var(--tg-secondary-bg);
+  --surface: var(--tg-theme-section-bg-color, var(--tg-bg));
+  --separator: var(--tg-theme-section-separator-color, rgba(60, 60, 67, 0.18));
+
+  /* Nền nhạt cho avatar tròn / banner promo: accent + alpha (MÀU PHẲNG, không gradient). */
+  --accent-soft: rgba(0, 122, 255, 0.12);
+  --accent-soft: color-mix(in srgb, var(--tg-accent) 14%, transparent);
+
+  /* Vật liệu liquid glass cho OVERLAY (toast/loading/unauthorized) — màu phẳng + alpha. */
+  --glass-fill: rgba(255, 255, 255, 0.72);
   --glass-stroke: rgba(255, 255, 255, 0.40);
   --glass-blur: 20px;
   --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+
+  /* Bóng nhẹ cho thẻ/section nổi trên nền grouped. */
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 
   /* Màu hệ thống iOS (phẳng). */
   --ios-green: #34c759;
   --ios-red: #ff3b30;
   --ios-orange: #ff9500;
+
+  /* Chiều cao thanh tab dưới (chưa gồm safe-bottom). */
+  --tab-height: 60px;
 
   /* Easing chuẩn iOS (Req 13.4). */
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
@@ -47,16 +65,24 @@
  * hoặc qua [data-theme='dark']. Chỉ override màu phẳng + vật liệu kính. */
 :root.dark,
 :root[data-theme='dark'] {
-  --tg-bg: var(--tg-theme-bg-color, #000000);
-  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #1c1c1e);
+  --tg-bg: var(--tg-theme-bg-color, #1c1c1e);
+  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #000000);
   --tg-text: var(--tg-theme-text-color, #ffffff);
   --tg-hint: var(--tg-theme-hint-color, #8e8e93);
   --tg-accent: var(--tg-theme-button-color, #0a84ff);
   --tg-accent-text: var(--tg-theme-button-text-color, #ffffff);
 
-  --glass-fill: rgba(28, 28, 30, 0.55);
+  --app-bg: var(--tg-secondary-bg);
+  --surface: var(--tg-theme-section-bg-color, var(--tg-bg));
+  --separator: var(--tg-theme-section-separator-color, rgba(84, 84, 88, 0.40));
+
+  --accent-soft: rgba(10, 132, 255, 0.20);
+  --accent-soft: color-mix(in srgb, var(--tg-accent) 24%, transparent);
+
+  --glass-fill: rgba(28, 28, 30, 0.72);
   --glass-stroke: rgba(255, 255, 255, 0.12);
   --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.40);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
 }
 
 @layer base {
@@ -67,8 +93,8 @@
   }
 
   body {
-    /* Màu nền/chữ phẳng theo theme; font hệ thống iOS. */
-    background-color: var(--tg-bg);
+    /* Nền grouped (secondary-bg) để các thẻ surface nổi lên như CryptoBot. */
+    background-color: var(--app-bg);
     color: var(--tg-text);
     font-family: -apple-system, 'SF Pro Text', system-ui, 'Segoe UI', Roboto,
       sans-serif;
@@ -76,7 +102,6 @@
     line-height: 1.4;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* iOS: bỏ highlight xanh khi chạm. */
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
     min-height: 100vh;
@@ -85,7 +110,6 @@
   /* Tôn trọng safe-area khi bố cục nội dung gốc (Req 13.7). */
   #app {
     padding-top: var(--safe-top);
-    padding-bottom: var(--safe-bottom);
     padding-left: var(--safe-left);
     padding-right: var(--safe-right);
     box-sizing: border-box;
@@ -93,8 +117,14 @@
 }
 
 @layer components {
-  /* Vật liệu liquid glass: nền translucent màu phẳng + blur + viền 1px + bóng nhẹ.
-   * Tuyệt đối không phủ hiệu ứng chuyển màu (Req 13.2, 13.3). */
+  /* Thẻ/section grouped: mặt phẳng surface + bo góc lớn + bóng nhẹ. */
+  .surface-card {
+    background-color: var(--surface);
+    border-radius: 20px;
+    box-shadow: var(--card-shadow);
+  }
+
+  /* Vật liệu liquid glass — CHỈ dùng cho overlay (toast/loading/unauthorized). */
   .glass {
     background-color: var(--glass-fill);
     -webkit-backdrop-filter: blur(var(--glass-blur));
@@ -109,6 +139,11 @@
     min-height: 44px;
     min-width: 44px;
   }
+
+  /* Đệm đáy để nội dung không bị thanh tab che (cộng safe-bottom). */
+  .pb-tabbar {
+    padding-bottom: calc(var(--tab-height) + var(--safe-bottom) + 12px);
+  }
 }
 
 /* Tôn trọng tuỳ chọn giảm chuyển động của hệ thống (Req 13.4). */
@@ -122,10 +157,7 @@
     scroll-behavior: auto !important;
   }
 
-  /* NGOẠI LỆ: spinner là chỉ báo hoạt động (loading), KHÔNG phải chuyển động
-   * trang trí. Theo iOS HIG, activity indicator vẫn xoay khi bật Reduce Motion —
-   * nếu để rule `*` ở trên ép iteration-count:1 + duration ~0 thì icon loading
-   * đứng im, người dùng tưởng app treo. Selector class thắng `*` về specificity. */
+  /* NGOẠI LỆ: spinner là chỉ báo hoạt động (loading) — vẫn xoay khi bật Reduce Motion. */
   .animate-spin {
     animation: spin 1s linear infinite !important;
   }

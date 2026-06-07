@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * GlassCard — vật liệu liquid glass tái sử dụng (Req 13.1, 13.2, 13.3).
- * Wrapper đơn giản: nền kính phẳng + blur + bo góc; nội dung qua slot mặc định.
- * Không chuyển-màu-nền — chỉ class `.glass` (màu phẳng + backdrop-blur + viền + bóng).
+ * GlassCard — thẻ surface tái sử dụng (kiểu CryptoBot grouped-card).
+ * Giữ tên + props (`padded`, `as`) để không vỡ import hiện tại; nội hàm đổi từ kính mờ
+ * sang mặt surface phẳng + bo góc lớn + bóng nhẹ (`.surface-card`). Màu phẳng, không
+ * gradient (Req 13.2/13.3).
  */
 withDefaults(
   defineProps<{
@@ -16,7 +17,7 @@ withDefaults(
 </script>
 
 <template>
-  <component :is="as" class="glass" :class="padded ? 'p-4' : ''">
+  <component :is="as" class="surface-card" :class="padded ? 'p-4' : ''">
     <slot />
   </component>
 </template>

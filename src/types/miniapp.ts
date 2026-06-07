@@ -118,3 +118,12 @@ export interface OrderListItemDto {
 export interface OrderDetailDto extends OrderListItemDto {
   contents: string[] // products.content thuộc đơn
 }
+
+/** Phần tử `GET /api/app/banners` — ảnh banner storefront (chỉ banner is_active=1). */
+export interface BannerDto {
+  id: number
+  /** data URL (base64) hoặc URL HTTPS của ảnh banner. */
+  image_url: string
+  /** Link mở khi chạm banner (tuỳ chọn). */
+  link_url: string | null
+}
