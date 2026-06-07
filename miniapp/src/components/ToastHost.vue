@@ -1,10 +1,8 @@
 <script setup lang="ts">
 /**
- * ToastHost — render hàng đợi toast toàn cục từ `ui` store (Req 13 — phản hồi UI).
- *
- * Mount một lần ở App.vue. Đọc `toasts` reactive và hiển thị mỗi toast dạng pill kính
- * (.glass, màu phẳng theo loại). Bấm vào toast → ẩn ngay (`dismissToast`).
- * Icon dùng SVG (lucide), KHÔNG emoji. Tôn trọng safe-area; không gradient (Req 13.3).
+ * ToastHost — render hàng đợi toast toàn cục từ `ui` store (Obsidian Glass).
+ *  - Pill kính (`.glass-panel`) màu theo loại; bấm để ẩn ngay. Icon SVG (lucide), không emoji.
+ *  - Hiển thị phía trên, tôn trọng safe-area-top.
  */
 import { CircleCheck, TriangleAlert, Info } from '@lucide/vue'
 import type { Component } from 'vue'
@@ -12,19 +10,17 @@ import { useUiStore, type ToastType } from '@/stores/ui'
 
 const ui = useUiStore()
 
-/** Màu chữ theo loại toast (màu phẳng iOS, không chuyển-màu-nền). */
 function toneClass(type: ToastType): string {
   switch (type) {
     case 'success':
-      return 'text-ios-green'
+      return 'text-tertiary'
     case 'error':
-      return 'text-ios-red'
+      return 'text-error'
     default:
-      return 'text-text'
+      return 'text-on-surface'
   }
 }
 
-/** Icon SVG dẫn hướng nhanh theo loại toast. */
 function iconFor(type: ToastType): Component {
   switch (type) {
     case 'success':
@@ -39,7 +35,7 @@ function iconFor(type: ToastType): Component {
 
 <template>
   <div
-    class="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-2 px-4"
+    class="pointer-events-none fixed inset-x-0 top-0 z-[60] flex flex-col items-center gap-2 px-4"
     :style="{ paddingTop: 'calc(var(--safe-top) + 0.75rem)' }"
     aria-live="polite"
     aria-atomic="true"
@@ -49,7 +45,7 @@ function iconFor(type: ToastType): Component {
         v-for="t in ui.toasts.value"
         :key="t.id"
         type="button"
-        class="glass pointer-events-auto flex max-w-md items-center gap-2 px-4 py-3 text-left text-ios-footnote shadow-glass"
+        class="glass-panel pointer-events-auto flex max-w-md items-center gap-2 rounded-full px-4 py-2.5 text-left text-[14px] shadow-lg"
         @click="ui.dismissToast(t.id)"
       >
         <component
@@ -67,7 +63,6 @@ function iconFor(type: ToastType): Component {
 </template>
 
 <style scoped>
-/* Easing iOS; tôn trọng prefers-reduced-motion (đã tắt transition toàn cục ở style.css). */
 .toast-enter-active,
 .toast-leave-active {
   transition:

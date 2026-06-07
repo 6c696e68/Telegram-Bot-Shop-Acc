@@ -1,50 +1,36 @@
 <script setup lang="ts">
 /**
- * ProductCard — một loại sản phẩm dạng row CryptoBot (Req 5.1, 5.2, 5.4).
- *  - avatar tròn (emoji) trái | tên + giá (accent) | tồn kho/`Hết hàng` phải + chevron.
- *  - hết hàng (!inStock) → nhãn đỏ + disable bấm (Req 5.4).
- *  - haptic('light') + emit('click') khi còn hàng. Màu phẳng, không gradient.
- *  - Giữ nguyên props/emit để không vỡ ShopView/HomeView. Dùng trong ListSection (tự kẻ
- *    separator giữa các row).
+ * ProductCard — thẻ sản phẩm trong lưới 2 cột (Obsidian Glass, Req 5.1/5.2/5.4).
+ *  - Header: ảnh `imageUrl` (full-bleed) nếu có; nếu không → ô gradient + glyph fallback.
+ *  - Body: tên (2 dòng), giá (primary). Hết hàng → mờ giá + chặn bấm (Req 5.4).
+ *  - haptic('light') + emit('click') khi còn hàng.
  */
-import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { ChevronRight } from '@lucide/vue'
+import { computed, ref } from 'vue'
 import { haptic } from '@/telegram/sdk'
-import { formatCurrency } from '@/utils/format'
+import { tileGradient, tileTint } from '@/utils/avatar'
+import StatusBadge from '@/components/StatusBadge.vue'
 
 const props = withDefaults(
   defineProps<{
-    /** Tên loại sản phẩm. */
+    id: number | string
     name: string
-    /** Emoji minh hoạ (dữ liệu admin). */
     emoji?: string
-    /** Giá dạng số (đồng) — fallback khi không có `priceDisplay`. */
-    price: number
-    /** Chuỗi giá region-aware từ server; có giá trị → render verbatim (R1.1). */
-    priceDisplay?: string
-    /** Số lượng còn lại. */
+    imageUrl?: string | null
+    priceDisplay: string
     stock?: number
-    /** Còn hàng hay không. */
     inStock?: boolean
   }>(),
-  { emoji: '', stock: 0, inStock: true }
+  { emoji: '', imageUrl: null, stock: 0, inStock: true }
 )
 
 const emit = defineEmits<{ (e: 'click'): void }>()
 
-const { t } = useI18n()
-
-const priceText = computed(() =>
-  props.priceDisplay && props.priceDisplay.length > 0 ? props.priceDisplay : formatCurrency(props.price)
-)
-
-const stockText = computed(() =>
-  props.inStock ? t('product.in_stock', { count: props.stock }) : t('product.out_of_stock')
-)
+const imgError = ref(false)
+const showImage = computed(() => !!props.imageUrl && !imgError.value)
+const glyph = computed(() => props.emoji?.trim() || props.name.trim().charAt(0).toUpperCase())
 
 function onClick(): void {
-  if (!props.inStock) return // Req 5.4 — chặn mua khi hết hàng
+  if (!props.inStock) return
   haptic('light')
   emit('click')
 }
@@ -54,33 +40,50 @@ function onClick(): void {
   <button
     type="button"
     :disabled="!inStock"
-    class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-app disabled:opacity-50 tap-target"
+    class="flex flex-col overflow-hidden rounded-xl bg-surface-container-lowest text-left ring-1 ring-outline-variant/20 transition-transform duration-200 active:scale-[0.97]"
     @click="onClick"
   >
-    <span
-      class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-2xl leading-none"
-      aria-hidden="true"
-    >
-      {{ emoji }}
-    </span>
+    <!-- Header: ảnh thật hoặc fallback gradient + glyph -->
+    <div class="relative h-28 w-full overflow-hidden bg-surface-container">
+      <img
+        v-if="showImage"
+        :src="imageUrl as string"
+        :alt="name"
+        class="h-full w-full object-cover"
+        :class="inStock ? '' : 'opacity-50 grayscale'"
+        @error="imgError = true"
+      />
+      <div
+        v-else
+        class="flex h-full w-full items-center justify-center"
+        :style="{ backgroundImage: tileGradient(id) }"
+      >
+        <span
+          class="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl leading-none"
+          :style="{ backgroundColor: tileTint(id), color: '#e0e2ed' }"
+          aria-hidden="true"
+        >
+          {{ glyph }}
+        </span>
+      </div>
+      <div class="absolute left-2 top-2">
+        <StatusBadge :in-stock="inStock" />
+      </div>
+    </div>
 
-    <span class="flex min-w-0 flex-1 flex-col">
-      <span class="truncate text-ios-headline text-text">{{ name }}</span>
-      <span class="text-ios-footnote tabular-nums text-accent">{{ priceText }}</span>
-    </span>
-
-    <span
-      class="shrink-0 text-ios-footnote"
-      :class="inStock ? 'text-hint' : 'text-ios-red'"
-    >
-      {{ stockText }}
-    </span>
-    <ChevronRight
-      v-if="inStock"
-      :size="18"
-      :stroke-width="2"
-      class="shrink-0 text-hint"
-      aria-hidden="true"
-    />
+    <!-- Body: tên + giá -->
+    <div class="flex flex-1 flex-col justify-between p-3">
+      <h4 class="line-clamp-2 text-[15px] font-medium leading-snug text-on-surface">
+        {{ name }}
+      </h4>
+      <div class="mt-3 flex items-baseline gap-1" :class="inStock ? '' : 'opacity-50'">
+        <span
+          class="text-[20px] font-bold tracking-tight tabular-nums"
+          :class="inStock ? 'text-primary' : 'text-on-surface-variant'"
+        >
+          {{ priceDisplay }}
+        </span>
+      </div>
+    </div>
   </button>
 </template>

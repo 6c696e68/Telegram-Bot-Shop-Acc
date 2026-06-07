@@ -1,24 +1,20 @@
 <script setup lang="ts">
 /**
- * DepositView — nạp tiền đa phương thức theo vùng (R8.3, R10.1, R10.3).
+ * DepositView — nạp tiền đa phương thức theo vùng (Obsidian Glass, R8.3, R10.1, R10.3).
  *
- *  - Lấy `GET /api/app/deposit-methods` theo vùng. Nhiều phương thức → hiện tab chọn;
- *    một phương thức → vào thẳng.
- *  - SePay (VND): grid mệnh giá + nhập số → `POST /deposits { method:'sepay', amount }`
- *    → hiển thị VietQR + poll trạng thái (giữ hành vi cũ).
- *  - CryptoBot (USDT): nhập USDT → `POST /deposits { method:'cryptobot', amount }` →
- *    mở `pay_url` (openLink) → poll `GET /deposits/:id` tới khi completed.
- *  - Cộng tiền thực do webhook xử lý; view chỉ đọc trạng thái.
+ *  - `GET /api/app/deposit-methods` theo vùng. Nhiều phương thức → SegmentedControl; một → vào thẳng.
+ *  - SePay (VND): grid mệnh giá + nhập số → `POST /deposits { method:'sepay', amount }` → VietQR + poll.
+ *  - CryptoBot (USDT): nhập USDT → `POST /deposits { method:'cryptobot', amount }` → mở pay_url + poll.
+ *  - Cộng tiền thực do webhook xử lý; view chỉ đọc trạng thái. Telegram BackButton + TopAppBar back.
  */
-
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import GlassCard from '@/components/GlassCard.vue'
+import { CircleCheck, Wallet, CircleDollarSign, Landmark } from '@lucide/vue'
+import TopAppBar from '@/components/TopAppBar.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import QrPanel from '@/components/QrPanel.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
-import { CircleCheck } from '@lucide/vue'
 import { get, post, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/stores/user'
@@ -55,16 +51,14 @@ const cancelling = ref(false)
 
 const isCrypto = computed(() => selectedMethod.value === 'cryptobot')
 
-/** Lựa chọn cho SegmentedControl phương thức nạp (label theo locale). */
 const methodOptions = computed(() =>
   methods.value.map((m) => ({
     value: m.id,
-    label: m.id === 'sepay' ? t('deposit.method_sepay') : t('deposit.method_cryptobot'),
+    label: m.id === 'sepay' ? t('deposit.method_sepay_short') : t('deposit.method_cryptobot_short'),
   }))
 )
 const created = computed(() => createdSepay.value !== null || createdCrypto.value !== null)
 
-/** Số tiền hợp lệ: sepay = số nguyên VND; crypto = số dương (cho phép thập phân USDT). */
 const amount = computed<number | null>(() => {
   if (!amountInput.value) return null
   const n = Number(amountInput.value)
@@ -73,7 +67,6 @@ const amount = computed<number | null>(() => {
   return n
 })
 
-/** VND quy đổi kỳ vọng khi nhập USDT (floor(usdt × rate)) — chỉ khi crypto + rate hợp lệ. */
 const estimatedVnd = computed<number | null>(() => {
   if (!isCrypto.value || amount.value === null) return null
   const rate = user.state.rate
@@ -104,7 +97,6 @@ function selectPreset(value: number): void {
 
 function onAmountInput(event: Event): void {
   const el = event.target as HTMLInputElement
-  // sepay: chỉ chữ số; crypto: cho phép một dấu chấm thập phân.
   const cleaned = isCrypto.value
     ? el.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
     : el.value.replace(/\D/g, '')
@@ -163,11 +155,6 @@ function startPolling(): void {
   scheduleNextPoll()
 }
 
-/**
- * Map lỗi tạo nạp sang thông báo cho user (theo locale). Backend trả message hạn mức/
- * chính sách đã bản địa hoá sẵn (hiển thị nguyên văn); riêng các mã code thuần như
- * `method_unavailable` thì dịch qua i18n để không lộ code thô.
- */
 function depositErrorMessage(code: string): string {
   switch (code) {
     case 'method_unavailable':
@@ -230,11 +217,6 @@ function resetDeposit(): void {
   amountInput.value = ''
 }
 
-/**
- * Huỷ yêu cầu nạp đang chờ (R8.x — đồng bộ với flow huỷ của bot).
- * Gọi `POST /deposits/:id/cancel` (guard chủ sở hữu phía server), dừng poll, chuyển
- * trạng thái sang `cancelled`. Lỗi 401 do client xử lý; lỗi khác → toast.
- */
 async function cancelDeposit(): Promise<void> {
   if (depositId.value === null || cancelling.value) return
   cancelling.value = true
@@ -270,138 +252,156 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="flex flex-col gap-5 px-4 py-6">
-    <header class="flex flex-col gap-1">
-      <h1 class="text-ios-title text-text">{{ $t('deposit.title') }}</h1>
-    </header>
+  <div>
+    <TopAppBar :title="$t('deposit.title')" back />
 
-    <template v-if="!created">
-      <!-- Chọn phương thức (chỉ hiện khi >1 phương thức) (R8.3) -->
-      <section v-if="methods.length > 1" class="flex flex-col gap-2" aria-label="method">
-        <h2 class="px-1 text-ios-footnote text-hint">{{ $t('deposit.choose_method') }}</h2>
-        <SegmentedControl
-          :model-value="selectedMethod"
-          :options="methodOptions"
-          @update:model-value="selectMethod($event as 'sepay' | 'cryptobot')"
-        />
-      </section>
-
-      <!-- SePay: grid mệnh giá -->
-      <section v-if="!isCrypto" class="flex flex-col gap-3" aria-label="presets">
-        <div class="grid grid-cols-2 gap-3">
-          <button
-            v-for="preset in PRESET_AMOUNTS"
-            :key="preset"
-            type="button"
-            class="tap-target rounded-ios px-4 py-3 text-ios-headline tabular-nums shadow-ios transition-transform active:scale-[0.97]"
-            :class="amount === preset ? 'bg-accent text-accent-text' : 'bg-surface text-text'"
-            :aria-pressed="amount === preset"
-            @click="selectPreset(preset)"
-          >
-            {{ formatCurrency(preset) }}
-          </button>
-        </div>
-      </section>
-
-      <!-- Ô nhập số tiền (VND hoặc USDT) -->
-      <section class="flex flex-col gap-2" aria-label="amount">
-        <h2 class="px-1 text-ios-footnote text-hint">
-          {{ isCrypto ? $t('deposit.amount_usdt') : $t('deposit.amount_vnd') }}
-        </h2>
-        <div class="surface-card flex items-center gap-2 px-4 py-3">
-          <input
-            :value="amountInput"
-            type="text"
-            :inputmode="isCrypto ? 'decimal' : 'numeric'"
-            :placeholder="$t('deposit.amount_placeholder')"
-            class="w-full bg-transparent text-ios-title tabular-nums text-text outline-none placeholder:text-hint"
-            @input="onAmountInput"
-          />
-          <span class="text-ios-title text-hint" aria-hidden="true">{{ isCrypto ? 'USDT' : 'đ' }}</span>
-        </div>
-        <p
-          v-if="isCrypto && estimatedVndDisplay"
-          class="px-1 text-ios-footnote text-hint tabular-nums"
-        >
-          {{ $t('deposit.approx_vnd', { vnd: estimatedVndDisplay }) }}
-        </p>
-      </section>
-
-      <GlassButton block :disabled="submitting || amount === null" @click="submitDeposit">
-        {{ $t('deposit.create') }}
-      </GlassButton>
-    </template>
-
-    <!-- Sau khi tạo -->
-    <template v-else>
-      <GlassCard v-if="status === 'pending'">
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center gap-3">
-            <span
-              class="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent"
-              aria-hidden="true"
-            />
-            <span class="text-ios-headline text-text">{{ $t('deposit.waiting') }}</span>
-          </div>
-          <p
-            v-if="createdCrypto"
-            class="text-ios-footnote text-hint tabular-nums"
-          >
-            {{ $t('deposit.approx_vnd', { vnd: createdCrypto.credit_vnd_display }) }}
-          </p>
-        </div>
-      </GlassCard>
-
-      <GlassCard v-else-if="status === 'completed'">
-        <div class="flex flex-col items-center gap-2 text-center">
-          <CircleCheck :size="40" :stroke-width="1.75" class="text-ios-green" aria-hidden="true" />
-          <h2 class="text-ios-headline text-text">{{ $t('deposit.success') }}</h2>
-        </div>
-      </GlassCard>
-
-      <GlassCard v-else-if="status === 'cancelled' || status === 'expired'">
-        <div class="flex flex-col items-center gap-2 text-center">
-          <h2 class="text-ios-headline text-text">
-            {{ status === 'cancelled' ? $t('deposit.cancelled') : $t('deposit.expired') }}
+    <main class="mx-auto flex max-w-md flex-col gap-5 px-gutter pb-10 pt-[calc(56px+var(--safe-top))]">
+      <template v-if="!created">
+        <!-- Có phương thức khả dụng cho vùng → form nạp; không có → empty-state (R8.3). -->
+        <template v-if="methods.length">
+        <!-- Phương thức nạp: chọn khi >1, hiển thị cố định khi chỉ có 1 -->
+        <section class="mt-4 flex flex-col gap-2">
+          <h2 class="px-1 font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+            {{ $t('deposit.method_label') }}
           </h2>
+          <SegmentedControl
+            v-if="methods.length > 1"
+            :model-value="selectedMethod"
+            :options="methodOptions"
+            @update:model-value="selectMethod($event as 'sepay' | 'cryptobot')"
+          />
+          <div
+            v-else
+            class="glass-card flex items-center gap-4 rounded-xl border border-primary/50 p-4"
+          >
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-container/20 text-primary">
+              <component :is="isCrypto ? CircleDollarSign : Landmark" :size="22" :stroke-width="2" aria-hidden="true" />
+            </div>
+            <div class="flex-1">
+              <h4 class="text-[16px] text-on-surface">
+                {{ isCrypto ? $t('deposit.method_cryptobot') : $t('deposit.method_sepay') }}
+              </h4>
+              <p class="font-mono text-[12px] text-on-surface-variant">
+                {{ isCrypto ? $t('deposit.method_cryptobot_desc') : $t('deposit.method_sepay_desc') }}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- SePay: grid mệnh giá -->
+        <section v-if="!isCrypto" class="flex flex-col gap-3">
+          <div class="grid grid-cols-2 gap-3">
+            <button
+              v-for="preset in PRESET_AMOUNTS"
+              :key="preset"
+              type="button"
+              class="rounded-xl px-4 py-3 text-[16px] font-semibold tabular-nums transition-transform active:scale-[0.97]"
+              :class="amount === preset ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface'"
+              :aria-pressed="amount === preset"
+              @click="selectPreset(preset)"
+            >
+              {{ formatCurrency(preset) }}
+            </button>
+          </div>
+        </section>
+
+        <!-- Ô nhập số tiền -->
+        <section class="flex flex-col gap-2">
+          <h2 class="px-1 font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+            {{ isCrypto ? $t('deposit.amount_usdt') : $t('deposit.amount_vnd') }}
+          </h2>
+          <div class="flex items-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-high px-4 py-3">
+            <input
+              :value="amountInput"
+              type="text"
+              :inputmode="isCrypto ? 'decimal' : 'numeric'"
+              :placeholder="$t('deposit.amount_placeholder')"
+              class="w-full bg-transparent text-[22px] font-semibold tabular-nums text-on-surface outline-none placeholder:text-outline"
+              @input="onAmountInput"
+            />
+            <span class="text-[22px] text-on-surface-variant" aria-hidden="true">{{ isCrypto ? 'USDT' : 'đ' }}</span>
+          </div>
+          <p v-if="isCrypto && estimatedVndDisplay" class="px-1 text-[13px] tabular-nums text-on-surface-variant">
+            {{ $t('deposit.approx_vnd', { vnd: estimatedVndDisplay }) }}
+          </p>
+        </section>
+
+        <GlassButton block :disabled="submitting || amount === null" @click="submitDeposit">
+          {{ $t('deposit.create') }}
+        </GlassButton>
+        </template>
+
+        <!-- Không phương thức nào khả dụng cho vùng → thông báo thay vì form SePay vỡ -->
+        <div v-else class="mt-10 flex flex-col items-center gap-3 text-center">
+          <span
+            class="flex h-16 w-16 items-center justify-center rounded-full bg-surface-container text-on-surface-variant"
+            aria-hidden="true"
+          >
+            <Wallet :size="30" :stroke-width="1.75" />
+          </span>
+          <h2 class="text-[18px] font-semibold text-on-surface">{{ $t('deposit.no_methods_title') }}</h2>
+          <p class="max-w-xs text-[15px] text-on-surface-variant">{{ $t('deposit.no_methods_desc') }}</p>
         </div>
-      </GlassCard>
+      </template>
 
-      <!-- CryptoBot: nút mở lại liên kết thanh toán -->
-      <GlassButton
-        v-if="createdCrypto && status === 'pending'"
-        block
-        @click="openLink(createdCrypto.pay_url)"
-      >
-        {{ $t('deposit.pay_crypto') }}
-      </GlassButton>
+      <!-- Sau khi tạo -->
+      <template v-else>
+        <div class="mt-4">
+          <div
+            v-if="status === 'pending'"
+            class="flex flex-col gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4"
+          >
+            <div class="flex items-center gap-3">
+              <span class="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-hidden="true" />
+              <span class="text-[16px] font-semibold text-on-surface">{{ $t('deposit.waiting') }}</span>
+            </div>
+            <p v-if="createdCrypto" class="text-[13px] tabular-nums text-on-surface-variant">
+              {{ $t('deposit.approx_vnd', { vnd: createdCrypto.credit_vnd_display }) }}
+            </p>
+          </div>
 
-      <!-- SePay: VietQR -->
-      <QrPanel
-        v-if="createdSepay && status === 'pending'"
-        :qr-url="createdSepay.qr_url"
-        :bank-name="createdSepay.bank_name"
-        :bank-account="createdSepay.bank_account"
-        :bank-owner="createdSepay.bank_owner"
-        :amount-display="createdSepay.amount_display"
-        :transfer-code="createdSepay.transfer_code"
-      />
+          <div
+            v-else-if="status === 'completed'"
+            class="flex flex-col items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 text-center"
+          >
+            <CircleCheck :size="40" :stroke-width="1.75" class="text-tertiary" aria-hidden="true" />
+            <h2 class="text-[18px] font-semibold text-on-surface">{{ $t('deposit.success') }}</h2>
+          </div>
 
-      <!-- Đang chờ: cho phép huỷ yêu cầu nạp (đồng bộ flow huỷ của bot) -->
-      <GlassButton
-        v-if="status === 'pending'"
-        variant="secondary"
-        block
-        :disabled="cancelling"
-        @click="cancelDeposit"
-      >
-        {{ $t('deposit.cancel') }}
-      </GlassButton>
+          <div
+            v-else-if="status === 'cancelled' || status === 'expired'"
+            class="flex flex-col items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 text-center"
+          >
+            <h2 class="text-[18px] font-semibold text-on-surface">
+              {{ status === 'cancelled' ? $t('deposit.cancelled') : $t('deposit.expired') }}
+            </h2>
+          </div>
+        </div>
 
-      <!-- Đã kết thúc (completed/cancelled/expired): quay lại form nạp -->
-      <GlassButton v-else variant="secondary" block @click="resetDeposit">
-        {{ $t('common.back') }}
-      </GlassButton>
-    </template>
-  </main>
+        <!-- CryptoBot: mở lại liên kết -->
+        <GlassButton v-if="createdCrypto && status === 'pending'" block @click="openLink(createdCrypto.pay_url)">
+          {{ $t('deposit.pay_crypto') }}
+        </GlassButton>
+
+        <!-- SePay: VietQR -->
+        <QrPanel
+          v-if="createdSepay && status === 'pending'"
+          :qr-url="createdSepay.qr_url"
+          :bank-name="createdSepay.bank_name"
+          :bank-account="createdSepay.bank_account"
+          :bank-owner="createdSepay.bank_owner"
+          :amount-display="createdSepay.amount_display"
+          :transfer-code="createdSepay.transfer_code"
+        />
+
+        <GlassButton v-if="status === 'pending'" variant="secondary" block :disabled="cancelling" @click="cancelDeposit">
+          {{ $t('deposit.cancel') }}
+        </GlassButton>
+
+        <GlassButton v-else variant="ghost" block @click="resetDeposit">
+          {{ $t('common.back') }}
+        </GlassButton>
+      </template>
+    </main>
+  </div>
 </template>

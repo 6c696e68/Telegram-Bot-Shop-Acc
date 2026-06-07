@@ -59,6 +59,8 @@ export interface ProductTypeListItemDto {
   id: number
   name: string
   emoji: string
+  /** Ảnh minh hoạ (data URL/HTTPS) do admin upload; null → fallback emoji. */
+  image_url: string | null
   price: number
   price_display: string
   stock: number // COUNT(products.status='available')
@@ -70,6 +72,8 @@ export interface ProductTypeDetailDto {
   id: number
   name: string
   emoji: string
+  /** Ảnh minh hoạ (data URL/HTTPS) do admin upload; null → fallback emoji. */
+  image_url: string | null
   description: string | null
   price: number
   price_display: string

@@ -1,88 +1,29 @@
 /*
- * Design system — Telegram Mini App (phong cách CryptoBot, biến thể shop)
- * iOS HIG grouped-list. Mô hình "card trên nền": nền app = secondary-bg (grouped),
- * thẻ/section = surface (bg). Chỉ MÀU PHẲNG + alpha + lớp kính cho overlay.
- * KHÔNG dùng hiệu ứng chuyển-màu-nền (Req 13.2, 13.3).
+ * Design system — Telegram Mini App "Obsidian Glass" (dark-only).
  *
- * CSS variables được đổ từ Telegram themeParams lúc runtime (xem src/telegram/theme.ts).
- * Giá trị dưới đây là fallback hợp lý cho light/dark khi thiếu param.
+ * Glassmorphism + minimalism trên nền obsidian (#10131b). Token màu Material-3 cố định
+ * khai báo trong tailwind.config.js; file này lo phần base (font, nền, safe-area) và các
+ * lớp tiện ích lặp lại (glass-panel, glass-card, btn-gradient, shimmer, scrollbar-hide).
+ *
+ * Safe-area: --safe-* được đổ từ Telegram WebApp lúc runtime (src/telegram/theme.ts),
+ * fallback env(safe-area-inset-*).
  */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* Nền & chữ — đổ từ themeParams (Req 13.6), fallback màu phẳng iOS. */
-  --tg-bg: var(--tg-theme-bg-color, #ffffff);
-  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #f2f2f7); /* iOS systemGroupedBackground */
-  --tg-text: var(--tg-theme-text-color, #1c1c1e);
-  --tg-hint: var(--tg-theme-hint-color, #8e8e93); /* iOS systemGray */
-  --tg-accent: var(--tg-theme-button-color, #007aff); /* iOS systemBlue */
-  --tg-accent-text: var(--tg-theme-button-text-color, #ffffff);
+  color-scheme: dark;
 
-  /* Mô hình grouped-list kiểu CryptoBot:
-   *  - --app-bg  : nền sau các section (grouped background).
-   *  - --surface : mặt thẻ/section/row (cell).
-   *  - --separator: đường kẻ mảnh giữa các row trong một section. */
-  --app-bg: var(--tg-secondary-bg);
-  --surface: var(--tg-theme-section-bg-color, var(--tg-bg));
-  --separator: var(--tg-theme-section-separator-color, rgba(60, 60, 67, 0.18));
-
-  /* Nền nhạt cho avatar tròn / banner promo: accent + alpha (MÀU PHẲNG, không gradient). */
-  --accent-soft: rgba(0, 122, 255, 0.12);
-  --accent-soft: color-mix(in srgb, var(--tg-accent) 14%, transparent);
-
-  /* Vật liệu liquid glass cho OVERLAY (toast/loading/unauthorized) — màu phẳng + alpha. */
-  --glass-fill: rgba(255, 255, 255, 0.72);
-  --glass-stroke: rgba(255, 255, 255, 0.40);
-  --glass-blur: 20px;
-  --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-
-  /* Bóng nhẹ cho thẻ/section nổi trên nền grouped. */
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-
-  /* Màu hệ thống iOS (phẳng). */
-  --ios-green: #34c759;
-  --ios-red: #ff3b30;
-  --ios-orange: #ff9500;
-
-  /* Chiều cao thanh tab dưới (chưa gồm safe-bottom). */
-  --tab-height: 60px;
-
-  /* Easing chuẩn iOS (Req 13.4). */
-  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
-  --ease-fade: cubic-bezier(0.4, 0, 0.2, 1);
-  --duration-ios: 280ms;
-
-  /* Safe-area (Req 13.7) — fallback env() khi Telegram không cấp giá trị. */
+  /* Safe-area (Telegram WebApp / thiết bị) — fallback env(). */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
-}
 
-/* Chế độ tối — kích hoạt qua class `.dark` trên <html> (theo colorScheme Telegram)
- * hoặc qua [data-theme='dark']. Chỉ override màu phẳng + vật liệu kính. */
-:root.dark,
-:root[data-theme='dark'] {
-  --tg-bg: var(--tg-theme-bg-color, #1c1c1e);
-  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #000000);
-  --tg-text: var(--tg-theme-text-color, #ffffff);
-  --tg-hint: var(--tg-theme-hint-color, #8e8e93);
-  --tg-accent: var(--tg-theme-button-color, #0a84ff);
-  --tg-accent-text: var(--tg-theme-button-text-color, #ffffff);
-
-  --app-bg: var(--tg-secondary-bg);
-  --surface: var(--tg-theme-section-bg-color, var(--tg-bg));
-  --separator: var(--tg-theme-section-separator-color, rgba(84, 84, 88, 0.40));
-
-  --accent-soft: rgba(10, 132, 255, 0.20);
-  --accent-soft: color-mix(in srgb, var(--tg-accent) 24%, transparent);
-
-  --glass-fill: rgba(28, 28, 30, 0.72);
-  --glass-stroke: rgba(255, 255, 255, 0.12);
-  --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.40);
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
+  /* Easing chuẩn iOS. */
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-ios: 280ms;
 }
 
 @layer base {
@@ -93,60 +34,98 @@
   }
 
   body {
-    /* Nền grouped (secondary-bg) để các thẻ surface nổi lên như CryptoBot. */
-    background-color: var(--app-bg);
-    color: var(--tg-text);
-    font-family: -apple-system, 'SF Pro Text', system-ui, 'Segoe UI', Roboto,
-      sans-serif;
-    font-size: 17px; /* iOS Body */
-    line-height: 1.4;
+    background-color: #10131b; /* surface / background */
+    color: #e0e2ed; /* on-background */
+    font-family: 'Inter', -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
-    min-height: 100vh;
   }
 
-  /* Tôn trọng safe-area khi bố cục nội dung gốc (Req 13.7). */
   #app {
-    padding-top: var(--safe-top);
-    padding-left: var(--safe-left);
-    padding-right: var(--safe-right);
-    box-sizing: border-box;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* Ẩn outline mặc định nhưng giữ focus-visible cho bàn phím. */
+  :focus:not(:focus-visible) {
+    outline: none;
   }
 }
 
 @layer components {
-  /* Thẻ/section grouped: mặt phẳng surface + bo góc lớn + bóng nhẹ. */
-  .surface-card {
-    background-color: var(--surface);
-    border-radius: 20px;
-    box-shadow: var(--card-shadow);
+  /* Lớp kính cho overlay/panel nổi (TopAppBar, BottomNav, toast, modal). */
+  .glass-panel {
+    background: rgba(16, 19, 27, 0.72);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
-  /* Vật liệu liquid glass — CHỈ dùng cho overlay (toast/loading/unauthorized). */
-  .glass {
-    background-color: var(--glass-fill);
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-stroke);
-    box-shadow: var(--glass-shadow);
-    border-radius: 20px;
+  /* Thẻ kính có viền sáng mô phỏng ánh sáng chạm mép trên. */
+  .glass-card {
+    background: rgba(28, 32, 40, 0.7); /* surface-container */
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border-top: 0.5px solid rgba(255, 255, 255, 0.15);
+    border-left: 0.5px solid rgba(255, 255, 255, 0.05);
+    border-right: 0.5px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.02);
   }
 
-  /* Target chạm tối thiểu kiểu iOS HIG (≥ 44px). */
+  /* Nút chính: gradient xanh sáng (primary -> surface-tint). */
+  .btn-gradient {
+    background: linear-gradient(180deg, #adc6ff 0%, #4b8eff 100%);
+  }
+
+  /* Phản hồi nhấn (scale nhẹ). */
+  .btn-press:active {
+    transform: scale(0.97);
+  }
+
+  /* Target chạm tối thiểu kiểu iOS HIG (>= 44px). */
   .tap-target {
     min-height: 44px;
     min-width: 44px;
   }
+}
 
-  /* Đệm đáy để nội dung không bị thanh tab che (cộng safe-bottom). */
-  .pb-tabbar {
-    padding-bottom: calc(var(--tab-height) + var(--safe-bottom) + 12px);
+@layer utilities {
+  /* Ẩn thanh cuộn cho list cuộn ngang (category chips). */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Hiệu ứng shimmer cho skeleton loading. */
+  .animate-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .animate-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0,
+      rgba(255, 255, 255, 0.05) 20%,
+      rgba(255, 255, 255, 0.1) 60%,
+      rgba(255, 255, 255, 0)
+    );
+    animation: shimmer 2s infinite;
   }
 }
 
-/* Tôn trọng tuỳ chọn giảm chuyển động của hệ thống (Req 13.4). */
+/* Tôn trọng tuỳ chọn giảm chuyển động của hệ thống. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -156,9 +135,10 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-
-  /* NGOẠI LỆ: spinner là chỉ báo hoạt động (loading) — vẫn xoay khi bật Reduce Motion. */
   .animate-spin {
     animation: spin 1s linear infinite !important;
+  }
+  .animate-shimmer::after {
+    animation: shimmer 2s infinite !important;
   }
 }

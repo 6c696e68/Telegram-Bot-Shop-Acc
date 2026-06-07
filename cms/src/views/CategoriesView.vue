@@ -18,6 +18,7 @@ interface Category {
   description: string | null
   price: number
   emoji: string
+  image_data: string | null
   sort_order: number
   is_visible: number
   success_template: string | null
@@ -32,6 +33,7 @@ interface CategoryForm {
   description: string
   price: number | null
   emoji: string
+  image_data: string
   is_visible: number
 }
 
@@ -55,8 +57,71 @@ const form = ref<CategoryForm>({
   description: '',
   price: null,
   emoji: '',
+  image_data: '',
   is_visible: 1,
 })
+
+/** Đang nén ảnh upload (chặn double submit + hiện trạng thái). */
+const imageUploading = ref(false)
+const imageError = ref('')
+
+/** Nén ảnh client-side: scale max 1280px, xuất JPEG, < 600KB (trần backend 700KB). */
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('read_failed'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('decode_failed'))
+      img.onload = () => {
+        const scale = Math.min(1, 1280 / img.width)
+        const w = Math.round(img.width * scale)
+        const h = Math.round(img.height * scale)
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return reject(new Error('canvas_failed'))
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, w, h)
+        ctx.drawImage(img, 0, 0, w, h)
+        let q = 0.85
+        let out = canvas.toDataURL('image/jpeg', q)
+        while (out.length > 600_000 && q > 0.4) {
+          q -= 0.1
+          out = canvas.toDataURL('image/jpeg', q)
+        }
+        resolve(out)
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+async function onImagePick(e: Event): Promise<void> {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // cho phép chọn lại cùng file
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    imageError.value = t('categories.image_error')
+    return
+  }
+  imageUploading.value = true
+  imageError.value = ''
+  try {
+    form.value.image_data = await compressImage(file)
+  } catch {
+    imageError.value = t('categories.image_error')
+  } finally {
+    imageUploading.value = false
+  }
+}
+
+function removeImage(): void {
+  form.value.image_data = ''
+}
 
 /** Template bán hàng theo từng ngôn ngữ (R16.1, R16.2) — key = mã locale. */
 const templatesByLang = ref<Record<string, string>>({})
@@ -99,10 +164,11 @@ function emptyTemplates(): Record<string, string> {
 function openCreateModal() {
   modalMode.value = 'create'
   editingId.value = null
-  form.value = { name: '', description: '', price: null, emoji: '', is_visible: 1 }
+  form.value = { name: '', description: '', price: null, emoji: '', image_data: '', is_visible: 1 }
   templatesByLang.value = emptyTemplates()
   activeLang.value = LANG_TABS[0] ?? 'vi'
   formError.value = ''
+  imageError.value = ''
   showModal.value = true
 }
 
@@ -114,11 +180,13 @@ async function openEditModal(cat: Category) {
     description: cat.description || '',
     price: cat.price,
     emoji: cat.emoji,
+    image_data: cat.image_data || '',
     is_visible: cat.is_visible,
   }
   templatesByLang.value = emptyTemplates()
   activeLang.value = LANG_TABS[0] ?? 'vi'
   formError.value = ''
+  imageError.value = ''
   showModal.value = true
 
   // Nạp template đa ngôn ngữ hiện có (R16.2).
@@ -177,6 +245,7 @@ async function saveCategory() {
       description: form.value.description.trim() || null,
       price: form.value.price,
       emoji: form.value.emoji.trim() || '',
+      image_data: form.value.image_data || null,
       is_visible: form.value.is_visible,
     }
 
@@ -499,6 +568,36 @@ function showSuccess(msg: string) {
               :placeholder="$t('categories.description_ph')"
             />
             <p class="char-count">{{ form.description.length }}/500</p>
+          </div>
+
+          <!-- Ảnh sản phẩm (hiển thị ở Mini App) -->
+          <div class="field-col">
+            <label class="label">{{ $t('categories.image') }}</label>
+            <p class="tpl-help">{{ $t('categories.image_hint') }}</p>
+            <div class="image-row">
+              <div class="image-preview" :class="{ 'is-empty': !form.image_data }">
+                <img v-if="form.image_data" :src="form.image_data" alt="" />
+                <Icon v-else name="package" :size="28" />
+              </div>
+              <div class="image-actions">
+                <label class="btn btn-secondary btn-sm" :class="{ 'is-disabled': imageUploading }">
+                  <Icon name="plus" :size="14" />
+                  {{ imageUploading ? $t('common.processing') : (form.image_data ? $t('categories.image_change') : $t('categories.image_upload')) }}
+                  <input type="file" accept="image/*" class="sr-only-input" :disabled="imageUploading" @change="onImagePick" />
+                </label>
+                <button
+                  v-if="form.image_data"
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  :style="{ color: 'var(--red-fg)' }"
+                  @click="removeImage"
+                >
+                  <Icon name="trash" :size="14" />
+                  {{ $t('categories.image_remove') }}
+                </button>
+              </div>
+            </div>
+            <p v-if="imageError" class="img-error">{{ imageError }}</p>
           </div>
 
           <!-- Price + Visibility -->
@@ -830,6 +929,59 @@ function showSuccess(msg: string) {
   font-size: 0.75rem;
   color: var(--faint);
   align-self: flex-end;
+}
+
+/* ---- Product image upload ---- */
+.image-row {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+.image-preview {
+  width: 88px;
+  height: 88px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+}
+.image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.image-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.sr-only-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.btn .sr-only-input {
+  cursor: pointer;
+}
+.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.img-error {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--red-fg);
 }
 .tpl-section {
   border-top: 1px solid var(--border);

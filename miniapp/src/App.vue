@@ -1,15 +1,13 @@
 <script setup lang="ts">
-// Layout gốc Mini App: tôn trọng safe-area + RouterView + thanh tab dưới (CryptoBot-style).
-// Theme/màu/surface do design-system CSS (style.css) cung cấp qua biến CSS.
+// Layout gốc Mini App "Obsidian Glass": RouterView + BottomNav (chỉ ở route cấp 1) + overlay.
 //
-// TabBar chỉ hiện ở các route cấp 1 (`meta.tab = true`): Trang chủ / Cửa hàng / Lịch sử /
-// Tài khoản. Màn cấp 2 (chi tiết, nạp tiền, cài đặt, onboarding) ẩn tab và dùng Telegram Back.
-//
-// Mount các lớp phản hồi UI toàn cục (đọc trạng thái từ @/stores/ui):
-//  - ToastHost / LoadingOverlay / UnauthorizedScreen.
+// BottomNav hiện ở các route có `meta.tab = true`: Market / Orders / Support / Profile.
+// Màn cấp 2 (chi tiết, checkout, nạp tiền, onboarding) ẩn nav và dùng Telegram BackButton /
+// TopAppBar back. Mount các lớp phản hồi UI toàn cục (ToastHost / LoadingOverlay /
+// UnauthorizedScreen) đọc trạng thái từ @/stores/ui.
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import TabBar from '@/components/TabBar.vue'
+import BottomNav from '@/components/BottomNav.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import UnauthorizedScreen from '@/components/UnauthorizedScreen.vue'
@@ -21,16 +19,14 @@ const showTab = computed(() => route.meta.tab === true)
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell bg-background text-on-background">
     <!-- Nội dung; chừa đệm đáy bằng `.pb-tabbar` khi có thanh tab để không bị che. -->
     <div :class="showTab ? 'pb-tabbar' : ''">
       <RouterView />
     </div>
 
-    <!-- Thanh điều hướng dưới (chỉ ở route cấp 1). -->
-    <TabBar v-if="showTab" />
+    <BottomNav v-if="showTab" />
 
-    <!-- Lớp phản hồi UI toàn cục (overlay; không ảnh hưởng bố cục nội dung) -->
     <LoadingOverlay />
     <ToastHost />
     <UnauthorizedScreen />
@@ -39,13 +35,13 @@ const showTab = computed(() => route.meta.tab === true)
 
 <style>
 .app-shell {
-  /* dvh để khớp viewport WebView Telegram (kể cả khi thanh công cụ ẩn/hiện) */
   min-height: 100vh;
   min-height: 100dvh;
-  /* Safe-area insets (yêu cầu viewport-fit=cover ở index.html) */
-  padding-top: env(safe-area-inset-top);
-  padding-right: env(safe-area-inset-right);
-  padding-left: env(safe-area-inset-left);
   box-sizing: border-box;
+}
+
+/* Đệm đáy để nội dung không bị thanh nav nổi che (nav cao 64px + cách mép 16px + safe). */
+.pb-tabbar {
+  padding-bottom: calc(64px + 16px + 16px + var(--safe-bottom));
 }
 </style>

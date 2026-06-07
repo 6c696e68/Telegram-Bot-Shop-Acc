@@ -34,6 +34,8 @@ export interface DbProductType {
   description: string | null
   price: number
   emoji: string
+  /** Ảnh minh hoạ: data URL (base64) hoặc URL HTTPS; null = chưa có (Mini App fallback emoji). */
+  image_data: string | null
   sort_order: number
   is_visible: number // 0 | 1
   success_template: string | null

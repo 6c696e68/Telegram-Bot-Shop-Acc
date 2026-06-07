@@ -1,52 +1,38 @@
 <script setup lang="ts">
 /**
- * OrderDetailView — chi tiết một đơn hàng + nội dung tài khoản (Req 11.3, 15.3).
+ * OrderDetailView — chi tiết một đơn + nội dung tài khoản (Obsidian Glass, Req 11.3, 15.3).
  *
- *  - Nhận prop `id` (chuỗi, từ route `order-detail` với `props: true`).
- *  - Khi mở: gọi `GET /api/app/orders/:id` (bọc `ui.withLoading`). Server chỉ trả đơn
- *    thuộc người mua hiện tại (guard owner — Req 15.3); nếu không thuộc/không tồn tại sẽ
- *    trả 404 → toast "Không tìm thấy đơn hàng".
- *  - Hiển thị tóm tắt đơn (emoji, tên loại, số lượng, tổng tiền, trạng thái, thời gian tạo)
- *    rồi tới danh sách `contents[]` — mỗi tài khoản trong một khối kính cho phép bôi chọn
- *    (`select-all`) để người mua copy nhanh, giống màn kết quả mua hàng (Req 11.3).
- *  - BackButton của Telegram để quay lại lịch sử; gỡ khi rời màn hình qua cleanup.
- *
- * Bố cục mobile-first iOS HIG, chỉ dùng màu phẳng + lớp `.glass` — KHÔNG gradient (Req 13).
+ *  - Nhận prop `id`. `GET /api/app/orders/:id` (server guard owner — 404 nếu không thuộc).
+ *  - Tóm tắt đơn (glyph, tên, tổng, trạng thái, thời gian) + CredentialBlock để copy nhanh.
+ *  - Telegram BackButton + TopAppBar back để quay lại danh sách.
  */
-
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import GlassCard from '@/components/GlassCard.vue'
+import { CircleCheck, Undo2 } from '@lucide/vue'
+import TopAppBar from '@/components/TopAppBar.vue'
+import CredentialBlock from '@/components/CredentialBlock.vue'
+import { avatarColor } from '@/utils/avatar'
 import { get, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { showBackButton, type Cleanup } from '@/telegram/sdk'
 import type { OrderDetailDto } from '@/types'
 
-const props = defineProps<{
-  /** Id đơn hàng (chuỗi từ route param). */
-  id: string
-}>()
+const props = defineProps<{ id: string }>()
 
 const router = useRouter()
 const ui = useUiStore()
 const { t } = useI18n()
 
-/** Chi tiết đơn hàng; `null` cho tới khi tải xong (hoặc khi không tìm thấy). */
 const order = ref<OrderDetailDto | null>(null)
-
-/** Dọn dẹp BackButton (gỡ handler + ẩn) khi rời màn hình. */
 let cleanupBack: Cleanup = () => {}
 
-/** Map trạng thái đơn của server sang key i18n nhãn hiển thị (Req 11.2). */
-function statusKey(status: OrderDetailDto['status']): string {
-  return status === 'completed' || status === 'refunded' ? `status.${status}` : status
-}
+const tileColor = computed(() => (order.value ? avatarColor(order.value.id) : '#adc6ff'))
+const glyph = computed(() =>
+  order.value ? order.value.emoji?.trim() || order.value.product_name.charAt(0).toUpperCase() : ''
+)
+const completed = computed(() => order.value?.status === 'completed')
 
-/**
- * Nạp chi tiết đơn từ server (Req 11.3). 404 (đơn không tồn tại hoặc không thuộc người
- * mua — Req 15.3) → toast riêng; 401 do client xử lý; lỗi khác → toast chung.
- */
 async function load(): Promise<void> {
   try {
     order.value = await ui.withLoading(get<OrderDetailDto>(`/orders/${props.id}`))
@@ -73,48 +59,55 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="flex flex-col gap-5 px-4 py-6">
-    <template v-if="order">
-      <!-- Tóm tắt đơn (Req 11.2, 11.3) -->
-      <header class="flex flex-col items-center gap-3 text-center">
+  <div>
+    <TopAppBar :title="$t('order.title')" back />
+
+    <main
+      v-if="order"
+      class="mx-auto flex w-full max-w-md flex-col gap-stack-lg px-gutter pb-10 pt-[calc(56px+var(--safe-top))]"
+    >
+      <!-- Tóm tắt -->
+      <header class="mt-4 flex flex-col items-center gap-3 text-center">
         <span
-          class="flex h-20 w-20 items-center justify-center rounded-full bg-accent-soft text-5xl leading-none"
+          class="flex h-20 w-20 items-center justify-center rounded-2xl text-4xl leading-none"
+          :style="{ backgroundColor: `${tileColor}1a`, color: tileColor }"
           aria-hidden="true"
         >
-          {{ order.emoji }}
+          {{ glyph }}
         </span>
-        <h1 class="text-ios-title text-text">{{ order.product_name }}</h1>
-        <p class="text-ios-large-title tabular-nums text-accent">{{ order.total_display }}</p>
+        <h1 class="text-[22px] font-semibold text-on-surface">{{ order.product_name }}</h1>
+        <p class="text-[34px] font-bold tabular-nums text-primary">{{ order.total_display }}</p>
+        <div
+          class="flex items-center gap-1 rounded-full px-3 py-1 text-[12px] font-bold uppercase tracking-wider"
+          :class="completed ? 'bg-tertiary-container/30 text-tertiary' : 'bg-surface-container-highest text-on-surface-variant'"
+        >
+          <component :is="completed ? CircleCheck : Undo2" :size="13" :stroke-width="2.5" aria-hidden="true" />
+          {{ $t(`status.${order.status}`) }}
+        </div>
       </header>
 
-      <GlassCard>
-        <dl class="flex flex-col gap-2 text-ios-body">
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-hint">{{ $t('order.quantity') }}</dt>
-            <dd class="tabular-nums text-text">{{ order.quantity }}</dd>
+      <!-- Meta -->
+      <section class="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">
+        <dl class="flex flex-col gap-3 text-[15px]">
+          <div class="flex items-center justify-between">
+            <dt class="text-on-surface-variant">{{ $t('order.quantity') }}</dt>
+            <dd class="tabular-nums text-on-surface">{{ order.quantity }}</dd>
           </div>
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-hint">{{ $t('order.status') }}</dt>
-            <dd class="text-text">{{ $t(statusKey(order.status)) }}</dd>
+          <div class="flex items-center justify-between">
+            <dt class="text-on-surface-variant">{{ $t('order.order_id') }}</dt>
+            <dd class="font-mono tabular-nums text-on-surface">#{{ order.id }}</dd>
           </div>
-          <div class="flex items-center justify-between gap-2">
-            <dt class="text-hint">{{ $t('order.time') }}</dt>
-            <dd class="tabular-nums text-text">{{ $d(new Date(order.created_at), 'short') }}</dd>
+          <div class="flex items-center justify-between">
+            <dt class="text-on-surface-variant">{{ $t('order.time') }}</dt>
+            <dd class="tabular-nums text-on-surface">{{ $d(new Date(order.created_at), 'short') }}</dd>
           </div>
         </dl>
-      </GlassCard>
-
-      <!-- Nội dung tài khoản thuộc đơn (Req 11.3) -->
-      <section class="flex flex-col gap-2" :aria-label="$t('order.your_account')">
-        <h2 class="px-1 text-ios-footnote text-hint">{{ $t('order.your_account') }}</h2>
-        <p
-          v-for="(content, idx) in order.contents"
-          :key="idx"
-          class="surface-card select-all whitespace-pre-wrap break-all p-4 text-ios-body text-text"
-        >
-          {{ content }}
-        </p>
       </section>
-    </template>
-  </main>
+
+      <!-- Nội dung tài khoản -->
+      <section v-if="order.contents.length">
+        <CredentialBlock :contents="order.contents" />
+      </section>
+    </main>
+  </div>
 </template>

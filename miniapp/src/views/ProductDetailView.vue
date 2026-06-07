@@ -1,29 +1,26 @@
 <script setup lang="ts">
 /**
- * ProductDetailView — chi tiết loại sản phẩm + mua hàng (Req 5.3, 5.4, 6.1, 6.6, 6.7).
+ * ProductDetailView — chi tiết loại sản phẩm (Obsidian Glass, Req 5.3, 5.4, 6.1).
  *
- *  - Nhận prop `id` (chuỗi, route `product-detail`).
- *  - `GET /api/app/product-types/:id` lấy mô tả/giá/tồn kho/`max_quantity` (Req 5.3).
- *  - `QtyStepper` chọn số lượng [1, min(max_quantity, stock)]; tổng = giá × số lượng,
- *    format region-aware (Req 6.1).
- *  - Telegram MainButton "Xác nhận mua" → `POST /api/app/purchase`. Thành công:
- *    haptic('success'), cập nhật số dư, hiện contents + số dư mới, ẩn MainButton (Req 6.6/6.7).
- *  - Lỗi nghiệp vụ → toast + haptic('error'). Hết hàng → KHÔNG hiện MainButton (Req 5.4).
- *  - Telegram BackButton để quay lại danh mục. Màu phẳng, không gradient.
+ *  - `GET /api/app/product-types/:id` lấy mô tả/giá/tồn kho/`max_quantity`.
+ *  - Hero: ô gradient + glyph (backend không có ảnh) + badge "Giao ngay" + giá.
+ *  - Bento features từ dữ liệu thật: giao tự động, tồn kho, thanh toán bằng số dư.
+ *  - Bottom action bar kính: QtyStepper + nút "Mua ngay" → màn Checkout (truyền quantity).
+ *  - Hết hàng → ẩn action bar (Req 5.4). Telegram BackButton + TopAppBar back để quay lại.
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import GlassCard from '@/components/GlassCard.vue'
+import { BadgeCheck, Zap, Boxes, Wallet, Info } from '@lucide/vue'
+import TopAppBar from '@/components/TopAppBar.vue'
 import QtyStepper from '@/components/QtyStepper.vue'
-import BalanceBadge from '@/components/BalanceBadge.vue'
-import { CircleCheck } from '@lucide/vue'
-import { get, post, ApiError } from '@/api/client'
+import { get, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/stores/user'
-import { showMainButton, showBackButton, type Cleanup } from '@/telegram/sdk'
+import { showBackButton, type Cleanup } from '@/telegram/sdk'
 import { formatMoneyFor } from '@/utils/format'
-import type { ProductTypeDetailDto, PurchaseResultDto } from '@/types'
+import { tileGradient, tileTint } from '@/utils/avatar'
+import type { ProductTypeDetailDto } from '@/types'
 
 const props = defineProps<{ id: string }>()
 
@@ -34,11 +31,14 @@ const { t } = useI18n()
 
 const detail = ref<ProductTypeDetailDto | null>(null)
 const quantity = ref(1)
-const result = ref<PurchaseResultDto | null>(null)
-const submitting = ref(false)
+const imgError = ref(false)
 
 let cleanupBack: Cleanup = () => {}
-let cleanupMain: Cleanup = () => {}
+
+const showImage = computed(() => !!detail.value?.image_url && !imgError.value)
+const glyph = computed(() =>
+  detail.value ? detail.value.emoji?.trim() || detail.value.name.charAt(0).toUpperCase() : ''
+)
 
 /** Trần số lượng = min(max_quantity, stock), tối thiểu 1 (Req 6.4). */
 const maxQty = computed(() => {
@@ -51,66 +51,15 @@ const totalDisplay = computed(() =>
   formatMoneyFor(total.value, { region: user.state.region, rate: user.state.rate })
 )
 
-function purchaseErrorMessage(code: string): string {
-  switch (code) {
-    case 'insufficient_balance':
-      return t('product.err_insufficient_balance')
-    case 'insufficient_stock':
-      return t('product.err_insufficient_stock')
-    case 'validation_error':
-      return t('product.err_validation')
-    case 'not_found':
-      return t('product.not_found')
-    case 'rate_limited':
-      return t('product.err_rate_limited')
-    default:
-      return t('product.err_generic')
-  }
-}
-
-async function submitPurchase(): Promise<void> {
-  if (!detail.value || submitting.value || result.value) return
-  submitting.value = true
-  try {
-    const res = await ui.withLoading(
-      post<PurchaseResultDto>('/purchase', {
-        productTypeId: detail.value.id,
-        quantity: quantity.value,
-      })
-    )
-    result.value = res
-    user.setBalance(res.new_balance, res.new_balance_display) // Req 6.7
-    ui.haptic('success')
-    ui.toast(t('product.bought_ok'), 'success')
-    cleanupMain()
-    cleanupMain = () => {}
-  } catch (err) {
-    ui.haptic('error')
-    if (err instanceof ApiError) {
-      if (err.status === 401) return
-      ui.toast(purchaseErrorMessage(err.error), 'error')
-    } else {
-      ui.toast(t('product.err_generic'), 'error')
-    }
-  } finally {
-    submitting.value = false
-  }
-}
-
-function setupMainButton(): void {
-  cleanupMain()
-  cleanupMain = () => {}
-  if (!detail.value || !detail.value.in_stock || result.value) return
-  cleanupMain = showMainButton(t('product.confirm_buy'), () => {
-    void submitPurchase()
-  })
+function goCheckout(): void {
+  if (!detail.value || !detail.value.in_stock) return
+  router.push({ name: 'checkout', params: { id: String(detail.value.id) }, query: { qty: String(quantity.value) } })
 }
 
 async function load(): Promise<void> {
   try {
     detail.value = await ui.withLoading(get<ProductTypeDetailDto>(`/product-types/${props.id}`))
     quantity.value = 1
-    setupMainButton()
   } catch (err) {
     if (err instanceof ApiError) {
       if (err.status === 401) return
@@ -130,88 +79,159 @@ onMounted(() => {
 
 onUnmounted(() => {
   cleanupBack()
-  cleanupMain()
 })
 </script>
 
 <template>
-  <main class="flex flex-col gap-5 px-4 py-6">
-    <template v-if="detail">
-      <!-- Header: avatar tròn (emoji) + tên + giá (Req 5.3) -->
-      <header class="flex flex-col items-center gap-3 text-center">
-        <span
-          class="flex h-20 w-20 items-center justify-center rounded-full bg-accent-soft text-5xl leading-none"
-          aria-hidden="true"
-        >
-          {{ detail.emoji }}
-        </span>
-        <h1 class="text-ios-title text-text">{{ detail.name }}</h1>
-        <p class="text-ios-large-title tabular-nums text-accent">{{ detail.price_display }}</p>
-      </header>
+  <div>
+    <TopAppBar :title="$t('product.title')" back />
 
-      <!-- Mô tả + tồn kho (Req 5.3, 5.4) -->
-      <GlassCard>
-        <p v-if="detail.description" class="text-ios-body text-text">
+    <main
+      v-if="detail"
+      class="flex flex-col gap-stack-lg px-gutter pb-32 pt-[calc(56px+var(--safe-top))]"
+    >
+      <!-- Hero: ảnh thật hoặc fallback gradient + glyph -->
+      <section
+        class="relative mt-4 aspect-square w-full overflow-hidden rounded-[24px] border border-surface-variant bg-surface-container-low"
+      >
+        <img
+          v-if="showImage"
+          :src="detail.image_url as string"
+          :alt="detail.name"
+          class="h-full w-full object-cover"
+          @error="imgError = true"
+        />
+        <div
+          v-else
+          class="flex h-full w-full items-center justify-center"
+          :style="{ backgroundImage: tileGradient(detail.id) }"
+        >
+          <span
+            class="flex h-28 w-28 items-center justify-center rounded-[28px] text-[64px] leading-none"
+            :style="{ backgroundColor: tileTint(detail.id), color: '#e0e2ed' }"
+            aria-hidden="true"
+          >
+            {{ glyph }}
+          </span>
+        </div>
+
+        <!-- Badge giao ngay -->
+        <div
+          class="glass-panel absolute right-4 top-4 flex items-center gap-1.5 rounded-full px-3 py-1.5"
+        >
+          <BadgeCheck :size="16" :stroke-width="2" class="text-tertiary" aria-hidden="true" />
+          <span class="font-mono text-[12px] uppercase tracking-wider text-on-surface">
+            {{ $t('product.instant_delivery') }}
+          </span>
+        </div>
+
+        <!-- Giá -->
+        <div class="glass-panel absolute bottom-4 left-4 rounded-xl px-4 py-2">
+          <div class="font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+            {{ $t('product.price_label') }}
+          </div>
+          <div class="text-[28px] font-semibold text-primary">{{ detail.price_display }}</div>
+        </div>
+      </section>
+
+      <!-- Tên + trạng thái + mô tả -->
+      <section class="flex flex-col gap-2">
+        <div class="flex items-start justify-between gap-3">
+          <h2 class="text-[28px] font-bold leading-tight text-on-surface">{{ detail.name }}</h2>
+          <div
+            class="mt-1 flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 font-mono text-[12px] uppercase"
+            :class="
+              detail.in_stock
+                ? 'bg-tertiary-container text-on-tertiary-container'
+                : 'bg-error-container text-on-error-container'
+            "
+          >
+            <span
+              class="h-1.5 w-1.5 rounded-full"
+              :class="detail.in_stock ? 'bg-tertiary-fixed-dim' : 'bg-error'"
+              aria-hidden="true"
+            />
+            {{ detail.in_stock ? $t('product.ready') : $t('product.badge_out_of_stock') }}
+          </div>
+        </div>
+        <p v-if="detail.description" class="text-[16px] leading-relaxed text-on-surface-variant">
           {{ detail.description }}
         </p>
-        <p
-          class="text-ios-footnote"
-          :class="[detail.description ? 'mt-2' : '', detail.in_stock ? 'text-hint' : 'text-ios-red']"
-        >
-          {{ detail.in_stock ? $t('product.in_stock', { count: detail.stock }) : $t('product.out_of_stock') }}
-        </p>
-      </GlassCard>
-
-      <!-- Còn hàng & chưa mua: chọn số lượng + tổng tiền (Req 6.1) -->
-      <section
-        v-if="detail.in_stock && !result"
-        class="flex flex-col gap-3"
-        :aria-label="$t('product.quantity')"
-      >
-        <div class="surface-card flex items-center justify-between p-4">
-          <span class="text-ios-headline text-text">{{ $t('product.quantity') }}</span>
-          <QtyStepper v-model:quantity="quantity" :min="1" :max="maxQty" />
-        </div>
-        <div class="surface-card flex items-center justify-between p-4">
-          <span class="text-ios-headline text-text">{{ $t('product.total') }}</span>
-          <span class="text-ios-title tabular-nums text-accent">{{ totalDisplay }}</span>
-        </div>
       </section>
 
-      <!-- Hết hàng: chặn mua (Req 5.4) -->
-      <GlassCard v-else-if="!detail.in_stock && !result">
-        <p class="text-center text-ios-body text-ios-red">{{ $t('product.sold_out_block') }}</p>
-      </GlassCard>
-
-      <!-- Mua thành công: nội dung tài khoản + số dư mới (Req 6.6, 6.7) -->
-      <section v-if="result" class="flex flex-col gap-4" :aria-label="$t('product.success_title')">
-        <GlassCard>
-          <div class="flex flex-col items-center gap-2 text-center">
-            <CircleCheck :size="40" :stroke-width="1.75" class="text-ios-green" aria-hidden="true" />
-            <h2 class="text-ios-headline text-text">{{ $t('product.success_title') }}</h2>
-            <p class="text-ios-footnote text-hint">
-              {{ $t('product.success_sub', { quantity: result.quantity, name: detail.name }) }}
-            </p>
+      <!-- Bento features (dữ liệu thật) -->
+      <section class="grid grid-cols-2 gap-gutter">
+        <div class="flex flex-col gap-2 rounded-xl border border-surface-variant bg-surface-container-lowest p-4">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-container/20 text-primary">
+            <Zap :size="20" :stroke-width="2" aria-hidden="true" />
           </div>
-        </GlassCard>
-
-        <div class="flex flex-col gap-2">
-          <h3 class="px-1 text-ios-footnote text-hint">{{ $t('product.your_account') }}</h3>
-          <p
-            v-for="(content, idx) in result.contents"
-            :key="idx"
-            class="surface-card select-all whitespace-pre-wrap break-all p-4 text-ios-body text-text"
-          >
-            {{ content }}
-          </p>
+          <div>
+            <div class="font-mono text-[12px] uppercase tracking-wide text-on-surface-variant">
+              {{ $t('product.feat_delivery') }}
+            </div>
+            <div class="text-[16px] font-semibold text-on-surface">{{ $t('product.feat_delivery_value') }}</div>
+          </div>
         </div>
 
-        <BalanceBadge
-          :balance="result.new_balance"
-          :display="result.new_balance_display"
-          :label="$t('product.remaining_balance')"
-        />
+        <div class="flex flex-col gap-2 rounded-xl border border-surface-variant bg-surface-container-lowest p-4">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-tertiary-container/20 text-tertiary">
+            <Boxes :size="20" :stroke-width="2" aria-hidden="true" />
+          </div>
+          <div>
+            <div class="font-mono text-[12px] uppercase tracking-wide text-on-surface-variant">
+              {{ $t('product.feat_stock') }}
+            </div>
+            <div
+              class="text-[16px] font-semibold"
+              :class="detail.in_stock ? 'text-on-surface' : 'text-error'"
+            >
+              {{ detail.in_stock ? $t('product.in_stock', { count: detail.stock }) : $t('product.out_of_stock') }}
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="col-span-2 flex flex-col gap-2 rounded-xl border border-surface-variant bg-surface-container-lowest p-4"
+        >
+          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary-container/20 text-secondary">
+            <Wallet :size="20" :stroke-width="2" aria-hidden="true" />
+          </div>
+          <div>
+            <div class="font-mono text-[12px] uppercase tracking-wide text-on-surface-variant">
+              {{ $t('product.feat_payment') }}
+            </div>
+            <div class="text-[16px] font-semibold text-on-surface">{{ $t('product.feat_payment_value') }}</div>
+          </div>
+        </div>
       </section>
-    </template>
-  </main>
+
+      <!-- Lưu ý -->
+      <section class="flex items-start gap-3 rounded-xl bg-surface-container-low p-4">
+        <Info :size="22" :stroke-width="2" class="mt-0.5 shrink-0 text-outline" aria-hidden="true" />
+        <p class="text-[16px] leading-relaxed text-on-surface-variant">{{ $t('product.notice') }}</p>
+      </section>
+    </main>
+
+    <!-- Bottom action bar: số lượng + mua ngay (đồng nhất style với BottomNav ở Market) -->
+    <div
+      v-if="detail && detail.in_stock"
+      class="glass-panel fixed bottom-0 left-0 right-0 z-[60] mx-4 flex items-center gap-3 rounded-full p-2 shadow-lg"
+      :style="{
+        bottom: 'calc(16px + var(--safe-bottom))',
+        marginLeft: 'calc(16px + var(--safe-left))',
+        marginRight: 'calc(16px + var(--safe-right))',
+      }"
+    >
+      <QtyStepper v-model:quantity="quantity" :min="1" :max="maxQty" />
+      <button
+        type="button"
+        class="btn-gradient btn-press flex h-12 flex-1 items-center justify-center gap-2 rounded-full px-4 text-[16px] font-semibold text-on-primary shadow-md"
+        @click="goCheckout"
+      >
+        <Zap :size="20" :stroke-width="2.2" aria-hidden="true" />
+        {{ $t('product.buy_now') }}
+        <span class="ml-1 tabular-nums opacity-90">· {{ totalDisplay }}</span>
+      </button>
+    </div>
+  </div>
 </template>

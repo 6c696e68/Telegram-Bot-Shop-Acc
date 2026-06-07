@@ -78,25 +78,37 @@ miniAppStatic.get('/*', async (c) => {
     return new Response(asset, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-cache',
+        // SPA entry: KHÔNG được cache để Telegram WebView luôn nạp HTML mới (trỏ tới
+        // asset hash mới sau mỗi deploy). no-store mạnh hơn no-cache để tránh dùng lại bản cũ.
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        Pragma: 'no-cache',
+        Expires: '0',
       },
     })
   }
 
-  // Asset found → serve with cache headers
+  // Asset found → serve with cache headers.
+  // QUAN TRỌNG: kiểm tra HTML TRƯỚC. Workers Sites băm tên cả index.html
+  // (vd index.<hash>.html) nên isHashedAsset sẽ khớp — nếu xét hash trước thì index.html
+  // bị cache `immutable` 1 năm → Telegram giữ bản cũ, phải reload mới thấy UI mới.
   const contentType = getContentType(assetPath)
-  const cacheControl = isHashedAsset(kvKey)
-    ? 'public, max-age=31536000, immutable'
-    : contentType.includes('text/html')
-      ? 'no-cache'
+  const isHtml = contentType.includes('text/html')
+  const cacheControl = isHtml
+    ? 'no-store, no-cache, must-revalidate, max-age=0'
+    : isHashedAsset(kvKey)
+      ? 'public, max-age=31536000, immutable'
       : 'public, max-age=3600'
 
-  return new Response(asset, {
-    headers: {
-      'Content-Type': contentType,
-      'Cache-Control': cacheControl,
-    },
-  })
+  const headers: Record<string, string> = {
+    'Content-Type': contentType,
+    'Cache-Control': cacheControl,
+  }
+  if (isHtml) {
+    headers.Pragma = 'no-cache'
+    headers.Expires = '0'
+  }
+
+  return new Response(asset, { headers })
 })
 
 export { miniAppStatic }

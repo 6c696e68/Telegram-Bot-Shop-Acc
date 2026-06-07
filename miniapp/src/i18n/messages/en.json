@@ -1,4 +1,7 @@
 {
+  "app": {
+    "store_name": "Premium Store"
+  },
   "common": {
     "loading": "Loading...",
     "retry": "Retry",
@@ -9,9 +12,10 @@
   },
   "nav": {
     "label": "Navigation",
-    "home": "Shop",
-    "wallet": "Wallet",
-    "account": "Profile"
+    "market": "Market",
+    "orders": "Orders",
+    "support": "Support",
+    "profile": "Profile"
   },
   "onboarding": {
     "title": "Choose your region",
@@ -31,27 +35,15 @@
     "saved": "Saved"
   },
   "home": {
-    "hello": "Hello, {name}",
-    "shortcuts": "Shortcuts",
-    "shop": "Shop",
     "deposit": "Deposit",
     "history": "History",
-    "account": "Account",
-    "open": "Open {label}",
-    "intro_title": "Shop",
-    "intro_subtitle": "Pick a product below to buy instantly with your balance.",
-    "promo_deposit_title": "Top up your wallet",
-    "promo_deposit_sub": "Add funds via bank transfer or USDT to make purchases.",
-    "view_all": "View all",
-    "featured": "Featured products"
-  },
-  "wallet": {
-    "recent_orders": "Recent orders"
+    "view_all": "View all"
   },
   "shop": {
     "title": "Shop",
-    "list_label": "Product list",
-    "search_placeholder": "Search products",
+    "search_placeholder": "Search accounts...",
+    "featured": "Featured accounts",
+    "all_categories": "All",
     "search_empty_title": "No results",
     "search_empty_desc": "No products match your search.",
     "empty_title": "No products",
@@ -59,12 +51,25 @@
     "load_error": "Could not load the product list. Please try again."
   },
   "product": {
+    "title": "Product details",
+    "badge_in_stock": "In stock",
+    "badge_out_of_stock": "Out of stock",
+    "instant_delivery": "Instant delivery",
+    "price_label": "Price",
+    "ready": "Ready",
     "in_stock": "{count} in stock",
     "out_of_stock": "Out of stock",
+    "feat_delivery": "Delivery",
+    "feat_delivery_value": "Auto via Telegram",
+    "feat_stock": "Stock",
+    "feat_payment": "Payment",
+    "feat_payment_value": "From wallet balance",
+    "notice": "Your account is delivered automatically via Telegram right after a successful payment. Check the Orders tab to view your login details.",
+    "buy_now": "Buy now",
     "quantity": "Quantity",
     "total": "Total",
-    "confirm_buy": "Confirm purchase",
-    "sold_out_block": "This product is sold out and cannot be purchased.",
+    "qty_decrease": "Decrease quantity",
+    "qty_increase": "Increase quantity",
     "success_title": "Purchase successful",
     "success_sub": "Bought {quantity} × {name}",
     "your_account": "Your account",
@@ -78,18 +83,44 @@
     "err_rate_limited": "You are acting too fast. Please try again shortly.",
     "err_generic": "Purchase failed. Please try again."
   },
+  "checkout": {
+    "title": "Checkout",
+    "success_title": "Payment successful",
+    "unit_price": "Unit price: {price}",
+    "quantity": "Quantity: {count}",
+    "total": "Total",
+    "method_label": "Payment method",
+    "method_wallet": "Wallet balance",
+    "balance": "Balance: {balance}",
+    "insufficient": "Your balance is not enough to pay for this order.",
+    "go_deposit": "Top up now",
+    "confirm": "Confirm payment",
+    "secure_note": "Transaction is secured and encrypted",
+    "view_orders": "View orders",
+    "back_to_market": "Continue shopping"
+  },
   "history": {
-    "title": "Order history",
-    "list_label": "Orders",
+    "title": "Orders",
     "qty": "Qty: {count}",
     "empty_title": "No orders",
-    "empty_desc": "You have not bought anything yet. Visit the Shop.",
+    "empty_desc": "You have not bought anything yet. Visit the Market.",
     "load_error": "Could not load order history. Please try again."
   },
+  "orders": {
+    "filter_all": "All",
+    "filter_empty_title": "No orders",
+    "filter_empty_desc": "No orders match this filter."
+  },
   "order": {
+    "title": "Order details",
     "quantity": "Quantity",
+    "order_id": "Order ID",
     "status": "Status",
     "time": "Time",
+    "support": "Support",
+    "detail": "Details",
+    "credentials": "Login details",
+    "copied": "Copied",
     "your_account": "Your account",
     "not_found": "Order not found.",
     "load_error": "Could not load order details. Please try again."
@@ -99,7 +130,7 @@
     "refunded": "Refunded"
   },
   "account": {
-    "title": "Account",
+    "title": "Profile",
     "subtitle": "Your account information and balance.",
     "identity": "Identity",
     "telegram_id": "Telegram ID",
@@ -109,11 +140,35 @@
     "balance": "Balance",
     "load_error": "Could not load account info. Please try again."
   },
+  "support": {
+    "title": "Support",
+    "subtitle": "How can we help you?",
+    "online_title": "Support team is online",
+    "online_desc": "Estimated response time: under 5 minutes",
+    "contact": "Contact via Telegram",
+    "contact_hint": "Please return to the bot chat and send a message to reach support.",
+    "faq_title": "Frequently asked questions",
+    "faq": {
+      "q1": "How do I receive my account after buying?",
+      "a1": "The system automatically sends your account details via Telegram right after a successful payment. You can also review them in the Orders tab.",
+      "q2": "What is the warranty policy?",
+      "a2": "Warranty depends on each product type. Please contact support with your order ID for the fastest handling.",
+      "q3": "How do I top up my wallet?",
+      "a3": "Open the Profile tab, tap Deposit and choose the method available for your region (VietQR bank transfer or USDT).",
+      "q4": "How long does delivery take?",
+      "a4": "For in-stock products, the account is delivered automatically right after a successful payment (usually under a minute)."
+    }
+  },
   "deposit": {
     "title": "Deposit",
     "choose_method": "Choose a deposit method",
+    "method_label": "Deposit method",
     "method_sepay": "Bank transfer (VietQR)",
     "method_cryptobot": "USDT (Crypto Pay)",
+    "method_sepay_short": "VietQR",
+    "method_cryptobot_short": "USDT",
+    "method_sepay_desc": "VietQR bank transfer, automatic 24/7",
+    "method_cryptobot_desc": "Pay via Crypto Pay (USDT)",
     "amount_vnd": "Amount (VND)",
     "amount_usdt": "Amount (USDT)",
     "amount_placeholder": "Enter amount",
@@ -130,7 +185,9 @@
     "cancelled": "Deposit cancelled",
     "expired": "Deposit request expired",
     "cancel_error": "Could not cancel the deposit. Please try again.",
-    "method_unavailable": "This method is not available for your region."
+    "method_unavailable": "This method is not available for your region.",
+    "no_methods_title": "No deposit method",
+    "no_methods_desc": "No deposit method is available for your region yet. Please try again later or contact support."
   },
   "qr": {
     "bank": "Bank",

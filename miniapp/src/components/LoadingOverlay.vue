@@ -1,10 +1,7 @@
 <script setup lang="ts">
 /**
- * LoadingOverlay — lớp phủ loading toàn cục, hiển thị khi `ui.loading` (Req 13 — phản hồi UI).
- *
- * Mount một lần ở App.vue. Khi có ≥ 1 tác vụ async đang chạy (counter trong ui store),
- * phủ mờ nhẹ + spinner kính ở giữa. Không chặn vĩnh viễn vì `withLoading` luôn tắt khi xong.
- * Màu phẳng, không gradient (Req 13.3).
+ * LoadingOverlay — lớp phủ loading toàn cục khi `ui.loading` (Obsidian Glass).
+ *  - Phủ mờ + spinner kính ở giữa. `withLoading` luôn tắt khi xong nên không kẹt.
  */
 import { useUiStore } from '@/stores/ui'
 import { useI18n } from 'vue-i18n'
@@ -17,15 +14,15 @@ const { t } = useI18n()
   <Transition name="overlay">
     <div
       v-if="ui.loading.value"
-      class="fixed inset-0 z-40 flex items-center justify-center"
-      :style="{ backgroundColor: 'rgba(0, 0, 0, 0.25)' }"
+      class="fixed inset-0 z-[55] flex items-center justify-center"
+      style="background-color: rgba(0, 0, 0, 0.45)"
       role="status"
       aria-live="polite"
       :aria-label="t('a11y.loading')"
     >
-      <div class="glass flex h-14 w-14 items-center justify-center">
+      <div class="glass-panel flex h-16 w-16 items-center justify-center rounded-2xl">
         <span
-          class="h-7 w-7 animate-spin rounded-full border-2 border-accent border-t-transparent"
+          class="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent"
           aria-hidden="true"
         />
       </div>

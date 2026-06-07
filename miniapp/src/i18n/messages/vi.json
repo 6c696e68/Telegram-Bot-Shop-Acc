@@ -1,4 +1,7 @@
 {
+  "app": {
+    "store_name": "Premium Store"
+  },
   "common": {
     "loading": "Đang tải...",
     "retry": "Thử lại",
@@ -9,9 +12,10 @@
   },
   "nav": {
     "label": "Điều hướng",
-    "home": "Cửa hàng",
-    "wallet": "Ví",
-    "account": "Cá nhân"
+    "market": "Market",
+    "orders": "Đơn hàng",
+    "support": "Hỗ trợ",
+    "profile": "Cá nhân"
   },
   "onboarding": {
     "title": "Chọn khu vực của bạn",
@@ -31,27 +35,15 @@
     "saved": "Đã lưu"
   },
   "home": {
-    "hello": "Xin chào, {name}",
-    "shortcuts": "Lối tắt",
-    "shop": "Mua hàng",
     "deposit": "Nạp tiền",
     "history": "Lịch sử",
-    "account": "Tài khoản",
-    "open": "Mở {label}",
-    "intro_title": "Cửa hàng",
-    "intro_subtitle": "Chọn sản phẩm bên dưới để mua nhanh bằng số dư của bạn.",
-    "promo_deposit_title": "Nạp tiền vào ví",
-    "promo_deposit_sub": "Nạp qua chuyển khoản ngân hàng hoặc USDT để mua hàng.",
-    "view_all": "Xem tất cả",
-    "featured": "Sản phẩm nổi bật"
-  },
-  "wallet": {
-    "recent_orders": "Đơn gần đây"
+    "view_all": "Xem tất cả"
   },
   "shop": {
     "title": "Cửa hàng",
-    "list_label": "Danh sách sản phẩm",
-    "search_placeholder": "Tìm sản phẩm",
+    "search_placeholder": "Tìm kiếm tài khoản...",
+    "featured": "Tài khoản nổi bật",
+    "all_categories": "Tất cả",
     "search_empty_title": "Không tìm thấy",
     "search_empty_desc": "Không có sản phẩm nào khớp với tìm kiếm của bạn.",
     "empty_title": "Chưa có sản phẩm",
@@ -59,12 +51,25 @@
     "load_error": "Không tải được danh sách sản phẩm. Vui lòng thử lại."
   },
   "product": {
+    "title": "Chi tiết sản phẩm",
+    "badge_in_stock": "Còn hàng",
+    "badge_out_of_stock": "Hết hàng",
+    "instant_delivery": "Giao ngay",
+    "price_label": "Giá bán",
+    "ready": "Sẵn sàng",
     "in_stock": "Còn {count} sản phẩm",
     "out_of_stock": "Hết hàng",
+    "feat_delivery": "Giao hàng",
+    "feat_delivery_value": "Tự động qua Telegram",
+    "feat_stock": "Tồn kho",
+    "feat_payment": "Thanh toán",
+    "feat_payment_value": "Trừ vào số dư ví",
+    "notice": "Tài khoản sẽ được gửi tự động qua tin nhắn Telegram ngay sau khi thanh toán thành công. Vui lòng kiểm tra mục Đơn hàng để xem thông tin đăng nhập.",
+    "buy_now": "Mua ngay",
     "quantity": "Số lượng",
     "total": "Tổng tiền",
-    "confirm_buy": "Xác nhận mua",
-    "sold_out_block": "Sản phẩm đã hết hàng, không thể mua.",
+    "qty_decrease": "Giảm số lượng",
+    "qty_increase": "Tăng số lượng",
     "success_title": "Mua hàng thành công",
     "success_sub": "Đã mua {quantity} × {name}",
     "your_account": "Tài khoản của bạn",
@@ -78,18 +83,44 @@
     "err_rate_limited": "Bạn thao tác quá nhanh. Vui lòng thử lại sau giây lát.",
     "err_generic": "Mua hàng thất bại. Vui lòng thử lại."
   },
+  "checkout": {
+    "title": "Thanh toán",
+    "success_title": "Thanh toán thành công",
+    "unit_price": "Đơn giá: {price}",
+    "quantity": "Số lượng: {count}",
+    "total": "Tổng thanh toán",
+    "method_label": "Phương thức thanh toán",
+    "method_wallet": "Số dư ví",
+    "balance": "Số dư: {balance}",
+    "insufficient": "Số dư không đủ để thanh toán đơn này.",
+    "go_deposit": "Nạp tiền ngay",
+    "confirm": "Xác nhận thanh toán",
+    "secure_note": "Giao dịch được bảo mật và mã hoá",
+    "view_orders": "Xem đơn hàng",
+    "back_to_market": "Tiếp tục mua sắm"
+  },
   "history": {
-    "title": "Lịch sử đơn hàng",
-    "list_label": "Danh sách đơn hàng",
+    "title": "Đơn hàng",
     "qty": "SL: {count}",
     "empty_title": "Chưa có đơn hàng",
-    "empty_desc": "Bạn chưa mua sản phẩm nào. Hãy ghé mục Mua hàng nhé.",
+    "empty_desc": "Bạn chưa mua sản phẩm nào. Hãy ghé Market nhé.",
     "load_error": "Không tải được lịch sử đơn hàng. Vui lòng thử lại."
   },
+  "orders": {
+    "filter_all": "Tất cả",
+    "filter_empty_title": "Không có đơn",
+    "filter_empty_desc": "Không có đơn hàng nào ở bộ lọc này."
+  },
   "order": {
+    "title": "Chi tiết đơn",
     "quantity": "Số lượng",
+    "order_id": "Mã đơn",
     "status": "Trạng thái",
     "time": "Thời gian",
+    "support": "Hỗ trợ",
+    "detail": "Chi tiết",
+    "credentials": "Thông tin đăng nhập",
+    "copied": "Đã sao chép",
     "your_account": "Tài khoản của bạn",
     "not_found": "Không tìm thấy đơn hàng.",
     "load_error": "Không tải được chi tiết đơn hàng. Vui lòng thử lại."
@@ -99,7 +130,7 @@
     "refunded": "Đã hoàn tiền"
   },
   "account": {
-    "title": "Tài khoản",
+    "title": "Cá nhân",
     "subtitle": "Thông tin tài khoản và số dư của bạn.",
     "identity": "Thông tin định danh",
     "telegram_id": "ID Telegram",
@@ -109,11 +140,35 @@
     "balance": "Số dư",
     "load_error": "Không tải được thông tin tài khoản. Vui lòng thử lại."
   },
+  "support": {
+    "title": "Hỗ trợ",
+    "subtitle": "Chúng tôi có thể giúp gì cho bạn?",
+    "online_title": "Đội ngũ hỗ trợ đang Online",
+    "online_desc": "Thời gian phản hồi dự kiến: dưới 5 phút",
+    "contact": "Liên hệ qua Telegram",
+    "contact_hint": "Vui lòng quay lại cửa sổ chat với bot và gửi tin nhắn để được hỗ trợ.",
+    "faq_title": "Câu hỏi thường gặp",
+    "faq": {
+      "q1": "Làm thế nào để nhận tài khoản sau khi mua?",
+      "a1": "Hệ thống tự động gửi thông tin tài khoản qua tin nhắn Telegram ngay sau khi thanh toán thành công. Bạn cũng có thể xem lại trong mục Đơn hàng.",
+      "q2": "Chính sách bảo hành như thế nào?",
+      "a2": "Chúng tôi hỗ trợ bảo hành theo từng loại sản phẩm. Vui lòng liên hệ đội ngũ hỗ trợ kèm mã đơn hàng để được xử lý nhanh nhất.",
+      "q3": "Nạp tiền vào ví bằng cách nào?",
+      "a3": "Vào mục Cá nhân, bấm Nạp tiền và chọn phương thức phù hợp với khu vực của bạn (chuyển khoản VietQR hoặc USDT).",
+      "q4": "Thời gian nhận tài khoản mất bao lâu?",
+      "a4": "Với sản phẩm còn hàng, tài khoản được giao tự động ngay sau khi thanh toán thành công (thường dưới 1 phút)."
+    }
+  },
   "deposit": {
     "title": "Nạp tiền",
     "choose_method": "Chọn phương thức nạp",
+    "method_label": "Phương thức nạp",
     "method_sepay": "Chuyển khoản ngân hàng (VietQR)",
     "method_cryptobot": "USDT (Crypto Pay)",
+    "method_sepay_short": "VietQR",
+    "method_cryptobot_short": "USDT",
+    "method_sepay_desc": "Chuyển khoản VietQR, tự động 24/7",
+    "method_cryptobot_desc": "Thanh toán qua Crypto Pay (USDT)",
     "amount_vnd": "Số tiền (VND)",
     "amount_usdt": "Số tiền (USDT)",
     "amount_placeholder": "Nhập số tiền",
@@ -130,7 +185,9 @@
     "cancelled": "Đã huỷ yêu cầu nạp",
     "expired": "Yêu cầu nạp đã hết hạn",
     "cancel_error": "Không huỷ được yêu cầu nạp. Vui lòng thử lại.",
-    "method_unavailable": "Phương thức này không khả dụng cho khu vực của bạn."
+    "method_unavailable": "Phương thức này không khả dụng cho khu vực của bạn.",
+    "no_methods_title": "Chưa có phương thức nạp",
+    "no_methods_desc": "Khu vực của bạn hiện chưa mở phương thức nạp nào. Vui lòng thử lại sau hoặc liên hệ hỗ trợ."
   },
   "qr": {
     "bank": "Ngân hàng",

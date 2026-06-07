@@ -1,25 +1,20 @@
 <script setup lang="ts">
 /**
- * GlassButton — nút bấm kiểu iOS (Req 13.1, 13.2, 13.3, 13.5).
- *  - variant 'primary'   : nền màu accent phẳng (màu nút Telegram).
- *  - variant 'secondary' : lớp kính `.glass` (màu phẳng + blur), không chuyển-màu-nền.
- *  - target chạm ≥ 44px qua `.tap-target`.
- *  - phát haptic('light') khi bấm; bỏ qua khi disabled/loading.
+ * GlassButton — nút bấm (Obsidian Glass).
+ *  - variant 'primary'   : gradient xanh (`.btn-gradient`), chữ on-primary.
+ *  - variant 'secondary' : nền surface-container-high, chữ on-surface.
+ *  - variant 'ghost'     : viền outline, nền trong suốt.
+ *  - target chạm >= 44px; haptic('light') khi bấm; bỏ qua khi disabled/loading.
  */
 import { computed } from 'vue'
 import { haptic } from '@/telegram/sdk'
 
 const props = withDefaults(
   defineProps<{
-    /** Kiểu nút: nền accent (primary) hoặc kính (secondary). */
-    variant?: 'primary' | 'secondary'
-    /** Vô hiệu hoá nút. */
+    variant?: 'primary' | 'secondary' | 'ghost'
     disabled?: boolean
-    /** Trạng thái đang xử lý: hiện spinner + chặn click. */
     loading?: boolean
-    /** Chiếm trọn chiều ngang (full-width). */
     block?: boolean
-    /** type của thẻ button gốc. */
     type?: 'button' | 'submit' | 'reset'
   }>(),
   {
@@ -33,12 +28,22 @@ const props = withDefaults(
 
 const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void }>()
 
-/** Cho phép tương tác khi KHÔNG disabled và KHÔNG loading. */
 const isInteractive = computed(() => !props.disabled && !props.loading)
+
+const variantClass = computed(() => {
+  switch (props.variant) {
+    case 'secondary':
+      return 'bg-surface-container-high text-on-surface hover:bg-surface-container-highest'
+    case 'ghost':
+      return 'border border-outline-variant/40 bg-transparent text-on-surface hover:bg-surface-container-low'
+    default:
+      return 'btn-gradient text-on-primary shadow-md'
+  }
+})
 
 function onClick(ev: MouseEvent): void {
   if (!isInteractive.value) return
-  haptic('light') // Req 13.5 — phản hồi haptic cho thao tác chính
+  haptic('light')
   emit('click', ev)
 }
 </script>
@@ -47,11 +52,8 @@ function onClick(ev: MouseEvent): void {
   <button
     :type="type"
     :disabled="disabled || loading"
-    class="tap-target inline-flex items-center justify-center gap-2 rounded-ios px-5 py-3 font-ios text-ios-headline transition-[transform,opacity] duration-ios ease-ios active:scale-[0.97] disabled:opacity-40"
-    :class="[
-      block ? 'w-full' : '',
-      variant === 'primary' ? 'bg-accent text-accent-text' : 'bg-surface text-text shadow-ios',
-    ]"
+    class="tap-target btn-press inline-flex items-center justify-center gap-2 rounded-full px-5 py-3.5 text-[16px] font-semibold transition-[transform,opacity,background-color] duration-200 disabled:opacity-40"
+    :class="[block ? 'w-full' : '', variantClass]"
     @click="onClick"
   >
     <span

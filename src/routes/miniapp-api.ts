@@ -78,6 +78,7 @@ interface ProductTypeListRow {
   id: number
   name: string
   emoji: string
+  image_data: string | null
   price: number
   sort_order: number
   stock: number // COUNT(products.status='available') — LEFT JOIN nên có thể = 0
@@ -88,6 +89,7 @@ interface ProductTypeDetailRow {
   id: number
   name: string
   emoji: string
+  image_data: string | null
   description: string | null
   price: number
   stock: number // COUNT(products.status='available') — LEFT JOIN nên có thể = 0
@@ -301,7 +303,7 @@ miniAppApi.get('/product-types', async (c) => {
   const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
 
   const { results } = await c.env.DB.prepare(
-    `SELECT pt.id, pt.name, pt.emoji, pt.price, pt.sort_order,
+    `SELECT pt.id, pt.name, pt.emoji, pt.image_data, pt.price, pt.sort_order,
             COUNT(CASE WHEN p.status = 'available' THEN 1 END) AS stock
      FROM product_types pt
      LEFT JOIN products p ON p.type_id = pt.id
@@ -314,6 +316,7 @@ miniAppApi.get('/product-types', async (c) => {
     id: row.id,
     name: row.name,
     emoji: row.emoji,
+    image_url: row.image_data ?? null,
     price: row.price,
     price_display: formatMoneyFor(row.price, ctx),
     stock: row.stock,
@@ -345,7 +348,7 @@ miniAppApi.get('/product-types/:id', async (c) => {
   }
 
   const row = await c.env.DB.prepare(
-    `SELECT pt.id, pt.name, pt.emoji, pt.description, pt.price,
+    `SELECT pt.id, pt.name, pt.emoji, pt.image_data, pt.description, pt.price,
             COUNT(CASE WHEN p.status = 'available' THEN 1 END) AS stock
      FROM product_types pt
      LEFT JOIN products p ON p.type_id = pt.id
@@ -367,6 +370,7 @@ miniAppApi.get('/product-types/:id', async (c) => {
     id: row.id,
     name: row.name,
     emoji: row.emoji,
+    image_url: row.image_data ?? null,
     description: row.description,
     price: row.price,
     price_display: formatMoneyFor(row.price, ctx),

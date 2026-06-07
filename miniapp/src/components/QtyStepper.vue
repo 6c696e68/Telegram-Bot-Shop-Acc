@@ -1,28 +1,20 @@
 <script setup lang="ts">
 /**
- * QtyStepper — bộ tăng/giảm số lượng (Req 6.1).
- *  - v-model:quantity (number) — luôn là số nguyên, được kẹp trong [min, max].
- *  - nút +/- đạt target chạm ≥ 44px (`.tap-target`); màu phẳng, không chuyển-màu-nền.
- *  - tự disable nút khi chạm biên min/max.
+ * QtyStepper — bộ tăng/giảm số lượng (Obsidian Glass, Req 6.1).
+ *  - v-model:quantity (number) — luôn nguyên, kẹp trong [min, max].
+ *  - Pill nền surface-container-high; nút +/- target chạm >= 44px; disable khi chạm biên.
  */
 import { computed } from 'vue'
 import { Minus, Plus } from '@lucide/vue'
 import { haptic } from '@/telegram/sdk'
 
 const props = withDefaults(
-  defineProps<{
-    /** Giá trị nhỏ nhất cho phép. */
-    min?: number
-    /** Giá trị lớn nhất cho phép. */
-    max?: number
-  }>(),
+  defineProps<{ min?: number; max?: number }>(),
   { min: 1, max: 99 }
 )
 
-/** v-model:quantity — số lượng hiện tại (number). */
 const quantity = defineModel<number>('quantity', { required: true })
 
-/** Ép về số nguyên và kẹp trong [min, max]. */
 function clamp(value: number): number {
   const int = Math.trunc(Number.isFinite(value) ? value : props.min)
   return Math.min(props.max, Math.max(props.min, int))
@@ -45,24 +37,26 @@ function increment(): void {
 </script>
 
 <template>
-  <div class="inline-flex items-center gap-1 rounded-ios bg-surface p-1 shadow-ios">
+  <div
+    class="flex items-center rounded-full border border-surface-variant bg-surface-container-high p-1"
+  >
     <button
       type="button"
-      class="tap-target flex items-center justify-center rounded-ios text-accent transition-transform duration-ios ease-ios active:scale-90 disabled:opacity-30"
+      class="flex h-10 w-10 items-center justify-center rounded-full text-on-surface transition-transform active:scale-90 disabled:opacity-30"
       :disabled="!canDecrement"
-      aria-label="Giảm số lượng"
+      :aria-label="$t('product.qty_decrease')"
       @click="decrement"
     >
       <Minus :size="20" :stroke-width="2.25" aria-hidden="true" />
     </button>
-    <span class="min-w-[2.5rem] text-center text-ios-headline tabular-nums text-text">
+    <span class="w-8 text-center text-[16px] font-semibold tabular-nums text-on-surface">
       {{ clamp(quantity) }}
     </span>
     <button
       type="button"
-      class="tap-target flex items-center justify-center rounded-ios text-accent transition-transform duration-ios ease-ios active:scale-90 disabled:opacity-30"
+      class="flex h-10 w-10 items-center justify-center rounded-full text-on-surface transition-transform active:scale-90 disabled:opacity-30"
       :disabled="!canIncrement"
-      aria-label="Tăng số lượng"
+      :aria-label="$t('product.qty_increase')"
       @click="increment"
     >
       <Plus :size="20" :stroke-width="2.25" aria-hidden="true" />

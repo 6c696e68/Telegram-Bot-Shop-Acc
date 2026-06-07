@@ -67,10 +67,11 @@ export function applyTheme(
     }
   }
 
-  // Đồng bộ light/dark: dùng cả class `dark` (Tailwind darkMode:'class') và data-theme (selector dự phòng).
-  const isDark = colorScheme === 'dark'
-  root.classList.toggle('dark', isDark)
-  root.setAttribute('data-theme', isDark ? 'dark' : 'light')
+  // Obsidian Glass là design DARK-ONLY: luôn giữ class `dark` bất kể colorScheme Telegram,
+  // để token màu cố định (tailwind) hiển thị đúng. Tham số colorScheme được giữ cho tương thích.
+  void colorScheme
+  root.classList.add('dark')
+  root.setAttribute('data-theme', 'dark')
 }
 
 /**

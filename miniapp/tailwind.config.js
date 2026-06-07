@@ -1,43 +1,100 @@
 /**
- * Tailwind config — Telegram Mini App
- * iOS HIG + liquid glass. Chỉ dùng MÀU PHẲNG ánh xạ qua CSS variables
- * (đổ từ Telegram themeParams lúc runtime). KHÔNG khai báo bất kỳ
- * util chuyển-màu-nền nào (Req 13.2, 13.3).
+ * Tailwind config — Telegram Mini App ("Obsidian Glass").
+ *
+ * Hệ token màu Material-3 (giá trị hex CỐ ĐỊNH theo design `obsidian_glass/DESIGN.md`).
+ * Dark-only: lớp `.dark` luôn bật trên <html>. Safe-area do Telegram WebApp cấp lúc runtime.
+ * Typography: Inter (UI/headline) + JetBrains Mono (label/metadata).
  *
  * @type {import('tailwindcss').Config}
  */
 export default {
   content: ['./index.html', './src/**/*.{vue,ts}'],
-  // Toggle chế độ tối theo class `.dark` (đặt trên <html> theo colorScheme Telegram).
   darkMode: 'class',
   theme: {
     extend: {
-      // Màu phẳng ánh xạ sang CSS variables (light/dark tự đồng bộ qua biến).
       colors: {
-        bg: 'var(--tg-bg)',
-        app: 'var(--app-bg)',
-        surface: 'var(--surface)',
-        'secondary-bg': 'var(--tg-secondary-bg)',
-        separator: 'var(--separator)',
-        text: 'var(--tg-text)',
-        hint: 'var(--tg-hint)',
-        accent: 'var(--tg-accent)',
-        'accent-text': 'var(--tg-accent-text)',
-        'accent-soft': 'var(--accent-soft)',
-        'ios-green': '#34c759',
-        'ios-red': '#ff3b30',
-        'ios-orange': '#ff9500',
+        'on-error-container': '#ffdad6',
+        'surface-container-highest': '#31353d',
+        'surface-tint': '#adc6ff',
+        'tertiary-fixed-dim': '#ffb595',
+        'surface-container-low': '#181c23',
+        'on-tertiary-fixed-variant': '#7c2e00',
+        'surface-container-lowest': '#0b0e16',
+        'secondary-container': '#3630bf',
+        'on-surface': '#e0e2ed',
+        error: '#ffb4ab',
+        'on-background': '#e0e2ed',
+        'surface-container-high': '#272a32',
+        'error-container': '#93000a',
+        'surface-container': '#1c2028',
+        'on-secondary-fixed-variant': '#332dbc',
+        'primary-container': '#4b8eff',
+        outline: '#8b90a0',
+        'tertiary-container': '#ef6719',
+        surface: '#10131b',
+        'on-primary-fixed': '#001a41',
+        primary: '#adc6ff',
+        'surface-dim': '#10131b',
+        'secondary-fixed-dim': '#c2c1ff',
+        secondary: '#c2c1ff',
+        'tertiary-fixed': '#ffdbcc',
+        'inverse-on-surface': '#2d3039',
+        'primary-fixed-dim': '#adc6ff',
+        'surface-variant': '#31353d',
+        'on-tertiary': '#571e00',
+        'on-error': '#690005',
+        'inverse-surface': '#e0e2ed',
+        'on-tertiary-fixed': '#351000',
+        'on-secondary-container': '#b1b1ff',
+        'primary-fixed': '#d8e2ff',
+        'secondary-fixed': '#e2dfff',
+        'on-primary': '#002e69',
+        'on-tertiary-container': '#4c1a00',
+        'inverse-primary': '#005bc1',
+        'on-secondary-fixed': '#0c006b',
+        tertiary: '#ffb595',
+        'on-secondary': '#1800a7',
+        'on-primary-fixed-variant': '#004493',
+        'on-primary-container': '#00285c',
+        'outline-variant': '#414755',
+        'surface-bright': '#363942',
+        background: '#10131b',
+        'on-surface-variant': '#c1c6d7',
       },
-      // Bo góc kiểu iOS (continuous-corner cảm giác lớn).
       borderRadius: {
-        glass: '20px',
-        ios: '14px',
+        DEFAULT: '0.25rem',
+        lg: '0.5rem',
+        xl: '0.75rem',
+        '2xl': '1rem',
+        full: '9999px',
       },
-      // Vật liệu kính: độ mờ blur dùng cho backdrop-filter.
-      backdropBlur: {
-        glass: '20px',
+      spacing: {
+        unit: '8px',
+        'stack-sm': '8px',
+        'stack-md': '16px',
+        'stack-lg': '32px',
+        gutter: '16px',
+        'container-margin': '24px',
+        'safe-top': 'var(--safe-top)',
+        'safe-bottom': 'var(--safe-bottom)',
+        'safe-left': 'var(--safe-left)',
+        'safe-right': 'var(--safe-right)',
       },
-      // Easing chuẩn iOS (cảm giác trượt UINavigationController).
+      fontFamily: {
+        'headline-lg-mobile': ['Inter', 'system-ui', 'sans-serif'],
+        'label-sm': ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        'body-md': ['Inter', 'system-ui', 'sans-serif'],
+        'headline-lg': ['Inter', 'system-ui', 'sans-serif'],
+        'display-lg': ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+      },
+      fontSize: {
+        'display-lg': ['48px', { lineHeight: '1.1', letterSpacing: '-0.02em', fontWeight: '700' }],
+        'headline-lg': ['32px', { lineHeight: '1.2', letterSpacing: '-0.01em', fontWeight: '600' }],
+        'headline-lg-mobile': ['28px', { lineHeight: '1.2', fontWeight: '600' }],
+        'body-md': ['16px', { lineHeight: '1.5', letterSpacing: '0', fontWeight: '400' }],
+        'label-sm': ['12px', { lineHeight: '1.0', letterSpacing: '0.05em', fontWeight: '500' }],
+      },
       transitionTimingFunction: {
         ios: 'cubic-bezier(0.32, 0.72, 0, 1)',
         'ios-fade': 'cubic-bezier(0.4, 0, 0.2, 1)',
@@ -45,41 +102,13 @@ export default {
       transitionDuration: {
         ios: '280ms',
       },
-      // Đổ bóng nhẹ kiểu iOS cho lớp kính/thẻ nổi.
-      boxShadow: {
-        glass: '0 8px 24px rgba(0, 0, 0, 0.08)',
-        'glass-dark': '0 8px 24px rgba(0, 0, 0, 0.40)',
-        ios: '0 1px 3px rgba(0, 0, 0, 0.10)',
-      },
-      // Khoảng cách an toàn do Telegram WebApp/thiết bị khai báo (Req 13.7).
-      spacing: {
-        'safe-top': 'var(--safe-top)',
-        'safe-bottom': 'var(--safe-bottom)',
-        'safe-left': 'var(--safe-left)',
-        'safe-right': 'var(--safe-right)',
-      },
-      // Thang chữ kiểu iOS.
-      fontSize: {
-        'ios-hero': ['44px', { lineHeight: '52px', fontWeight: '700', letterSpacing: '-0.02em' }],
-        'ios-large-title': ['34px', { lineHeight: '41px', fontWeight: '700' }],
-        'ios-title': ['22px', { lineHeight: '28px', fontWeight: '600' }],
-        'ios-headline': ['17px', { lineHeight: '22px', fontWeight: '600' }],
-        'ios-body': ['17px', { lineHeight: '22px' }],
-        'ios-footnote': ['13px', { lineHeight: '18px' }],
-        'ios-caption': ['12px', { lineHeight: '16px' }],
-      },
-      fontFamily: {
-        ios: [
-          '-apple-system',
-          'SF Pro Text',
-          'system-ui',
-          'Segoe UI',
-          'Roboto',
-          'sans-serif',
-        ],
+      keyframes: {
+        shimmer: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
       },
     },
   },
-  // Không dùng plugin nào sinh util chuyển-màu-nền. Chỉ màu phẳng + lớp kính.
   plugins: [],
 }

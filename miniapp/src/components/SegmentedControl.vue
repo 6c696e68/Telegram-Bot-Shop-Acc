@@ -1,16 +1,13 @@
 <script setup lang="ts">
 /**
- * SegmentedControl — control phân đoạn kiểu iOS (chọn phương thức nạp...).
+ * SegmentedControl — control phân đoạn kiểu iOS 18 (Obsidian Glass).
  *  - v-model:modelValue (string). `options`: [{ value, label }].
- *  - track nền alpha phẳng; segment active = surface + bóng nhẹ. haptic khi đổi.
- *  - Màu phẳng, không gradient.
+ *  - Track nền surface-container-high; segment active = surface + viền nhẹ. haptic khi đổi.
  */
 import { haptic } from '@/telegram/sdk'
 
 defineProps<{
-  /** Giá trị đang chọn. */
   modelValue: string
-  /** Danh sách lựa chọn. */
   options: ReadonlyArray<{ value: string; label: string }>
 }>()
 
@@ -25,7 +22,7 @@ function select(value: string, current: string): void {
 
 <template>
   <div
-    class="inline-flex w-full items-stretch gap-1 rounded-ios bg-black/5 p-1 dark:bg-white/10"
+    class="flex w-full items-stretch rounded-xl bg-surface-container-high p-1"
     role="tablist"
   >
     <button
@@ -34,8 +31,12 @@ function select(value: string, current: string): void {
       type="button"
       role="tab"
       :aria-selected="modelValue === opt.value"
-      class="flex-1 rounded-ios px-3 py-2 text-ios-footnote font-medium transition-colors tap-target"
-      :class="modelValue === opt.value ? 'bg-surface text-text shadow-ios' : 'text-hint'"
+      class="flex min-h-[44px] flex-1 items-center justify-center rounded-lg px-2 py-1.5 text-center text-[13px] font-medium leading-tight transition-colors"
+      :class="
+        modelValue === opt.value
+          ? 'border border-outline-variant/10 bg-surface font-semibold text-on-surface shadow-sm'
+          : 'text-on-surface-variant hover:text-on-surface'
+      "
       @click="select(opt.value, modelValue)"
     >
       {{ opt.label }}

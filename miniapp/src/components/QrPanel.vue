@@ -1,29 +1,23 @@
 <script setup lang="ts">
 /**
- * QrPanel — hiển thị VietQR + thông tin chuyển khoản trong lớp kính (Req 8.4).
- *  - ảnh QR (qrUrl) đặt trên nền trắng cố định để máy quét đọc tốt (màu phẳng).
- *  - các dòng thông tin: ngân hàng, số TK, chủ TK, số tiền, nội dung CK.
- *  - số TK + nội dung CK bấm để sao chép (target chạm ≥ 44px + haptic phản hồi).
+ * QrPanel — hiển thị VietQR + thông tin chuyển khoản (Obsidian Glass, Req 8.4).
+ *  - Ảnh QR trên nền trắng cố định (tương phản cho máy quét).
+ *  - Các dòng: ngân hàng, số TK, chủ TK, số tiền, nội dung CK.
+ *  - Số TK + nội dung CK bấm để sao chép (target chạm >= 44px + haptic).
  */
 import { ref } from 'vue'
+import { Copy, Check } from '@lucide/vue'
 import { haptic } from '@/telegram/sdk'
 
 defineProps<{
-  /** URL ảnh VietQR (img.vietqr.io). */
   qrUrl: string
-  /** Tên ngân hàng. */
   bankName: string
-  /** Số tài khoản nhận. */
   bankAccount: string
-  /** Chủ tài khoản. */
   bankOwner: string
-  /** Số tiền đã định dạng (vd "100,000đ"). */
   amountDisplay: string
-  /** Nội dung chuyển khoản duy nhất (transfer_code). */
   transferCode: string
 }>()
 
-/** Khoá field vừa được sao chép để hiển thị trạng thái "Đã chép". */
 const copied = ref<string | null>(null)
 
 async function copy(field: string, value: string): Promise<void> {
@@ -41,51 +35,48 @@ async function copy(field: string, value: string): Promise<void> {
 </script>
 
 <template>
-  <div class="surface-card flex flex-col gap-4 p-5">
-    <!-- Ảnh VietQR trên nền trắng phẳng (tương phản cho máy quét). -->
-    <div class="mx-auto rounded-ios bg-white p-3">
-      <img
-        :src="qrUrl"
-        :alt="$t('deposit.scan_qr')"
-        class="block h-56 w-56 object-contain"
-      />
+  <div class="glass-card flex flex-col gap-4 rounded-xl p-5">
+    <div class="mx-auto rounded-xl bg-white p-3">
+      <img :src="qrUrl" :alt="$t('deposit.scan_qr')" class="block h-56 w-56 object-contain" />
     </div>
 
-    <div class="flex flex-col gap-1 text-ios-body">
+    <div class="flex flex-col gap-1 text-[15px]">
       <div class="flex items-center justify-between gap-3 py-1">
-        <span class="text-hint">{{ $t('qr.bank') }}</span>
-        <span class="text-text">{{ bankName }}</span>
+        <span class="text-on-surface-variant">{{ $t('qr.bank') }}</span>
+        <span class="text-on-surface">{{ bankName }}</span>
       </div>
 
       <button
         type="button"
-        class="tap-target flex items-center justify-between gap-3 text-left"
+        class="tap-target flex items-center justify-between gap-3 rounded-lg px-1 text-left transition-colors hover:bg-surface-container"
         @click="copy('account', bankAccount)"
       >
-        <span class="text-hint">{{ $t('qr.account') }}</span>
-        <span class="tabular-nums text-accent">
+        <span class="text-on-surface-variant">{{ $t('qr.account') }}</span>
+        <span class="flex items-center gap-1 tabular-nums text-primary">
           {{ copied === 'account' ? $t('qr.copied') : bankAccount }}
+          <component :is="copied === 'account' ? Check : Copy" :size="15" :stroke-width="2" aria-hidden="true" />
         </span>
       </button>
 
       <div class="flex items-center justify-between gap-3 py-1">
-        <span class="text-hint">{{ $t('qr.owner') }}</span>
-        <span class="text-text">{{ bankOwner }}</span>
+        <span class="text-on-surface-variant">{{ $t('qr.owner') }}</span>
+        <span class="text-on-surface">{{ bankOwner }}</span>
       </div>
 
       <div class="flex items-center justify-between gap-3 py-1">
-        <span class="text-hint">{{ $t('qr.amount') }}</span>
-        <span class="tabular-nums text-text">{{ amountDisplay }}</span>
+        <span class="text-on-surface-variant">{{ $t('qr.amount') }}</span>
+        <span class="tabular-nums text-on-surface">{{ amountDisplay }}</span>
       </div>
 
       <button
         type="button"
-        class="tap-target flex items-center justify-between gap-3 text-left"
+        class="tap-target flex items-center justify-between gap-3 rounded-lg px-1 text-left transition-colors hover:bg-surface-container"
         @click="copy('code', transferCode)"
       >
-        <span class="text-hint">{{ $t('qr.note') }}</span>
-        <span class="font-semibold text-accent">
+        <span class="text-on-surface-variant">{{ $t('qr.note') }}</span>
+        <span class="flex items-center gap-1 font-semibold text-primary">
           {{ copied === 'code' ? $t('qr.copied') : transferCode }}
+          <component :is="copied === 'code' ? Check : Copy" :size="15" :stroke-width="2" aria-hidden="true" />
         </span>
       </button>
     </div>

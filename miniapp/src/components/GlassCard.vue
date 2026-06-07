@@ -1,23 +1,29 @@
 <script setup lang="ts">
 /**
- * GlassCard — thẻ surface tái sử dụng (kiểu CryptoBot grouped-card).
- * Giữ tên + props (`padded`, `as`) để không vỡ import hiện tại; nội hàm đổi từ kính mờ
- * sang mặt surface phẳng + bo góc lớn + bóng nhẹ (`.surface-card`). Màu phẳng, không
- * gradient (Req 13.2/13.3).
+ * GlassCard — thẻ container (Obsidian Glass).
+ *  - Mặc định: nền surface-container-lowest + viền outline-variant, bo `rounded-xl`.
+ *  - `glass`  : dùng lớp `.glass-card` (kính mờ) cho panel nổi.
+ *  - `padded` : bật/tắt padding mặc định. `as`: thẻ HTML gốc.
  */
 withDefaults(
   defineProps<{
-    /** Có áp padding mặc định hay không (tắt khi cần bố cục sát mép). */
     padded?: boolean
-    /** Thẻ HTML gốc để render (div/section/article...). */
+    glass?: boolean
     as?: string
   }>(),
-  { padded: true, as: 'div' }
+  { padded: true, glass: false, as: 'div' }
 )
 </script>
 
 <template>
-  <component :is="as" class="surface-card" :class="padded ? 'p-4' : ''">
+  <component
+    :is="as"
+    class="rounded-xl"
+    :class="[
+      glass ? 'glass-card' : 'bg-surface-container-lowest border border-outline-variant/20',
+      padded ? 'p-4' : '',
+    ]"
+  >
     <slot />
   </component>
 </template>

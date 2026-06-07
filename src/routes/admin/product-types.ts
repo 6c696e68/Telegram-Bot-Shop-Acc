@@ -9,6 +9,17 @@ type AdminEnv = {
   Variables: AdminVariables
 }
 
+/** Trần kích thước chuỗi ảnh (~700KB data URL). CMS nén client-side trước khi gửi. */
+const MAX_IMAGE_LEN = 700_000
+
+/** Hợp lệ khi là data URL ảnh hoặc URL HTTPS, trong giới hạn độ dài. */
+function isValidImageData(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const v = value.trim()
+  if (v.length === 0 || v.length > MAX_IMAGE_LEN) return false
+  return /^data:image\/(png|jpe?g|webp|gif);base64,/.test(v) || /^https:\/\//.test(v)
+}
+
 const productTypesRoutes = new Hono<AdminEnv>()
 
 // All routes require JWT
@@ -87,6 +98,7 @@ productTypesRoutes.post('/', async (c) => {
     description?: string
     price?: number
     emoji?: string
+    image_data?: string | null
     sort_order?: number
     is_visible?: number
     success_template?: string
@@ -96,6 +108,15 @@ productTypesRoutes.post('/', async (c) => {
   const errors = validateProductType(body)
   if (errors) {
     return c.json({ success: false, data: null, error: errors }, 400)
+  }
+
+  // Ảnh (tuỳ chọn): chuỗi rỗng/null → không đặt ảnh; có giá trị → phải là data URL/HTTPS hợp lệ.
+  let imageData: string | null = null
+  if (body.image_data !== undefined && body.image_data !== null && String(body.image_data).trim() !== '') {
+    if (!isValidImageData(body.image_data)) {
+      return c.json({ success: false, data: null, error: 'invalid_image' }, 400)
+    }
+    imageData = String(body.image_data).trim()
   }
 
   const name = body.name!.trim()
@@ -109,9 +130,9 @@ productTypesRoutes.post('/', async (c) => {
   const adminId = c.get('adminId')
 
   const insertResult = await c.env.DB.prepare(
-    `INSERT INTO product_types (name, description, price, emoji, sort_order, is_visible, success_template, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(name, description, price, emoji, sortOrder, isVisible, successTemplate, now, now).run()
+    `INSERT INTO product_types (name, description, price, emoji, image_data, sort_order, is_visible, success_template, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(name, description, price, emoji, imageData, sortOrder, isVisible, successTemplate, now, now).run()
 
   const newId = insertResult.meta.last_row_id
 
@@ -167,6 +188,7 @@ productTypesRoutes.put('/:id', async (c) => {
     description?: string
     price?: number
     emoji?: string
+    image_data?: string | null
     sort_order?: number
     is_visible?: number
     success_template?: string | null
@@ -198,6 +220,18 @@ productTypesRoutes.put('/:id', async (c) => {
   if (body.emoji !== undefined) {
     updates.push('emoji = ?')
     values.push(body.emoji.trim() || '📦')
+  }
+  if (body.image_data !== undefined) {
+    // null/chuỗi rỗng → xoá ảnh; có giá trị → validate data URL/HTTPS.
+    if (body.image_data === null || String(body.image_data).trim() === '') {
+      updates.push('image_data = ?')
+      values.push(null)
+    } else if (isValidImageData(body.image_data)) {
+      updates.push('image_data = ?')
+      values.push(String(body.image_data).trim())
+    } else {
+      return c.json({ success: false, data: null, error: 'invalid_image' }, 400)
+    }
   }
   if (body.sort_order !== undefined) {
     updates.push('sort_order = ?')
