@@ -22,7 +22,7 @@
  * — thêm ngôn ngữ chỉ cần thêm catalog, KHÔNG sửa renderer (R16.4, OCP).
  */
 
-import { formatMoney } from './format'
+import { formatMoneyFor, type CurrencyContext } from './format'
 import { t } from '../bot/i18n'
 import { BASE_FALLBACK_LANG, type Lang } from '../i18n/locales'
 
@@ -72,25 +72,26 @@ function buildHeader(vars: SuccessTemplateVars, lang: Lang): string {
 }
 
 /** Body mặc định theo ngôn ngữ khi product_type không cấu hình template riêng. */
-function defaultBody(vars: SuccessTemplateVars, lang: Lang): string {
+function defaultBody(vars: SuccessTemplateVars, ctx: CurrencyContext): string {
+  const lang = ctx.lang
   return [
     buildContentList(vars.contents),
     '',
     t(lang, 'purchase.success.divider'),
-    `${t(lang, 'purchase.success.total_label')}: ${formatMoney(vars.totalAmount, lang)}`,
-    `${t(lang, 'purchase.success.balance_label')}: ${formatMoney(vars.balanceAfter, lang)}`,
+    `${t(lang, 'purchase.success.total_label')}: ${formatMoneyFor(vars.totalAmount, ctx)}`,
+    `${t(lang, 'purchase.success.balance_label')}: ${formatMoneyFor(vars.balanceAfter, ctx)}`,
   ].join('\n')
 }
 
-/** Thay placeholder trong body custom bằng giá trị thật ([total]/[balance] theo lang). */
-function renderBody(template: string, vars: SuccessTemplateVars, lang: Lang): string {
+/** Thay placeholder trong body custom bằng giá trị thật ([total]/[balance] theo Region/lang). */
+function renderBody(template: string, vars: SuccessTemplateVars, ctx: CurrencyContext): string {
   const replacements: Record<string, string> = {
     '[content]': buildContentList(vars.contents),
     '[name]': escapeHtml(vars.name),
     '[emoji]': vars.emoji,
     '[quantity]': String(vars.quantity),
-    '[total]': formatMoney(vars.totalAmount, lang),
-    '[balance]': formatMoney(vars.balanceAfter, lang),
+    '[total]': formatMoneyFor(vars.totalAmount, ctx),
+    '[balance]': formatMoneyFor(vars.balanceAfter, ctx),
   }
   return template.replace(
     /\[(content|name|emoji|quantity|total|balance)\]/g,
@@ -107,17 +108,17 @@ function renderBody(template: string, vars: SuccessTemplateVars, lang: Lang): st
  *
  * @param templatesByLang - map lang → success_template (null/empty → bỏ qua mắt xích đó)
  * @param vars - dữ liệu thay thế
- * @param lang - ngôn ngữ hiển thị của người mua
+ * @param ctx - CurrencyContext của người mua (Region/lang/rate); [total]/[balance] hiển thị theo Region
  */
 export function renderSuccessMessage(
   templatesByLang: Map<Lang, string | null>,
   vars: SuccessTemplateVars,
-  lang: Lang
+  ctx: CurrencyContext
 ): string {
-  const header = buildHeader(vars, lang)
+  const header = buildHeader(vars, ctx.lang)
   const tpl =
-    templatesByLang.get(lang)?.trim() ||
+    templatesByLang.get(ctx.lang)?.trim() ||
     templatesByLang.get(BASE_FALLBACK_LANG)?.trim()
-  const body = tpl ? renderBody(tpl, vars, lang) : defaultBody(vars, lang)
+  const body = tpl ? renderBody(tpl, vars, ctx) : defaultBody(vars, ctx)
   return `${header}\n${body}`
 }

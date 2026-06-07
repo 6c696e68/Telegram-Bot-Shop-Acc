@@ -12,12 +12,13 @@ import {
   buildInlineKeyboard,
   buildBackButton,
 } from '../telegram-api'
-import { formatMoney } from '../../utils/format'
+import { formatMoneyFor, buildCurrencyContext, type CurrencyContext } from '../../utils/format'
 import { transactionService } from '../../services/transaction'
 import { renderSuccessMessage } from '../../utils/telegram-template'
 import { loadProductTypeTemplates } from '../../services/product-template'
 import { resolveLang } from '../../services/user-locale'
 import { t, type Lang } from '../i18n'
+import { type Region } from '../../i18n/locales'
 import { setSession } from '../session'
 import {
   consumeToken,
@@ -51,6 +52,7 @@ export async function handleCategoryList(
   chatId: number,
   messageId: number | undefined,
   lang: Lang,
+  ctx: CurrencyContext,
   page = 0
 ): Promise<void> {
   // Query categories có stock > 0
@@ -88,7 +90,7 @@ export async function handleCategoryList(
       text: t(lang, 'shop.item_label', {
         emoji: cat.emoji,
         name: cat.name,
-        price: formatMoney(cat.price, lang),
+        price: formatMoneyFor(cat.price, ctx),
         stock: cat.stock,
       }),
       callback_data: `cat:${cat.id}`,
@@ -135,7 +137,8 @@ export async function handleCategoryDetail(
   messageId: number | undefined,
   categoryId: number,
   userId: number,
-  lang: Lang
+  lang: Lang,
+  ctx: CurrencyContext
 ): Promise<void> {
   // Query category info + stock count
   const category = await db
@@ -182,7 +185,7 @@ export async function handleCategoryDetail(
     `${category.emoji} <b>${category.name}</b>`,
     '',
     description,
-    t(lang, 'shop.detail_price', { price: formatMoney(category.price, lang) }),
+    t(lang, 'shop.detail_price', { price: formatMoneyFor(category.price, ctx) }),
     t(lang, 'shop.detail_stock', { stock }),
     '',
     t(lang, 'shop.detail_choose_qty'),
@@ -223,7 +226,8 @@ export async function handleQuantitySelect(
   categoryId: number,
   quantity: number,
   userId: number,
-  lang: Lang
+  lang: Lang,
+  ctx: CurrencyContext
 ): Promise<void> {
   // Validate quantity
   if (!Number.isInteger(quantity) || quantity <= 0 || quantity > MAX_QTY) {
@@ -294,8 +298,8 @@ export async function handleQuantitySelect(
     '',
     `${category.emoji} ${category.name}`,
     t(lang, 'shop.confirm_qty', { qty: quantity }),
-    t(lang, 'shop.confirm_unit', { price: formatMoney(category.price, lang) }),
-    t(lang, 'shop.confirm_total', { total: formatMoney(totalAmount, lang) }),
+    t(lang, 'shop.confirm_unit', { price: formatMoneyFor(category.price, ctx) }),
+    t(lang, 'shop.confirm_total', { total: formatMoneyFor(totalAmount, ctx) }),
     '',
     t(lang, 'shop.confirm_hint'),
   ].join('\n')
@@ -325,7 +329,8 @@ export async function handlePurchaseConfirm(
   categoryId: number,
   quantity: number,
   userId: number,
-  lang: Lang
+  lang: Lang,
+  ctx: CurrencyContext
 ): Promise<void> {
   // Cooldown chặt cho thao tác đắt + nhạy cảm tài chính: chặn double-tap "Xác nhận mua".
   const verdict = consumeToken(`buy:${userId}`, PURCHASE_RULE)
@@ -343,9 +348,9 @@ export async function handlePurchaseConfirm(
 
   // Query user by telegram_id to get internal user.id
   const user = await db
-    .prepare('SELECT id, balance, language FROM users WHERE telegram_id = ?')
+    .prepare('SELECT id, balance, language, region FROM users WHERE telegram_id = ?')
     .bind(userId)
-    .first<{ id: number; balance: number; language: string | null }>()
+    .first<{ id: number; balance: number; language: string | null; region: Region | null }>()
 
   if (!user) {
     await editOrSendMessage(
@@ -390,9 +395,9 @@ export async function handlePurchaseConfirm(
       const text = [
         t(lang, 'shop.insufficient_title'),
         '',
-        t(lang, 'shop.insufficient_balance', { balance: formatMoney(user.balance, lang) }),
-        t(lang, 'shop.insufficient_need', { total: formatMoney(totalAmount, lang) }),
-        t(lang, 'shop.insufficient_topup', { shortfall: formatMoney(shortfall, lang) }),
+        t(lang, 'shop.insufficient_balance', { balance: formatMoneyFor(user.balance, ctx) }),
+        t(lang, 'shop.insufficient_need', { total: formatMoneyFor(totalAmount, ctx) }),
+        t(lang, 'shop.insufficient_topup', { shortfall: formatMoneyFor(shortfall, ctx) }),
       ].join('\n')
 
       const buttons = [
@@ -456,6 +461,7 @@ export async function handlePurchaseConfirm(
   // Render tin nhắn thành công theo template đa ngôn ngữ của category (R16.5)
   const templatesByLang = await loadProductTypeTemplates(db, category.id)
   const successLang = await resolveLang(db, user)
+  const successCtx = await buildCurrencyContext(db, { lang: successLang, region: user.region })
   const contentText = renderSuccessMessage(
     templatesByLang,
     {
@@ -466,7 +472,7 @@ export async function handlePurchaseConfirm(
       balanceAfter,
       contents: products.map((p) => p.content),
     },
-    successLang
+    successCtx
   )
 
   const successButtons = [
@@ -495,7 +501,8 @@ export async function handlePurchaseTextInput(
   userId: number,
   text: string,
   categoryId: number,
-  lang: Lang
+  lang: Lang,
+  ctx: CurrencyContext
 ): Promise<void> {
   const qty = parseInt(text, 10)
 
@@ -506,5 +513,5 @@ export async function handlePurchaseTextInput(
   }
 
   // Delegate to quantity select handler (confirmation screen)
-  await handleQuantitySelect(db, botToken, chatId, undefined, categoryId, qty, userId, lang)
+  await handleQuantitySelect(db, botToken, chatId, undefined, categoryId, qty, userId, lang, ctx)
 }

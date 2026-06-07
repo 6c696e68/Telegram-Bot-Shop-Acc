@@ -359,6 +359,38 @@ npm run deploy
 > `wrangler.toml` dùng `[site] bucket = "./dist"`, KV key theo thư mục con: `cms/...` phục vụ tại `/cms/*`, `miniapp/...` phục vụ tại `/app/*`.
 > Lưu ý: nếu gọi thẳng `npx wrangler deploy` (bỏ qua npm) thì KHÔNG có predeploy → phải tự `npm run build:all` trước.
 
+### Deploy bằng CLI tương tác (`npm run shop:deploy`)
+
+Nếu muốn deploy **trọn gói từ A đến Z** với hỏi/đáp từng bước (không cần nhớ thứ tự lệnh), dùng CLI:
+
+```bash
+npm run shop:deploy
+```
+
+CLI chạy lần lượt 8 bước, **idempotent** (chạy lại an toàn) — cấu hình nào đã có sẵn thì bỏ qua hoặc cho để trống:
+
+1. **Dependencies** — kiểm tra & cài `node_modules` cho root / `cms` / `miniapp` nếu thiếu.
+2. **D1 database** — đã có `database_id` thật trong `wrangler.toml` thì giữ nguyên; còn placeholder thì hỏi tạo mới rồi tự ghi lại ID.
+3. **Secrets** — đọc danh sách secret trên Cloudflare: cái **đã cấu hình** sẽ hỏi "cập nhật lại?" (mặc định giữ nguyên), cái **thiếu** thì nhập **ẩn (masked)** kèm validate (token, `JWT_SECRET` ≥ 32 ký tự, `ADMIN_IDS`, số tài khoản...). Enter để **bỏ trống**.
+4. **Migration** — `wrangler d1 migrations apply --remote` (có xác nhận).
+5. **Build** — `npm run build:all` (CMS + Mini App).
+6. **Deploy** — `wrangler deploy`, in ra Worker URL + Version ID.
+7. **Admin CMS** — (tuỳ chọn) tạo tài khoản trong `admin_users`: hash mật khẩu bằng bcrypt, mật khẩu nhập ẩn, tự kiểm tra trùng username.
+8. **Webhook** — (tuỳ chọn) set lại Telegram webhook (tái dùng `BOT_TOKEN`/secret vừa nhập), nhắc URL SePay.
+
+Các cờ tuỳ chọn:
+
+```bash
+npm run shop:deploy -- --yes            # Auto đồng ý mọi confirm (dùng cho CI)
+npm run shop:deploy -- --skip-webhook   # Bỏ qua bước set Telegram webhook
+npm run shop:deploy -- --skip-admin     # Bỏ qua bước tạo admin CMS
+npm run shop:deploy -- --skip-migrate   # Bỏ qua migration remote
+```
+
+> Đây là thao tác **production** — CLI sẽ hỏi xác nhận ở đầu trước khi chạy.
+> Giá trị secret/mật khẩu **không bao giờ** được in ra log (nhập ẩn, tham chiếu theo tên biến).
+> Secrets production vẫn lưu qua `wrangler secret put` (không dùng `.dev.vars`).
+
 ---
 
 ## 9. Cấu hình Webhook

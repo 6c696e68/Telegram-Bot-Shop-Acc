@@ -60,6 +60,8 @@ export interface InlineKeyboardButton {
   text: string
   callback_data?: string
   url?: string
+  /** Mở Telegram Mini App (web_app) khi bấm — chỉ dùng trong private chat. */
+  web_app?: { url: string }
 }
 
 export interface ReplyKeyboardMarkup {

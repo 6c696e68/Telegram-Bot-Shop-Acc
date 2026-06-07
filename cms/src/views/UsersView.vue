@@ -4,8 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import Icon from '@/components/Icon.vue'
 import { formatMoney } from '@/utils/format'
+import { useExchangeRate } from '@/composables/useExchangeRate'
 
 const { t } = useI18n()
+// Tỷ giá dùng chung VND/USD (R4.3). rate=null → VND-only (R4.4).
+const { rate, load: loadRate } = useExchangeRate()
 
 // Types
 interface User {
@@ -260,7 +263,10 @@ function userDisplayName(user: User): string {
 }
 
 watch(search, onSearch)
-onMounted(fetchUsers)
+onMounted(() => {
+  fetchUsers()
+  loadRate()
+})
 </script>
 
 <template>
@@ -321,7 +327,7 @@ onMounted(fetchUsers)
               <td>{{ user.username || '—' }}</td>
               <td>{{ user.first_name || '—' }}</td>
               <td class="text-right" style="font-weight: 500; color: var(--ink)">
-                {{ formatMoney(user.balance) }}
+                {{ formatMoney(user.balance, rate) }}
               </td>
               <td>
                 <span class="badge" :class="user.is_active === 0 ? 'badge-red' : 'badge-green'">
@@ -420,7 +426,7 @@ onMounted(fetchUsers)
               </div>
               <div class="flex items-center justify-between py-1.5">
                 <dt class="text-[13px]" style="color: var(--muted)">{{ $t('users.col_balance') }}</dt>
-                <dd class="text-[13px] font-semibold" style="color: var(--ink)">{{ formatMoney(selectedUser.user.balance) }}</dd>
+                <dd class="text-[13px] font-semibold" style="color: var(--ink)">{{ formatMoney(selectedUser.user.balance, rate) }}</dd>
               </div>
               <div class="flex items-center justify-between py-1.5">
                 <dt class="text-[13px]" style="color: var(--muted)">{{ $t('common.status') }}</dt>
@@ -524,7 +530,7 @@ onMounted(fetchUsers)
                   class="text-[13px] font-medium"
                   :style="{ color: tx.amount >= 0 ? 'var(--green-fg)' : 'var(--red-fg)' }"
                 >
-                  {{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount) }}
+                  {{ tx.amount >= 0 ? '+' : '' }}{{ formatMoney(tx.amount, rate) }}
                 </span>
               </div>
             </div>
@@ -557,7 +563,7 @@ onMounted(fetchUsers)
                 </div>
                 <div class="text-right flex-shrink-0 ml-2">
                   <div class="text-[13px] font-medium" style="color: var(--ink)">
-                    {{ formatMoney(order.total_amount) }}
+                    {{ formatMoney(order.total_amount, rate) }}
                   </div>
                   <div class="text-xs" style="color: var(--muted)">{{ formatDate(order.created_at) }}</div>
                 </div>
@@ -584,7 +590,7 @@ onMounted(fetchUsers)
           </span>
           <br />
           {{ $t('users.adjust_current') }}:
-          <span class="font-medium" style="color: var(--ink)">{{ formatMoney(selectedUser.user.balance) }}</span>
+          <span class="font-medium" style="color: var(--ink)">{{ formatMoney(selectedUser.user.balance, rate) }}</span>
         </div>
 
         <div

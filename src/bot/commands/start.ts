@@ -5,10 +5,11 @@
 
 import type { TelegramUser } from '../../types/telegram'
 import type { DbUser } from '../../types/db'
-import { sendMessage, buildMainMenu, buildInlineKeyboard } from '../telegram-api'
-import { formatMoney } from '../../utils/format'
+import { sendMessage, buildMainMenu, buildQuickAccessKeyboard } from '../telegram-api'
+import { formatMoneyFor, buildCurrencyContext } from '../../utils/format'
 import { handleBotError } from '../../utils/error-handler'
 import { resolveLang } from '../../services/user-locale'
+import { readMiniAppUrl } from '../../utils/system-config'
 import { sendRegionOnboarding } from '../callbacks/region'
 import { t, BASE_FALLBACK_LANG } from '../i18n'
 
@@ -82,10 +83,12 @@ export async function handleStart(
     }
 
     // Đã có region → hiển thị menu chính như cũ (R1.5).
+    // Build CurrencyContext (region+lang đã resolve) để hiển thị số dư theo Region (R1.1, R1.2, R1.4).
+    const ctx = await buildCurrencyContext(db, { lang, region })
     const displayName = firstName ?? from.first_name ?? ''
     const welcomeText = [
       t(lang, 'onboarding.welcome', { shop: `<b>${shopName}</b>`, name: `<b>${displayName}</b>` }),
-      t(lang, 'onboarding.balance', { balance: `<b>${formatMoney(balance, lang)}</b>` }),
+      t(lang, 'onboarding.balance', { balance: `<b>${formatMoneyFor(balance, ctx)}</b>` }),
     ].join('\n')
 
     // 1. Welcome + reply keyboard sticky (4 nút dưới khung chat)
@@ -94,19 +97,10 @@ export async function handleStart(
       reply_markup: buildMainMenu(lang),
     })
 
-    // 2. Inline action shortcuts để bấm trực tiếp trong message
+    // 2. Inline action shortcuts để bấm trực tiếp trong message (+ nút Mini App nếu đã cấu hình)
     await sendMessage(botToken, chatId, t(lang, 'menu.quick_access'), {
       parse_mode: 'HTML',
-      reply_markup: buildInlineKeyboard([
-        [
-          { text: t(lang, 'menu.shop'), callback_data: 'cat:list' },
-          { text: t(lang, 'menu.deposit'), callback_data: 'dep:menu' },
-        ],
-        [
-          { text: t(lang, 'menu.history'), callback_data: 'hist' },
-          { text: t(lang, 'menu.account'), callback_data: 'acc' },
-        ],
-      ]),
+      reply_markup: buildQuickAccessKeyboard(lang, await readMiniAppUrl(db)),
     })
   } catch (error) {
     handleBotError(error, {

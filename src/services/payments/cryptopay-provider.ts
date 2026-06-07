@@ -29,6 +29,7 @@ import { readSystemConfigMap } from '../../utils/system-config'
 import { t } from '../../bot/i18n'
 import { readDepositLimits } from '../deposit-limits'
 import { checkDepositPolicy } from '../deposit-policy'
+import { resolveCryptoPayToken } from '../cryptopay-config'
 import { createInvoice, CryptoPayApiError } from './crypto-pay-client'
 import type {
   AmountUnit,
@@ -144,8 +145,10 @@ class CryptoPayProvider implements PaymentProvider {
     // 5) Gọi Crypto Pay createInvoice. Thất bại → XOÁ deposit vừa tạo (không để pending
     //    mồ côi — R10.4) rồi trả provider_error.
     try {
+      // Token DB-first (CMS) → fallback secret Worker. Thiếu cả hai → createInvoice fail-fast.
+      const cryptoPayToken = await resolveCryptoPayToken(db, env)
       const invoice = await createInvoice({
-        token: env.CRYPTO_PAY_API_TOKEN,
+        token: cryptoPayToken,
         asset: 'USDT',
         amount: usdtAmount,
         description: `Nạp ${usdtAmount} USDT`,
@@ -170,7 +173,7 @@ class CryptoPayProvider implements PaymentProvider {
         success: true,
         output: {
           depositId: inserted.id,
-          crypto: { payUrl, usdtAmount, invoiceId: invoice.invoiceId },
+          crypto: { payUrl, usdtAmount, invoiceId: invoice.invoiceId, creditVnd },
         },
       }
     } catch (cause) {

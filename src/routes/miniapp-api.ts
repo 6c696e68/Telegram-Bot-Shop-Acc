@@ -34,7 +34,7 @@ import type {
   OrderDetailDto,
 } from '../types/miniapp'
 import { miniAppAuth, type MiniAppVariables } from '../middleware/miniapp-auth'
-import { formatCurrency } from '../utils/format'
+import { formatMoney, formatMoneyFor, buildCurrencyContext } from '../utils/format'
 import { transactionService } from '../services/transaction'
 import { renderSuccessMessage } from '../utils/telegram-template'
 import { loadProductTypeTemplates } from '../services/product-template'
@@ -104,8 +104,12 @@ miniAppApi.use('/*', miniAppAuth)
  * `balance_display` format qua `formatCurrency` để đồng bộ định dạng tiền tệ (Req 4.2).
  * KHÔNG trả bất kỳ field quản trị nào — chỉ các field định danh người mua (Req 12.3).
  */
-miniAppApi.get('/me', (c) => {
+miniAppApi.get('/me', async (c) => {
   const user = c.get('user')
+
+  // Currency context theo Region của người mua (USD cho international + valid rate, else VND).
+  const lang = await resolveLang(c.env.DB, user)
+  const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
 
   const body: ApiResponse<MeDto> = {
     success: true,
@@ -114,9 +118,10 @@ miniAppApi.get('/me', (c) => {
       username: user.username,
       first_name: user.first_name,
       balance: user.balance,
-      balance_display: formatCurrency(user.balance),
+      balance_display: formatMoneyFor(user.balance, ctx),
       region: user.region,
       language: user.language,
+      rate: ctx.rate,
     },
     error: null,
   }
@@ -130,14 +135,17 @@ miniAppApi.get('/me', (c) => {
  * Trả số dư hiện tại của người mua (lấy từ `users` theo `telegram_id`, Req 4.1),
  * `balance_display` đã format (Req 4.2) và danh sách lối tắt nhanh (Req 4.3).
  */
-miniAppApi.get('/home', (c) => {
+miniAppApi.get('/home', async (c) => {
   const user = c.get('user')
+
+  const lang = await resolveLang(c.env.DB, user)
+  const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
 
   const body: ApiResponse<HomeDto> = {
     success: true,
     data: {
       balance: user.balance,
-      balance_display: formatCurrency(user.balance),
+      balance_display: formatMoneyFor(user.balance, ctx),
       shortcuts: HOME_SHORTCUTS,
     },
     error: null,
@@ -177,16 +185,22 @@ miniAppApi.post('/region', async (c) => {
     .bind(user.id)
     .first<{ region: 'vietnam' | 'international' | null; language: string | null; balance: number }>()
 
+  const effectiveRegion = updated?.region ?? (region as Region)
+  const effectiveBalance = updated?.balance ?? user.balance
+  const lang = await resolveLang(c.env.DB, { language: updated?.language ?? user.language })
+  const ctx = await buildCurrencyContext(c.env.DB, { lang, region: effectiveRegion })
+
   const body: ApiResponse<MeDto> = {
     success: true,
     data: {
       telegram_id: user.telegram_id,
       username: user.username,
       first_name: user.first_name,
-      balance: updated?.balance ?? user.balance,
-      balance_display: formatCurrency(updated?.balance ?? user.balance),
+      balance: effectiveBalance,
+      balance_display: formatMoneyFor(effectiveBalance, ctx),
       region: updated?.region ?? region,
       language: updated?.language ?? user.language,
+      rate: ctx.rate,
     },
     error: null,
   }
@@ -260,6 +274,10 @@ miniAppApi.get('/deposit-methods', async (c) => {
  * hiển thị trạng thái hết hàng và vô hiệu hóa mua (Req 5.4). `in_stock = stock > 0`.
  */
 miniAppApi.get('/product-types', async (c) => {
+  const user = c.get('user')
+  const lang = await resolveLang(c.env.DB, user)
+  const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
+
   const { results } = await c.env.DB.prepare(
     `SELECT pt.id, pt.name, pt.emoji, pt.price, pt.sort_order,
             COUNT(CASE WHEN p.status = 'available' THEN 1 END) AS stock
@@ -275,7 +293,7 @@ miniAppApi.get('/product-types', async (c) => {
     name: row.name,
     emoji: row.emoji,
     price: row.price,
-    price_display: formatCurrency(row.price),
+    price_display: formatMoneyFor(row.price, ctx),
     stock: row.stock,
     in_stock: row.stock > 0,
   }))
@@ -297,6 +315,7 @@ miniAppApi.get('/product-types', async (c) => {
  * không tồn tại đều trả 404 `not_found`. KHÔNG trả `success_template` (chỉ dùng server-side).
  */
 miniAppApi.get('/product-types/:id', async (c) => {
+  const user = c.get('user')
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id) || id <= 0) {
     const notFound: ApiResponse<null> = { success: false, data: null, error: 'not_found' }
@@ -319,13 +338,16 @@ miniAppApi.get('/product-types/:id', async (c) => {
     return c.json(notFound, 404)
   }
 
+  const lang = await resolveLang(c.env.DB, user)
+  const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
+
   const data: ProductTypeDetailDto = {
     id: row.id,
     name: row.name,
     emoji: row.emoji,
     description: row.description,
     price: row.price,
-    price_display: formatCurrency(row.price),
+    price_display: formatMoneyFor(row.price, ctx),
     stock: row.stock,
     in_stock: row.stock > 0,
     max_quantity: MAX_PURCHASE_QUANTITY,
@@ -428,6 +450,7 @@ miniAppApi.post('/purchase', async (c) => {
   // renderSuccessMessage tự escape giá trị động (content/name) (Req 7.4, 15.1).
   const templatesByLang = await loadProductTypeTemplates(c.env.DB, pt.id)
   const lang = await resolveLang(c.env.DB, user)
+  const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
   const html = renderSuccessMessage(
     templatesByLang,
     {
@@ -438,7 +461,7 @@ miniAppApi.post('/purchase', async (c) => {
       balanceAfter,
       contents,
     },
-    lang
+    ctx
   )
   const notify = sendMessage(await resolveBotToken(c.env.DB, c.env), user.telegram_id, html, { parse_mode: 'HTML' }).catch(
     (err) => console.error('[MiniApp] notify purchase failed:', err)
@@ -451,7 +474,7 @@ miniAppApi.post('/purchase', async (c) => {
     quantity,
     total_amount: totalAmount,
     new_balance: balanceAfter,
-    new_balance_display: formatCurrency(balanceAfter),
+    new_balance_display: formatMoneyFor(balanceAfter, ctx),
     contents,
   }
 
@@ -583,6 +606,8 @@ miniAppApi.post('/deposits', async (c) => {
       pay_url: crypto.payUrl,
       usdt_amount: crypto.usdtAmount,
       invoice_id: crypto.invoiceId,
+      credit_vnd: crypto.creditVnd,
+      credit_vnd_display: formatMoney(crypto.creditVnd, depositLang),
       status: 'pending',
     }
     const body: ApiResponse<CryptoDepositCreatedDto> = { success: true, data, error: null }
@@ -620,7 +645,7 @@ miniAppApi.post('/deposits', async (c) => {
     deposit_id: depositId,
     transfer_code: vietqr.transferCode,
     amount: vietqr.amountVnd,
-    amount_display: formatCurrency(vietqr.amountVnd),
+    amount_display: formatMoney(vietqr.amountVnd, depositLang),
     bank_name: vietqr.bank.bankName,
     bank_account: vietqr.bank.bankAccount,
     bank_owner: vietqr.bank.bankOwner,
@@ -684,7 +709,11 @@ miniAppApi.get('/deposits/:id', async (c) => {
   // new_balance CHỈ trả khi đã completed — số dư hiện tại từ middleware (Req 8.5).
   // Endpoint chỉ đọc; số dư đã được /webhook/sepay cộng trước đó (Req 9.1).
   if (deposit.status === 'completed') {
+    // Currency context theo Region người mua để hiển thị số dư đúng (USD/VND).
+    const lang = await resolveLang(c.env.DB, user)
+    const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
     data.new_balance = user.balance
+    data.new_balance_display = formatMoneyFor(user.balance, ctx)
   }
 
   const body: ApiResponse<DepositStatusDto> = {
@@ -693,6 +722,58 @@ miniAppApi.get('/deposits/:id', async (c) => {
     error: null,
   }
 
+  return c.json(body)
+})
+
+/**
+ * POST /deposits/:id/cancel — Huỷ một yêu cầu nạp đang chờ của người mua.
+ *
+ * Guard chủ sở hữu: chỉ huỷ deposit thuộc `user.id` (chống IDOR). Chỉ huỷ khi đang
+ * `pending` (idempotent với trạng thái khác). Đồng bộ hành vi với flow huỷ của bot
+ * (`handleDepositCancel`): chuyển `deposits.status` sang `cancelled`, KHÔNG đụng `balance`.
+ *
+ * `:id` parse sang integer — không hợp lệ → 404. Deposit không tồn tại / không thuộc
+ * người mua → 404 `not_found` (không phân biệt, tránh dò ID). Deposit không còn `pending`
+ * → 409 `not_pending`.
+ */
+miniAppApi.post('/deposits/:id/cancel', async (c) => {
+  const user = c.get('user')
+
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) {
+    const notFound: ApiResponse<null> = { success: false, data: null, error: 'not_found' }
+    return c.json(notFound, 404)
+  }
+
+  // Guard chủ sở hữu — chỉ lấy deposit thuộc user.id.
+  const deposit = await c.env.DB.prepare(
+    'SELECT id, provider, status, amount FROM deposits WHERE id = ? AND user_id = ?'
+  )
+    .bind(id, user.id)
+    .first<Pick<DbDeposit, 'id' | 'provider' | 'status' | 'amount'>>()
+
+  if (!deposit) {
+    const notFound: ApiResponse<null> = { success: false, data: null, error: 'not_found' }
+    return c.json(notFound, 404)
+  }
+
+  // Chỉ huỷ được khi đang chờ thanh toán.
+  if (deposit.status !== 'pending') {
+    const conflict: ApiResponse<null> = { success: false, data: null, error: 'not_pending' }
+    return c.json(conflict, 409)
+  }
+
+  await c.env.DB.prepare("UPDATE deposits SET status = 'cancelled' WHERE id = ?")
+    .bind(deposit.id)
+    .run()
+
+  const data: DepositStatusDto = {
+    deposit_id: deposit.id,
+    provider: deposit.provider,
+    status: 'cancelled',
+    amount: deposit.amount,
+  }
+  const body: ApiResponse<DepositStatusDto> = { success: true, data, error: null }
   return c.json(body)
 })
 
@@ -747,6 +828,9 @@ miniAppApi.get('/orders', async (c) => {
   const limit = parseOrdersLimit(c.req.query('limit'))
   const offset = (page - 1) * limit
 
+  const lang = await resolveLang(c.env.DB, user)
+  const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
+
   // Đếm tổng số đơn theo cùng điều kiện WHERE để dựng meta (Req 11.1).
   const totalRow = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM orders WHERE user_id = ?')
     .bind(user.id)
@@ -773,7 +857,7 @@ miniAppApi.get('/orders', async (c) => {
     emoji: row.emoji,
     quantity: row.quantity,
     total_amount: row.total_amount,
-    total_display: formatCurrency(row.total_amount),
+    total_display: formatMoneyFor(row.total_amount, ctx),
     status: row.status,
     created_at: row.created_at,
   }))
@@ -834,13 +918,16 @@ miniAppApi.get('/orders/:id', async (c) => {
     .bind(order.id)
     .all<{ content: string }>()
 
+  const lang = await resolveLang(c.env.DB, user)
+  const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
+
   const data: OrderDetailDto = {
     id: order.id,
     product_name: order.product_name,
     emoji: order.emoji,
     quantity: order.quantity,
     total_amount: order.total_amount,
-    total_display: formatCurrency(order.total_amount),
+    total_display: formatMoneyFor(order.total_amount, ctx),
     status: order.status,
     created_at: order.created_at,
     contents: results.map((r) => r.content),

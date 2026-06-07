@@ -22,6 +22,7 @@ import { resolveLang } from '../services/user-locale'
 import { sendMessage } from '../bot/telegram-api'
 import { renderDepositSuccess } from '../bot/notify-deposit'
 import { readSystemConfigValue } from '../utils/system-config'
+import { buildCurrencyContext } from '../utils/format'
 
 /** Env cho route crypto: Bindings chung + biến `rawBody` do middleware set. */
 type CryptoPayRouteEnv = {
@@ -197,7 +198,8 @@ cryptoPayWebhook.post('/cryptopay', async (c) => {
   if (user) {
     const botToken = await resolveBotToken(db, c.env)
     const lang = await resolveLang(db, user)
-    const text = renderDepositSuccess(lang, creditVnd, result.newBalance)
+    const currencyCtx = await buildCurrencyContext(db, { lang, region: user.region })
+    const text = renderDepositSuccess(currencyCtx, creditVnd, result.newBalance)
 
     const notificationPromise = sendMessage(botToken, user.telegram_id, text, {
       parse_mode: 'HTML',

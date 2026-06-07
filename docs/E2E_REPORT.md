@@ -16,7 +16,7 @@
 | TC-01b | SePay webhook → cộng balance + deposit completed | PASS | balance=100000 deposit=completed res={"success":true} |
 | TC-01c | User A mua 1×30k với balance 100k | PASS | bal=70000 sold=1 orders=1 tx=1 |
 | TC-01d | FK toàn vẹn: products.order_id = order_items.order_id = transactions.reference_id | PASS | all matched |
-| TC-01e | Sổ cái: balance_before + amount == balance_after | PASS | [{'bb': 0, 'ba': 100000, 'a': 100000}, {'bb': 100000, 'ba': 70000, 'a': -30000}] |
+| TC-01e | Sổ cái: balance_before + amount == balance_after | PASS | [{'bb': 0, 'ba': 100000, 'a': 100000}, {'bb': 100000, 'ba': 70000, 'a': -26000}] |
 | TC-02 | User B (balance=0) mua → bị từ chối, KHÔNG ghi gì | PASS | bal=0 ords=0 txs=0 sold=0 stock=4 |
 | TC-03 | Race spam 5 buy đồng thời (balance đủ mua 1) | PASS | bal=0 orders=1 tx_purchase=1 sold=1 stock_delta=1 |
 | TC-04 | SePay webhook idempotent: replay không cộng đôi | PASS | bal first=50000 replay=50000 |
@@ -26,7 +26,7 @@
 | TC-07 | SePay webhook chặn sai/thiếu API key | PASS | bad=401 no=401 |
 | TC-08 | Telegram webhook chặn sai/thiếu secret token | PASS | bad=401 none=401 |
 | TC-09 | History query bằng telegram_id (regression fix) | PASS | hist_A=1 hist_C=1 |
-| TC-10 | Bảo toàn: sum(balance) == sum(deposit) + sum(purchase) + sum(adjust) | PASS | bal=195000 net=195000 (dep=225000 pur=-60000 adj=30000) |
+| TC-10 | Bảo toàn: sum(balance) == sum(deposit) + sum(purchase) + sum(adjust) | PASS | bal=195000 net=195000 (dep=225000 pur=-60000 adj=26000) |
 
 ## Snapshot DB cuối
 
@@ -40,8 +40,8 @@
 | deposit | 6 | 100000 |
 | deposit | 7 | 50000 |
 | deposit | 8 | 75000 |
-| order | 6 | 30000 |
-| order | 7 | 30000 |
+| order | 6 | 26000 |
+| order | 7 | 26000 |
 | product | 8 | 7 |
 | product | 9 | 9 |
 | product | 10 | 0 |

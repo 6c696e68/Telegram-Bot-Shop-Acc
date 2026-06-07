@@ -46,6 +46,7 @@ export const vi: Record<MessageKey, string> = {
   'menu.deposit': '💰 Nạp tiền',
   'menu.history': '📜 Lịch sử',
   'menu.account': '👤 Số dư',
+  'menu.miniapp': 'Mở Mini App',
 
   // --- doi vung: chuoi MOI, chu thuan ---
   'region.prompt': 'Chọn khu vực của bạn.',
@@ -58,6 +59,13 @@ export const vi: Record<MessageKey, string> = {
   'language.changed': 'Đã đổi ngôn ngữ sang {language}.',
   'language.name.vi': 'Tiếng Việt',
   'language.name.en': 'Tiếng Anh',
+
+  // --- cai dat: mo tu man tai khoan, gom doi ngon ngu/khu vuc ---
+  'settings.title': '<b>Cài đặt</b>',
+  'settings.current_language': 'Ngôn ngữ: {value}',
+  'settings.current_region': 'Khu vực: {value}',
+  'settings.btn.language': 'Đổi ngôn ngữ',
+  'settings.btn.region': 'Đổi khu vực',
 
   // --- nap tien ---
   'deposit.title': '💰 <b>Nạp tiền</b>',
@@ -84,7 +92,8 @@ export const vi: Record<MessageKey, string> = {
   'deposit.generic_error': '❌ Không tạo được yêu cầu nạp. Vui lòng thử lại.',
   'deposit.crypto.prompt': 'Nhập số USDT bạn muốn nạp (tối thiểu {min} USDT).',
   'deposit.crypto.invalid': 'Vui lòng nhập số USDT hợp lệ (VD: 10).',
-  'deposit.crypto.created': 'Đã tạo yêu cầu nạp {usdt} USDT. Bấm nút bên dưới để thanh toán.',
+  'deposit.crypto.created': 'Đã tạo yêu cầu nạp {usdt} USDT (~{vnd}). Bấm nút bên dưới để thanh toán.',
+  'deposit.crypto.rate_hint': 'Tỷ giá hiện tại: 1 USDT ≈ {rate}',
   'deposit.crypto.pay_button': 'Thanh toán qua Crypto Pay',
   // GIU emoji cu (UX hien tai cua notify-deposit)
   'deposit.success.header': '✅ Nạp tiền thành công!',
@@ -121,6 +130,20 @@ export const vi: Record<MessageKey, string> = {
   // --- lich su don hang (R4.1, R4.6) — GIU emoji UX cu ---
   'history.title': '📜 <b>Lịch sử đơn hàng</b>',
   'history.empty': '📜 Chưa có đơn hàng nào.',
+  'history.tap_hint': 'Chạm vào một đơn để xem lại nội dung.',
+  'history.item_button': '{emoji} {name} x{qty} - {total}',
+
+  // --- chi tiet don hang trong bot (xem lai noi dung da mua) — chu thuan ---
+  'order.not_found': 'Không tìm thấy đơn hàng.',
+  'order.detail_title': '<b>Đơn #{id}</b>',
+  'order.detail_qty': 'Số lượng: <b>{qty}</b>',
+  'order.detail_total': 'Tổng tiền: <b>{total}</b>',
+  'order.detail_status': 'Trạng thái: {status}',
+  'order.detail_date': 'Thời gian: {date}',
+  'order.detail_content_label': '<b>Tài khoản của bạn:</b>',
+  'order.detail_empty': 'Không tìm thấy nội dung cho đơn hàng này.',
+  'order.status.completed': 'Hoàn thành',
+  'order.status.refunded': 'Đã hoàn tiền',
 
   // --- thong tin tai khoan (R4.1, R4.6) — GIU emoji UX cu ---
   'account.title': '👤 <b>Thông tin tài khoản</b>',
@@ -131,6 +154,7 @@ export const vi: Record<MessageKey, string> = {
   'account.tx_count': '📊 Tổng giao dịch: {value}',
   'account.join_date': '📅 Ngày tham gia: {value}',
   'account.value_empty': 'Chưa có',
+  'account.btn.settings': 'Cài đặt',
 
   // --- mua hang: luong shop (R4.1, R4.6) — GIU emoji UX cu ---
   'shop.title': '🛒 <b>Mua tài khoản</b>',

@@ -53,11 +53,14 @@ configRoutes.get('/', async (c) => {
   }
 
   // Env fallback CHỈ cho key KHÔNG nhạy cảm (để CMS hiển thị giá trị hiệu lực, promote env→DB).
+  // `crypto_pay_api_token` cố ý hiển thị giá trị thật (admin yêu cầu xem token trên CMS):
+  // không mask, và nếu chỉ đặt qua secret env thì vẫn hiện để đối chiếu.
   const envFallback: Record<string, string | undefined> = {
     bank_name: c.env.BANK_NAME,
     bank_account: c.env.BANK_ACCOUNT,
     bank_owner: c.env.BANK_OWNER,
     admin_ids: c.env.ADMIN_IDS,
+    crypto_pay_api_token: c.env.CRYPTO_PAY_API_TOKEN,
   }
   for (const [key, envValue] of Object.entries(envFallback)) {
     const current = configs[key]

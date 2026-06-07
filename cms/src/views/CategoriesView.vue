@@ -6,8 +6,11 @@ import Icon from '@/components/Icon.vue'
 import TelegramEditor from '@/components/TelegramEditor.vue'
 import { AVAILABLE_LOCALES } from '@/i18n'
 import { formatMoney } from '@/utils/format'
+import { useExchangeRate } from '@/composables/useExchangeRate'
 
 const { t } = useI18n()
+// Tỷ giá dùng chung VND/USD (R4.3). rate=null → VND-only (R4.4).
+const { rate, load: loadRate } = useExchangeRate()
 
 interface Category {
   id: number
@@ -66,6 +69,7 @@ const deletingCategory = ref<Category | null>(null)
 const deleting = ref(false)
 
 onMounted(() => {
+  loadRate()
   fetchCategories()
 })
 
@@ -394,7 +398,7 @@ function showSuccess(msg: string) {
             </td>
 
             <!-- Price -->
-            <td class="price-cell">{{ formatMoney(cat.price) }}</td>
+            <td class="price-cell">{{ formatMoney(cat.price, rate) }}</td>
 
             <!-- Stock -->
             <td style="text-align: center">

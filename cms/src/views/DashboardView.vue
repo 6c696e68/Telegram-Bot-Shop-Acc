@@ -5,9 +5,12 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import Icon from '@/components/Icon.vue'
 import { formatMoney, formatNumber } from '@/utils/format'
+import { useExchangeRate } from '@/composables/useExchangeRate'
 
 Chart.register(...registerables)
 const { t } = useI18n()
+// Tỷ giá dùng chung VND/USD (R4.3). rate=null → VND-only (R4.4).
+const { rate, load: loadRate } = useExchangeRate()
 
 interface DashboardData {
   revenue: {
@@ -111,7 +114,7 @@ function renderChart() {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: (ctx) => formatMoney(ctx.parsed.y ?? 0),
+            label: (ctx) => formatMoney(ctx.parsed.y ?? 0, rate.value),
           },
         },
       },
@@ -143,7 +146,7 @@ watch(revenueData, () => {
 })
 
 onMounted(async () => {
-  await Promise.all([fetchDashboard(), fetchRevenue()])
+  await Promise.all([fetchDashboard(), fetchRevenue(), loadRate()])
   loading.value = false
   // Render chart after DOM update
   setTimeout(renderChart, 50)
@@ -199,7 +202,7 @@ onUnmounted(() => {
             </span>
           </div>
           <p class="mt-3 text-2xl font-semibold" style="color: var(--ink)">
-            {{ formatMoney(dashboard.revenue.today) }}
+            {{ formatMoney(dashboard.revenue.today, rate) }}
           </p>
         </div>
 
@@ -214,7 +217,7 @@ onUnmounted(() => {
             </span>
           </div>
           <p class="mt-3 text-2xl font-semibold" style="color: var(--ink)">
-            {{ formatMoney(dashboard.revenue.last7days) }}
+            {{ formatMoney(dashboard.revenue.last7days, rate) }}
           </p>
         </div>
 
@@ -229,7 +232,7 @@ onUnmounted(() => {
             </span>
           </div>
           <p class="mt-3 text-2xl font-semibold" style="color: var(--ink)">
-            {{ formatMoney(dashboard.revenue.last30days) }}
+            {{ formatMoney(dashboard.revenue.last30days, rate) }}
           </p>
         </div>
 
@@ -244,7 +247,7 @@ onUnmounted(() => {
             </span>
           </div>
           <p class="mt-3 text-2xl font-semibold" style="color: var(--ink)">
-            {{ formatMoney(dashboard.revenue.allTime) }}
+            {{ formatMoney(dashboard.revenue.allTime, rate) }}
           </p>
         </div>
       </div>

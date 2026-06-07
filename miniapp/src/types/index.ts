@@ -25,6 +25,8 @@ export interface MeDto {
   balance_display: string
   region: 'vietnam' | 'international' | null
   language: string | null
+  /** Tỉ giá VNĐ trên 1 USD (divisor) để client format giá trị động region-aware; null → fallback VNĐ. */
+  rate: number | null
 }
 
 /** `GET /api/app/deposit-methods` — phương thức nạp khả dụng theo vùng (Req 8.3). */
@@ -40,6 +42,8 @@ export interface CryptoDepositCreatedDto {
   pay_url: string
   usdt_amount: string
   invoice_id: string
+  credit_vnd: number // VND quy đổi để user biết ~bao nhiêu
+  credit_vnd_display: string // VND quy đổi để user biết ~bao nhiêu
   status: 'pending'
 }
 
@@ -104,6 +108,7 @@ export interface DepositStatusDto {
   status: 'pending' | 'completed' | 'expired' | 'cancelled' | 'awaiting_credit'
   amount: number
   new_balance?: number // chỉ có khi status='completed'
+  new_balance_display?: string // region-aware display, chỉ có khi completed
 }
 
 /** Phần tử danh sách `GET /api/app/orders` — lịch sử đơn hàng (Req 11.1, 11.2). */

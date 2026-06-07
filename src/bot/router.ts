@@ -13,8 +13,10 @@ import {
   sendMessage,
   buildMainMenu,
   buildInlineKeyboard,
+  buildQuickAccessKeyboard,
   editOrSendMessage,
 } from './telegram-api'
+import { readMiniAppUrl } from '../utils/system-config'
 import { getSession, clearSession } from './session'
 import { handleStart } from './commands/start'
 import { handleBotError } from '../utils/error-handler'
@@ -27,7 +29,7 @@ import {
   handlePurchaseConfirm,
   handlePurchaseTextInput,
 } from './callbacks/purchase'
-import { handleHistory } from './callbacks/history'
+import { handleHistory, handleOrderDetail } from './callbacks/history'
 import { handleAccount } from './callbacks/account'
 import {
   handleDepositMenu,
@@ -38,9 +40,11 @@ import {
 } from './callbacks/deposit'
 import { handleRegionCallback, sendRegionOnboarding, sendRegionPicker } from './callbacks/region'
 import { handleLanguageCallback, sendLanguagePicker } from './callbacks/language'
+import { handleSettingsMenu } from './callbacks/settings'
 import { resolveLang } from '../services/user-locale'
 import { t, BASE_FALLBACK_LANG, type Lang } from './i18n'
 import { MENU_ACTION_BY_LABEL } from './i18n/menu'
+import { buildCurrencyContext, type CurrencyContext } from '../utils/format'
 
 // --- Types ---
 
@@ -55,6 +59,8 @@ interface UserLocale {
   exists: boolean
   region: 'vietnam' | 'international' | null
   lang: Lang
+  /** Context tiền tệ (region + lang + rate) cho hiển thị tiền theo Region. */
+  ctx: CurrencyContext
 }
 
 // --- Helper: parse callback_data ---
@@ -81,7 +87,9 @@ async function loadUserLocale(db: D1Database, telegramId: number): Promise<UserL
     .first<Pick<DbUser, 'region' | 'language'>>()
 
   const lang = await resolveLang(db, { language: row?.language ?? null })
-  return { exists: !!row, region: row?.region ?? null, lang }
+  const region = row?.region ?? null
+  const ctx = await buildCurrencyContext(db, { lang, region })
+  return { exists: !!row, region, lang, ctx }
 }
 
 // --- Deposit callback dispatcher ---
@@ -202,11 +210,11 @@ export async function handleCallbackQuery(
     switch (action) {
       case 'cat':
         if (params[0] === 'list') {
-          await handleCategoryList(db, botToken, chatId, messageId, lang)
+          await handleCategoryList(db, botToken, chatId, messageId, lang, locale.ctx)
         } else {
           const catId = parseInt(params[0], 10)
           if (!isNaN(catId)) {
-            await handleCategoryDetail(db, botToken, chatId, messageId, catId, userId, lang)
+            await handleCategoryDetail(db, botToken, chatId, messageId, catId, userId, lang, locale.ctx)
           }
         }
         break
@@ -215,7 +223,7 @@ export async function handleCallbackQuery(
         const catId = parseInt(params[0], 10)
         const qty = parseInt(params[1], 10)
         if (!isNaN(catId) && !isNaN(qty)) {
-          await handleQuantitySelect(db, botToken, chatId, messageId, catId, qty, userId, lang)
+          await handleQuantitySelect(db, botToken, chatId, messageId, catId, qty, userId, lang, locale.ctx)
         }
         break
       }
@@ -224,7 +232,7 @@ export async function handleCallbackQuery(
         const catId = parseInt(params[0], 10)
         const qty = parseInt(params[1], 10)
         if (!isNaN(catId) && !isNaN(qty)) {
-          await handlePurchaseConfirm(db, botToken, chatId, messageId, catId, qty, userId, lang)
+          await handlePurchaseConfirm(db, botToken, chatId, messageId, catId, qty, userId, lang, locale.ctx)
         }
         break
       }
@@ -237,24 +245,15 @@ export async function handleCallbackQuery(
         // page:cat:{pageNum} — pagination for category list
         if (params[0] === 'cat') {
           const pageNum = parseInt(params[1], 10)
-          await handleCategoryList(db, botToken, chatId, messageId, lang, isNaN(pageNum) ? 0 : pageNum)
+          await handleCategoryList(db, botToken, chatId, messageId, lang, locale.ctx, isNaN(pageNum) ? 0 : pageNum)
         }
         break
 
       case 'menu':
-        // menu:main → hiển thị menu chính với inline shortcuts (nhãn theo lang)
+        // menu:main → hiển thị menu chính với inline shortcuts (nhãn theo lang) + nút Mini App.
         await sendMessage(botToken, chatId, t(lang, 'menu.title'), {
           parse_mode: 'HTML',
-          reply_markup: buildInlineKeyboard([
-            [
-              { text: t(lang, 'menu.shop'), callback_data: 'cat:list' },
-              { text: t(lang, 'menu.deposit'), callback_data: 'dep:menu' },
-            ],
-            [
-              { text: t(lang, 'menu.history'), callback_data: 'hist' },
-              { text: t(lang, 'menu.account'), callback_data: 'acc' },
-            ],
-          ]),
+          reply_markup: buildQuickAccessKeyboard(lang, await readMiniAppUrl(db)),
         })
         break
 
@@ -262,12 +261,30 @@ export async function handleCallbackQuery(
         await handleAdminCallback(db, botToken, chatId, messageId, params, userId, env, lang)
         break
 
-      case 'hist':
-        await handleHistory(db, botToken, chatId, messageId, userId, lang)
+      case 'hist': {
+        // hist → danh sách; hist:<orderId> → chi tiết đơn (xem lại nội dung đã mua).
+        const orderId = parseInt(params[0], 10)
+        if (params[0] !== undefined && !isNaN(orderId)) {
+          await handleOrderDetail(db, botToken, chatId, messageId, orderId, userId, lang, locale.ctx)
+        } else {
+          await handleHistory(db, botToken, chatId, messageId, userId, lang, locale.ctx)
+        }
         break
+      }
 
       case 'acc':
-        await handleAccount(db, botToken, chatId, messageId, userId, lang)
+        await handleAccount(db, botToken, chatId, messageId, userId, lang, locale.ctx)
+        break
+
+      case 'set':
+        // Màn Cài đặt: set:menu (mở), set:lang / set:region (picker inline).
+        if (params[0] === 'lang') {
+          await sendLanguagePicker(botToken, chatId, lang, messageId)
+        } else if (params[0] === 'region') {
+          await sendRegionPicker(botToken, chatId, lang, messageId)
+        } else {
+          await handleSettingsMenu(db, botToken, chatId, messageId, userId, lang)
+        }
         break
 
       default:
@@ -349,16 +366,16 @@ export async function handleTextMessage(
     if (menuAction) {
       switch (menuAction) {
         case 'shop':
-          await handleCategoryList(db, botToken, chatId, undefined, lang)
+          await handleCategoryList(db, botToken, chatId, undefined, lang, locale.ctx)
           return
         case 'deposit':
           await handleDepositMenu(db, botToken, chatId, userId, env, undefined)
           return
         case 'history':
-          await handleHistory(db, botToken, chatId, undefined, userId, lang)
+          await handleHistory(db, botToken, chatId, undefined, userId, lang, locale.ctx)
           return
         case 'account':
-          await handleAccount(db, botToken, chatId, undefined, userId, lang)
+          await handleAccount(db, botToken, chatId, undefined, userId, lang, locale.ctx)
           return
       }
     }
@@ -395,7 +412,7 @@ export async function handleTextMessage(
     // 3. Check active session — route input text theo flow context
     const session = getSession(userId)
     if (session && session.flow) {
-      await handleSessionInput(db, botToken, chatId, userId, text, session.flow, session.step, env, lang)
+      await handleSessionInput(db, botToken, chatId, userId, text, session.flow, session.step, env, lang, locale.ctx)
       return
     }
 
@@ -437,7 +454,8 @@ async function handleSessionInput(
   flow: string,
   step: string | null,
   env: Bindings,
-  lang: Lang
+  lang: Lang,
+  ctx: CurrencyContext
 ): Promise<void> {
   switch (flow) {
     case 'deposit':
@@ -447,7 +465,7 @@ async function handleSessionInput(
 
     case 'purchase':
       // User nhập số lượng mua tự do
-      await handlePurchaseSessionInput(db, botToken, chatId, userId, text, step, lang)
+      await handlePurchaseSessionInput(db, botToken, chatId, userId, text, step, lang, ctx)
       break
 
     case 'admin_add_type':
@@ -476,7 +494,8 @@ async function handlePurchaseSessionInput(
   userId: number,
   text: string,
   step: string | null,
-  lang: Lang
+  lang: Lang,
+  ctx: CurrencyContext
 ): Promise<void> {
   if (step === 'quantity') {
     const session = getSession(userId)
@@ -488,7 +507,7 @@ async function handlePurchaseSessionInput(
       })
       return
     }
-    await handlePurchaseTextInput(db, botToken, chatId, userId, text, categoryId, lang)
+    await handlePurchaseTextInput(db, botToken, chatId, userId, text, categoryId, lang, ctx)
   } else {
     clearSession(userId)
     await sendMessage(botToken, chatId, t(lang, 'common.session_expired'), {

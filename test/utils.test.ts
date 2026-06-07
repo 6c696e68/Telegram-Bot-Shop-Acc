@@ -12,7 +12,7 @@ describe('formatCurrency', () => {
     expect(formatCurrency(1000000)).toBe('1.000.000đ')
     expect(formatCurrency(0)).toBe('0đ')
     expect(formatCurrency(500)).toBe('500đ')
-    expect(formatCurrency(30000)).toBe('30.000đ')
+    expect(formatCurrency(26000)).toBe('26.000đ')
   })
 })
 

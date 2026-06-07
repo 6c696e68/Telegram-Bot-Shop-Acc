@@ -9,7 +9,7 @@
 
 import type { DbUser } from '../../types/db'
 import { SUPPORTED_LANGUAGES, isSupportedLang, type Lang } from '../../i18n/locales'
-import { sendMessage, buildMainMenu, buildInlineKeyboard } from '../telegram-api'
+import { sendMessage, editOrSendMessage, buildMainMenu, buildInlineKeyboard } from '../telegram-api'
 import { setLanguage } from '../../services/user-locale'
 import { t, type MessageKey } from '../i18n'
 
@@ -21,18 +21,22 @@ function languageLabel(displayLang: Lang, code: Lang): string {
 /**
  * Gửi bộ chọn ngôn ngữ (inline keyboard `lang:<code>`), render động theo
  * `SUPPORTED_LANGUAGES`. `displayLang` là ngôn ngữ hiển thị hiện tại của user.
+ *
+ * `messageId` (tuỳ chọn): khi mở từ màn Cài đặt → edit message hiện tại;
+ * khi gọi từ lệnh `/language` (không có messageId) → gửi tin mới.
  */
 export async function sendLanguagePicker(
   botToken: string,
   chatId: number,
-  displayLang: Lang
+  displayLang: Lang,
+  messageId?: number
 ): Promise<void> {
   const buttons = SUPPORTED_LANGUAGES.map((code) => ({
     text: languageLabel(displayLang, code),
     callback_data: `lang:${code}`,
   }))
 
-  await sendMessage(botToken, chatId, t(displayLang, 'language.prompt'), {
+  await editOrSendMessage(botToken, chatId, messageId, t(displayLang, 'language.prompt'), {
     parse_mode: 'HTML',
     reply_markup: buildInlineKeyboard([buttons]),
   })

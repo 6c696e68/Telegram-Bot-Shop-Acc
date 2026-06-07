@@ -197,3 +197,33 @@ export function buildMainMenu(lang: Lang): ReplyKeyboardMarkup {
 export function buildBackButton(callbackData: string, lang: Lang): InlineKeyboardButton[] {
   return [{ text: t(lang, 'common.back'), callback_data: callbackData }]
 }
+
+/**
+ * Inline keyboard "Truy cập nhanh" dùng chung cho /start, đổi vùng, và `menu:main`.
+ * 4 lối tắt (Mua hàng / Nạp tiền / Lịch sử / Số dư) + (tuỳ chọn) nút mở Mini App.
+ *
+ * `miniAppUrl` non-empty → thêm hàng nút `web_app` mở Mini App; rỗng/null → ẩn nút
+ * (an toàn khi chưa cấu hình `system_config.miniapp_url`).
+ */
+export function buildQuickAccessKeyboard(
+  lang: Lang,
+  miniAppUrl?: string | null
+): InlineKeyboardMarkup {
+  const rows: InlineKeyboardButton[][] = [
+    [
+      { text: t(lang, 'menu.shop'), callback_data: 'cat:list' },
+      { text: t(lang, 'menu.deposit'), callback_data: 'dep:menu' },
+    ],
+    [
+      { text: t(lang, 'menu.history'), callback_data: 'hist' },
+      { text: t(lang, 'menu.account'), callback_data: 'acc' },
+    ],
+  ]
+
+  const url = miniAppUrl?.trim()
+  if (url) {
+    rows.push([{ text: t(lang, 'menu.miniapp'), web_app: { url } }])
+  }
+
+  return { inline_keyboard: rows }
+}

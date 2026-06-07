@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { miniAppApi } from '../src/routes/miniapp-api'
-import { formatCurrency } from '../src/utils/format'
+import { formatMoneyFor, buildCurrencyContext } from '../src/utils/format'
+import { resolveLang } from '../src/services/user-locale'
 import type { ApiResponse } from '../src/types/api'
 import type { ProductTypeDetailDto } from '../src/types/miniapp'
 
@@ -130,6 +131,20 @@ function getEnvBindings() {
   return { DB: env.DB, BOT_TOKEN }
 }
 
+/**
+ * Tính chuỗi hiển thị tiền y hệt endpoint (currency-display-usd, task 4.1):
+ * lang = resolveLang(DB, user); ctx = buildCurrencyContext(DB, { lang, region });
+ * display = formatMoneyFor(amount, ctx). Người mua trong test không set region
+ * (region = null) và không set language; system_config rỗng (không default_language,
+ * không exchange_rate_usdt_vnd) → resolveLang lùi BASE_FALLBACK_LANG, ctx.rate = null,
+ * nhánh VND áp dụng. Derive qua helper để test vẫn đúng nếu config đổi về sau.
+ */
+async function expectedMoneyDisplay(amountVnd: number): Promise<string> {
+  const lang = await resolveLang(env.DB, { language: null })
+  const ctx = await buildCurrencyContext(env.DB, { lang, region: null })
+  return formatMoneyFor(amountVnd, ctx)
+}
+
 /** Gọi GET /product-types/:id với initData hợp lệ. */
 async function getDetail(id: string | number): Promise<Response> {
   const raw = await buyerInitData()
@@ -246,7 +261,7 @@ describe('GET /api/app/product-types/:id — chi tiết loại sản phẩm (Req
     expect(data.name).toBe('Netflix')
     expect(data.description).toBe('Tài khoản xem phim 1 tháng')
     expect(data.price).toBe(50_000)
-    expect(data.price_display).toBe(formatCurrency(50_000))
+    expect(data.price_display).toBe(await expectedMoneyDisplay(50_000))
     expect(data.stock).toBe(12)
     expect(data.in_stock).toBe(true)
     expect(typeof data.max_quantity).toBe('number')

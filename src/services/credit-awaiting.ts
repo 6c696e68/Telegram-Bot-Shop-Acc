@@ -25,6 +25,7 @@ import { resolveLang } from './user-locale'
 import { readSystemConfigValue } from '../utils/system-config'
 import { sendMessage } from '../bot/telegram-api'
 import { renderDepositSuccess } from '../bot/notify-deposit'
+import { buildCurrencyContext } from '../utils/format'
 
 /** Key trong `system_config` chứa tỷ giá VND cho 1 USDT. */
 const EXCHANGE_RATE_CONFIG = 'exchange_rate_usdt_vnd'
@@ -130,7 +131,8 @@ export async function creditAwaitingDeposits(
       }
 
       const lang = await resolveLang(db, user)
-      const text = renderDepositSuccess(lang, creditVnd, result.newBalance)
+      const currencyCtx = await buildCurrencyContext(db, { lang, region: user.region })
+      const text = renderDepositSuccess(currencyCtx, creditVnd, result.newBalance)
 
       ctx.waitUntil(
         sendMessage(botToken, user.telegram_id, text, { parse_mode: 'HTML' }).catch((err) => {

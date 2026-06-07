@@ -72,6 +72,8 @@ export interface CryptoDepositData {
   usdtAmount: string
   /** Định danh Crypto_Invoice (dùng cho idempotency webhook). */
   invoiceId: string
+  /** VND quy đổi kỳ vọng = floor(usdt × rate) — để hiển thị cho user biết ~bao nhiêu VND. */
+  creditVnd: number
 }
 
 /**

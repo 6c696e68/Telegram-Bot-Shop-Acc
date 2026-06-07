@@ -371,7 +371,7 @@ describe('Property 12: Product content uniqueness per category', () => {
         async (content) => {
           await cleanTables(env.DB)
 
-          const categoryId1 = await seedCategory(env.DB, 30000)
+          const categoryId1 = await seedCategory(env.DB, 26000)
           const categoryId2 = await seedCategory(env.DB, 60000)
           const now = new Date().toISOString()
 

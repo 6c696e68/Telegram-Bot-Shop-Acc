@@ -50,6 +50,7 @@ const createdCrypto = ref<CryptoDepositCreatedDto | null>(null)
 const depositId = ref<number | null>(null)
 const status = ref<DepositStatusDto['status']>('pending')
 const submitting = ref(false)
+const cancelling = ref(false)
 
 const isCrypto = computed(() => selectedMethod.value === 'cryptobot')
 const created = computed(() => createdSepay.value !== null || createdCrypto.value !== null)
@@ -62,6 +63,18 @@ const amount = computed<number | null>(() => {
   if (!isCrypto.value && !Number.isInteger(n)) return null
   return n
 })
+
+/** VND quy đổi kỳ vọng khi nhập USDT (floor(usdt × rate)) — chỉ khi crypto + rate hợp lệ. */
+const estimatedVnd = computed<number | null>(() => {
+  if (!isCrypto.value || amount.value === null) return null
+  const rate = user.state.rate
+  if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return null
+  return Math.floor(amount.value * rate)
+})
+
+const estimatedVndDisplay = computed(() =>
+  estimatedVnd.value === null ? '' : formatCurrency(estimatedVnd.value)
+)
 
 let cleanupBack: Cleanup = () => {}
 let polling = false
@@ -113,7 +126,7 @@ async function pollOnce(): Promise<void> {
     if (res.status === 'completed') {
       stopPolling()
       status.value = 'completed'
-      if (typeof res.new_balance === 'number') user.setBalance(res.new_balance)
+      if (typeof res.new_balance === 'number') user.setBalance(res.new_balance, res.new_balance_display)
       ui.haptic('success')
       ui.toast(t('deposit.success'), 'success')
       return
@@ -208,6 +221,28 @@ function resetDeposit(): void {
   amountInput.value = ''
 }
 
+/**
+ * Huỷ yêu cầu nạp đang chờ (R8.x — đồng bộ với flow huỷ của bot).
+ * Gọi `POST /deposits/:id/cancel` (guard chủ sở hữu phía server), dừng poll, chuyển
+ * trạng thái sang `cancelled`. Lỗi 401 do client xử lý; lỗi khác → toast.
+ */
+async function cancelDeposit(): Promise<void> {
+  if (depositId.value === null || cancelling.value) return
+  cancelling.value = true
+  try {
+    await ui.withLoading(post<DepositStatusDto>(`/deposits/${depositId.value}/cancel`))
+    stopPolling()
+    status.value = 'cancelled'
+    ui.haptic('light')
+    ui.toast(t('deposit.cancelled'), 'success')
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return
+    ui.toast(t('deposit.cancel_error'), 'error')
+  } finally {
+    cancelling.value = false
+  }
+}
+
 onMounted(async () => {
   cleanupBack = showBackButton(() => router.back())
   try {
@@ -283,6 +318,12 @@ onUnmounted(() => {
           />
           <span class="text-ios-title text-hint" aria-hidden="true">{{ isCrypto ? 'USDT' : 'đ' }}</span>
         </div>
+        <p
+          v-if="isCrypto && estimatedVndDisplay"
+          class="px-1 text-ios-footnote text-hint tabular-nums"
+        >
+          {{ $t('deposit.approx_vnd', { vnd: estimatedVndDisplay }) }}
+        </p>
       </section>
 
       <GlassButton block :disabled="submitting || amount === null" @click="submitDeposit">
@@ -293,12 +334,20 @@ onUnmounted(() => {
     <!-- Sau khi tạo -->
     <template v-else>
       <GlassCard v-if="status === 'pending'">
-        <div class="flex items-center gap-3">
-          <span
-            class="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent"
-            aria-hidden="true"
-          />
-          <span class="text-ios-headline text-text">{{ $t('deposit.waiting') }}</span>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center gap-3">
+            <span
+              class="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent"
+              aria-hidden="true"
+            />
+            <span class="text-ios-headline text-text">{{ $t('deposit.waiting') }}</span>
+          </div>
+          <p
+            v-if="createdCrypto"
+            class="text-ios-footnote text-hint tabular-nums"
+          >
+            {{ $t('deposit.approx_vnd', { vnd: createdCrypto.credit_vnd_display }) }}
+          </p>
         </div>
       </GlassCard>
 
@@ -306,6 +355,14 @@ onUnmounted(() => {
         <div class="flex flex-col items-center gap-2 text-center">
           <CircleCheck :size="40" :stroke-width="1.75" class="text-ios-green" aria-hidden="true" />
           <h2 class="text-ios-headline text-text">{{ $t('deposit.success') }}</h2>
+        </div>
+      </GlassCard>
+
+      <GlassCard v-else-if="status === 'cancelled' || status === 'expired'">
+        <div class="flex flex-col items-center gap-2 text-center">
+          <h2 class="text-ios-headline text-text">
+            {{ status === 'cancelled' ? $t('deposit.cancelled') : $t('deposit.expired') }}
+          </h2>
         </div>
       </GlassCard>
 
@@ -325,11 +382,23 @@ onUnmounted(() => {
         :bank-name="createdSepay.bank_name"
         :bank-account="createdSepay.bank_account"
         :bank-owner="createdSepay.bank_owner"
-        :amount-display="formatCurrency(createdSepay.amount)"
+        :amount-display="createdSepay.amount_display"
         :transfer-code="createdSepay.transfer_code"
       />
 
-      <GlassButton variant="secondary" block @click="resetDeposit">
+      <!-- Đang chờ: cho phép huỷ yêu cầu nạp (đồng bộ flow huỷ của bot) -->
+      <GlassButton
+        v-if="status === 'pending'"
+        variant="secondary"
+        block
+        :disabled="cancelling"
+        @click="cancelDeposit"
+      >
+        {{ $t('deposit.cancel') }}
+      </GlassButton>
+
+      <!-- Đã kết thúc (completed/cancelled/expired): quay lại form nạp -->
+      <GlassButton v-else variant="secondary" block @click="resetDeposit">
         {{ $t('common.back') }}
       </GlassButton>
     </template>

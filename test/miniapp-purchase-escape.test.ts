@@ -133,7 +133,7 @@ describe('Property 11: Escape HTML giá trị động trong tin nhắn mua hàng
   it('default body (template null): không lộ ký tự HTML thô từ name/contents', () => {
     fc.assert(
       fc.property(varsArb, (vars) => {
-        const rendered = renderSuccessMessage(templatesFor(null), vars, 'vi')
+        const rendered = renderSuccessMessage(templatesFor(null), vars, { lang: 'vi', region: null, rate: null })
         assertNoRawDynamicMarkup(rendered, vars)
       }),
       { numRuns: 200 }
@@ -143,7 +143,7 @@ describe('Property 11: Escape HTML giá trị động trong tin nhắn mua hàng
   it('custom template ([name]/[content]): không lộ ký tự HTML thô từ name/contents', () => {
     fc.assert(
       fc.property(varsArb, (vars) => {
-        const rendered = renderSuccessMessage(templatesFor(CUSTOM_TEMPLATE), vars, 'vi')
+        const rendered = renderSuccessMessage(templatesFor(CUSTOM_TEMPLATE), vars, { lang: 'vi', region: null, rate: null })
         assertNoRawDynamicMarkup(rendered, vars)
       }),
       { numRuns: 200 }
@@ -164,7 +164,7 @@ describe('Property 11 — ví dụ escape cụ thể', () => {
   }
 
   it('default body: name & content được escape, không còn <script> thô', () => {
-    const out = renderSuccessMessage(templatesFor(null), baseVars, 'vi')
+    const out = renderSuccessMessage(templatesFor(null), baseVars, { lang: 'vi', region: null, rate: null })
 
     // name escape: 'A & B <script>' → 'A &amp; B &lt;script&gt;'
     expect(out).toContain('A &amp; B &lt;script&gt;')
@@ -179,7 +179,7 @@ describe('Property 11 — ví dụ escape cụ thể', () => {
   })
 
   it('custom template: name & content được escape, không còn <script> thô', () => {
-    const out = renderSuccessMessage(templatesFor(CUSTOM_TEMPLATE), baseVars, 'vi')
+    const out = renderSuccessMessage(templatesFor(CUSTOM_TEMPLATE), baseVars, { lang: 'vi', region: null, rate: null })
 
     expect(out).toContain('A &amp; B &lt;script&gt;')
     expect(out).toContain('<code>u&lt;1&gt;&amp;p&gt;</code>')
@@ -191,7 +191,7 @@ describe('Property 11 — ví dụ escape cụ thể', () => {
     const out = renderSuccessMessage(templatesFor('[content]'), {
       ...baseVars,
       name: '<b>boom</b> & <i>x</i>',
-    }, 'vi')
+    }, { lang: 'vi', region: null, rate: null })
 
     expect(out).toContain('&lt;b&gt;boom&lt;/b&gt; &amp; &lt;i&gt;x&lt;/i&gt;')
     // Phần name thô không xuất hiện như thẻ thật

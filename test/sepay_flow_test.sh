@@ -197,11 +197,11 @@ else
 fi
 
 # ---- TC-S13: Han muc lay tu system_config (min/max), khong hardcode ----
-# Set khoang tam 30000..40000 de kiem chung webhook ap dung config.
-d1 "UPDATE system_config SET value='30000' WHERE key='min_deposit'" >/dev/null
+# Set khoang tam 26000..40000 de kiem chung webhook ap dung config.
+d1 "UPDATE system_config SET value='26000' WHERE key='min_deposit'" >/dev/null
 d1 "UPDATE system_config SET value='40000' WHERE key='max_deposit'" >/dev/null
 
-# 13a: 25000 < min(30000) -> tu choi
+# 13a: 25000 < min(26000) -> tu choi
 seed_deposit "NAPSEP13A" 25000
 B_BEFORE=$(balance)
 CODE=$(sepay 70013 in "NAPSEP13A duoi min config" 25000)
@@ -213,7 +213,7 @@ else
   bad "TC-S13a Config min=30k: 25k bi tu choi" "http=$CODE balance $B_BEFORE->$B_AFTER deposit=$ST (expect khong cong)"
 fi
 
-# 13b: 35000 trong [30000,40000] -> cong tien
+# 13b: 35000 trong [26000,40000] -> cong tien
 seed_deposit "NAPSEP13B" 35000
 B_BEFORE=$(balance)
 CODE=$(sepay 70014 in "NAPSEP13B trong khoang config" 35000)

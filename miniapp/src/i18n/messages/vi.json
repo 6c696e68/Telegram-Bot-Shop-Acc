@@ -99,6 +99,8 @@
     "amount_vnd": "Số tiền (VND)",
     "amount_usdt": "Số tiền (USDT)",
     "amount_placeholder": "Nhập số tiền",
+    "approx_vnd": "≈ {vnd}",
+    "rate_hint": "1 USDT ≈ {rate}",
     "min_usdt": "Tối thiểu {min} USDT",
     "create": "Tạo yêu cầu nạp",
     "pay_crypto": "Thanh toán qua Crypto Pay",
@@ -106,6 +108,10 @@
     "transfer_code": "Nội dung chuyển khoản",
     "waiting": "Đang chờ thanh toán...",
     "success": "Nạp tiền thành công",
+    "cancel": "Huỷ yêu cầu nạp",
+    "cancelled": "Đã huỷ yêu cầu nạp",
+    "expired": "Yêu cầu nạp đã hết hạn",
+    "cancel_error": "Không huỷ được yêu cầu nạp. Vui lòng thử lại.",
     "method_unavailable": "Phương thức này không khả dụng cho khu vực của bạn."
   },
   "qr": {

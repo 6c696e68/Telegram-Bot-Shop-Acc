@@ -8,8 +8,9 @@
 
 import type { DbUser } from '../../types/db'
 import type { Region, Lang } from '../../i18n/locales'
-import { sendMessage, buildMainMenu, buildInlineKeyboard } from '../telegram-api'
+import { sendMessage, editOrSendMessage, buildMainMenu, buildInlineKeyboard, buildQuickAccessKeyboard } from '../telegram-api'
 import { setRegion, resolveLang } from '../../services/user-locale'
+import { readMiniAppUrl } from '../../utils/system-config'
 import { t } from '../i18n'
 
 /**
@@ -36,13 +37,17 @@ export async function sendRegionOnboarding(
 /**
  * Gửi bộ chọn vùng cho lệnh `/region` (đổi vùng sau onboarding — R5.1).
  * Cùng inline keyboard `reg:*` nhưng dùng prompt `region.prompt` (không phải onboarding).
+ *
+ * `messageId` (tuỳ chọn): khi mở từ màn Cài đặt → edit message hiện tại;
+ * khi gọi từ lệnh `/region` (không có messageId) → gửi tin mới.
  */
 export async function sendRegionPicker(
   botToken: string,
   chatId: number,
-  lang: Lang
+  lang: Lang,
+  messageId?: number
 ): Promise<void> {
-  await sendMessage(botToken, chatId, t(lang, 'region.prompt'), {
+  await editOrSendMessage(botToken, chatId, messageId, t(lang, 'region.prompt'), {
     parse_mode: 'HTML',
     reply_markup: buildInlineKeyboard([
       [
@@ -107,18 +112,9 @@ export async function handleRegionCallback(
     reply_markup: buildMainMenu(lang),
   })
 
-  // Truy cập nhanh bằng inline shortcuts (callback_data cố định, nhãn theo lang).
+  // Truy cập nhanh bằng inline shortcuts (callback_data cố định, nhãn theo lang) + nút Mini App.
   await sendMessage(botToken, chatId, t(lang, 'menu.quick_access'), {
     parse_mode: 'HTML',
-    reply_markup: buildInlineKeyboard([
-      [
-        { text: t(lang, 'menu.shop'), callback_data: 'cat:list' },
-        { text: t(lang, 'menu.deposit'), callback_data: 'dep:menu' },
-      ],
-      [
-        { text: t(lang, 'menu.history'), callback_data: 'hist' },
-        { text: t(lang, 'menu.account'), callback_data: 'acc' },
-      ],
-    ]),
+    reply_markup: buildQuickAccessKeyboard(lang, await readMiniAppUrl(db)),
   })
 }

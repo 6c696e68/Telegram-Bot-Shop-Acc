@@ -4,8 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import Icon from '@/components/Icon.vue'
 import { formatMoney } from '@/utils/format'
+import { useExchangeRate } from '@/composables/useExchangeRate'
 
 const { t } = useI18n()
+// Tỷ giá dùng chung VND/USD (R4.3). rate=null → VND-only (R4.4).
+const { rate, load: loadRate } = useExchangeRate()
 
 interface Order {
   id: number
@@ -160,6 +163,7 @@ function statusLabel(status: string) {
 }
 
 onMounted(() => {
+  loadRate()
   loadCategories()
   loadOrders()
 })
@@ -253,7 +257,7 @@ onMounted(() => {
             </td>
             <td class="ink">{{ order.product_type_name }}</td>
             <td>{{ order.quantity }}</td>
-            <td class="ink amount-cell">{{ formatMoney(order.total_amount) }}</td>
+            <td class="ink amount-cell">{{ formatMoney(order.total_amount, rate) }}</td>
             <td>
               <span class="badge" :class="statusBadge(order.status)">
                 {{ statusLabel(order.status) }}
@@ -330,7 +334,7 @@ onMounted(() => {
             </div>
             <div class="info-item">
               <span class="label">{{ $t('orders.col_unit_price') }}</span>
-              <span class="info-value">{{ formatMoney(selectedOrder.unit_price) }}</span>
+              <span class="info-value">{{ formatMoney(selectedOrder.unit_price, rate) }}</span>
             </div>
             <div class="info-item">
               <span class="label">{{ $t('orders.col_qty') }}</span>
@@ -338,7 +342,7 @@ onMounted(() => {
             </div>
             <div class="info-item">
               <span class="label">{{ $t('orders.col_total') }}</span>
-              <span class="info-value strong">{{ formatMoney(selectedOrder.total_amount) }}</span>
+              <span class="info-value strong">{{ formatMoney(selectedOrder.total_amount, rate) }}</span>
             </div>
           </div>
 
@@ -363,7 +367,7 @@ onMounted(() => {
               </div>
               <div class="user-row">
                 <span class="muted">{{ $t('orders.current_balance') }}:</span>
-                <span class="ink">{{ formatMoney(selectedOrder.user_balance) }}</span>
+                <span class="ink">{{ formatMoney(selectedOrder.user_balance, rate) }}</span>
               </div>
             </div>
           </div>

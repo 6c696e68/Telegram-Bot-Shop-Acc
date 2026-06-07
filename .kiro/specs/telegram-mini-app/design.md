@@ -390,7 +390,7 @@ Response 200:
   "success": true,
   "data": [
     { "id": 1, "name": "Netflix", "emoji": "🎬", "price": 50000, "price_display": "50,000đ", "stock": 12, "in_stock": true },
-    { "id": 2, "name": "Spotify", "emoji": "🎵", "price": 30000, "price_display": "30,000đ", "stock": 0, "in_stock": false }
+    { "id": 2, "name": "Spotify", "emoji": "🎵", "price": 26000, "price_display": "30,000đ", "stock": 0, "in_stock": false }
   ],
   "error": null
 }

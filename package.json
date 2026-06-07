@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "predeploy": "npm run build:all",
     "deploy": "wrangler deploy",
+    "shop:deploy": "node scripts/shop-deploy.mjs",
     "build:cms": "npm run --prefix cms build",
     "build:miniapp": "npm --prefix miniapp install && npm run --prefix miniapp build",
     "build:all": "npm run build:cms && npm run build:miniapp",

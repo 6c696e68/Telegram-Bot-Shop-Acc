@@ -101,7 +101,7 @@ fi
 log_step "AUTH" "Admin login admin/admin123" "PASS" "JWT length=${#TOKEN}"
 
 # Seed product type + 5 products (đủ cho mọi case)
-d1 "INSERT INTO product_types (name, price, emoji) VALUES ('FlowCat', 30000, '📦');" >/dev/null
+d1 "INSERT INTO product_types (name, price, emoji) VALUES ('FlowCat', 26000, '📦');" >/dev/null
 CAT_ID=$(d1_first_int "SELECT id FROM product_types WHERE name='FlowCat'" "id")
 d1 "INSERT INTO products (type_id, content, status) VALUES
   ($CAT_ID, 'flow-acc-1', 'available'),
@@ -198,13 +198,13 @@ else
 fi
 
 # ============== TC-03: Race condition — 1 user, 2 device cùng spam buy 1 cái ==============
-# User C có balance=30000 (chỉ đủ mua 1), spam 5 lần buy:cat:1 đồng thời.
+# User C có balance=26000 (chỉ đủ mua 1), spam 5 lần buy:cat:1 đồng thời.
 # Expected: chỉ 1 đơn thành công, balance=0, 1 product sold, không bị trừ -30k 2 lần.
 
 TG_C=33333
 tg_start 300 $TG_C "userC" >/dev/null
 USER_C=$(d1_first_int "SELECT id FROM users WHERE telegram_id=$TG_C" "id")
-d1 "UPDATE users SET balance=30000 WHERE id=$USER_C; INSERT INTO transactions (user_id, type, amount, balance_before, balance_after, reference_type, description, status) VALUES ($USER_C, 'adjustment', 30000, 0, 30000, 'manual_seed', 'seed for race test', 'success');" >/dev/null
+d1 "UPDATE users SET balance=26000 WHERE id=$USER_C; INSERT INTO transactions (user_id, type, amount, balance_before, balance_after, reference_type, description, status) VALUES ($USER_C, 'adjustment', 26000, 0, 26000, 'manual_seed', 'seed for race test', 'success');" >/dev/null
 
 STOCK_C_BEFORE=$(d1_first_int "SELECT COUNT(*) c FROM products WHERE type_id=$CAT_ID AND status='available'" "c")
 

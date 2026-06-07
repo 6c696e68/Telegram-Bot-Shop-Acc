@@ -16,8 +16,10 @@ const props = withDefaults(
     name: string
     /** Emoji minh hoạ. */
     emoji?: string
-    /** Giá dạng số (đồng) — format CLIENT-SIDE theo locale user (R4.6). */
+    /** Giá dạng số (đồng) — fallback format CLIENT-SIDE khi không có `priceDisplay`. */
     price: number
+    /** Chuỗi giá region-aware từ server; có giá trị → render verbatim (R1.1). */
+    priceDisplay?: string
     /** Số lượng còn lại (products status='available'). */
     stock?: number
     /** Còn hàng hay không (stock > 0). */
@@ -30,8 +32,10 @@ const emit = defineEmits<{ (e: 'click'): void }>()
 
 const { t } = useI18n()
 
-/** Giá hiển thị, format theo LOCALE hiện tại của user (R4.6). */
-const priceText = computed(() => formatCurrency(props.price))
+/** Giá hiển thị: ưu tiên `priceDisplay` từ server (verbatim), thiếu thì format VNĐ theo locale. */
+const priceText = computed(() =>
+  props.priceDisplay && props.priceDisplay.length > 0 ? props.priceDisplay : formatCurrency(props.price)
+)
 
 const stockText = computed(() =>
   props.inStock ? t('product.in_stock', { count: props.stock }) : t('product.out_of_stock')

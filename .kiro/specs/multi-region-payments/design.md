@@ -140,7 +140,7 @@ PRAGMA foreign_keys=ON;
 
 ```sql
 INSERT INTO system_config (key, value, description) VALUES
-  ('exchange_rate_usdt_vnd', '30000', 'Tỷ giá quy đổi 1 USDT sang VND (admin chỉnh)'),
+  ('exchange_rate_usdt_vnd', '26000', 'Tỷ giá quy đổi 1 USDT sang VND (admin chỉnh)'),
   ('crypto_min_usdt', '5', 'Số USDT tối thiểu cho nạp qua CryptoBot'),
   ('default_language', 'en', 'Mã locale mặc định khi user chưa xác định');
 ```

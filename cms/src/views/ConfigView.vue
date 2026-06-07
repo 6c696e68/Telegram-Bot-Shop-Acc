@@ -5,10 +5,14 @@ import { Chart, registerables } from 'chart.js'
 import Icon from '@/components/Icon.vue'
 import { AVAILABLE_LOCALES } from '@/i18n'
 import { formatMoney } from '@/utils/format'
+import { useExchangeRate } from '@/composables/useExchangeRate'
 import { useI18n } from 'vue-i18n'
 
 Chart.register(...registerables)
 const { t } = useI18n()
+// Tỷ giá dùng chung cho hiển thị kép VND/USD (R4.3). ConfigView nạp một lần,
+// các view khác đọc lại cùng ref. rate=null → formatMoney hiển thị VND-only (R4.4).
+const { rate, load: loadRate } = useExchangeRate()
 
 const activeTab = ref<'config' | 'reports'>('config')
 
@@ -26,6 +30,7 @@ const form = ref({
   bot_token: '',
   telegram_secret_token: '',
   sepay_api_key: '',
+  crypto_pay_api_token: '',
   min_deposit: '20000',
   max_deposit: '100000000',
   exchange_rate_usdt_vnd: '25000',
@@ -39,6 +44,7 @@ const form = ref({
 const showBotToken = ref(false)
 const showTgSecret = ref(false)
 const showSepayKey = ref(false)
+const showCryptoToken = ref(false)
 
 async function loadConfig() {
   configLoading.value = true
@@ -54,6 +60,7 @@ async function loadConfig() {
       form.value.bot_token = c.bot_token ?? ''
       form.value.telegram_secret_token = c.telegram_secret_token ?? ''
       form.value.sepay_api_key = c.sepay_api_key ?? ''
+      form.value.crypto_pay_api_token = c.crypto_pay_api_token ?? ''
       form.value.min_deposit = c.min_deposit ?? '20000'
       form.value.max_deposit = c.max_deposit ?? '100000000'
       form.value.exchange_rate_usdt_vnd = c.exchange_rate_usdt_vnd ?? '25000'
@@ -157,7 +164,7 @@ function renderRevenueChart() {
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.datasetIndex === 0 ? formatMoney(ctx.parsed.y ?? 0) : t('config.orders_unit', { count: ctx.parsed.y }) } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.datasetIndex === 0 ? formatMoney(ctx.parsed.y ?? 0, rate.value) : t('config.orders_unit', { count: ctx.parsed.y }) } } },
       scales: {
         x: { grid: { color: '#eaeaea' }, ticks: { color: '#787774' } },
         y: { grid: { color: '#eaeaea' }, ticks: { color: '#787774', callback: v => { const n = Number(v); return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'k' : String(n) } } },
@@ -169,7 +176,7 @@ function renderRevenueChart() {
 
 
 watch(activeTab, tab => { if (tab === 'reports' && revenueData.value.length === 0) loadReports() })
-onMounted(() => { loadConfig(); initDateRange() })
+onMounted(() => { loadConfig(); loadRate(); initDateRange() })
 onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = null } })
 </script>
 
@@ -305,6 +312,28 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
         <!-- Multi-region payment (R20.1-20.4) -->
         <section class="card p-5 space-y-4">
           <h3 class="section-head"><Icon name="key" :size="18" /> {{ $t('config.payment_section') }}</h3>
+          <div>
+            <label class="label">{{ $t('config.crypto_token') }}</label>
+            <div class="key-row">
+              <input
+                v-model="form.crypto_pay_api_token"
+                :type="showCryptoToken ? 'text' : 'password'"
+                class="field"
+                :placeholder="$t('config.ph_crypto_token')"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button
+                type="button"
+                class="key-toggle"
+                :title="showCryptoToken ? $t('config.hide_key') : $t('config.show_key')"
+                @click="showCryptoToken = !showCryptoToken"
+              >
+                <Icon :name="showCryptoToken ? 'eyeOff' : 'eye'" :size="16" />
+              </button>
+            </div>
+            <p class="hint">{{ $t('config.crypto_token_hint') }}</p>
+          </div>
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="label">{{ $t('config.exchange_rate') }}</label>
@@ -378,9 +407,9 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
             <tr v-for="(p, i) in topProducts" :key="p.id">
               <td style="color: var(--faint)">{{ i + 1 }}</td>
               <td style="font-weight: 500; color: var(--ink)">{{ p.name }}</td>
-              <td class="text-right" style="color: var(--muted)">{{ formatMoney(p.price) }}</td>
+              <td class="text-right" style="color: var(--muted)">{{ formatMoney(p.price, rate) }}</td>
               <td class="text-right" style="font-weight: 500; color: var(--ink)">{{ p.total_sold }}</td>
-              <td class="text-right" style="color: var(--green-fg); font-weight: 500">{{ formatMoney(p.total_revenue) }}</td>
+              <td class="text-right" style="color: var(--green-fg); font-weight: 500">{{ formatMoney(p.total_revenue, rate) }}</td>
             </tr>
           </tbody>
         </table>
@@ -402,7 +431,7 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
                 <span class="ml-1.5 text-xs" style="color: var(--muted)">#{{ u.telegram_id }}</span>
               </td>
               <td class="text-right" style="color: var(--ink)">{{ u.order_count }}</td>
-              <td class="text-right" style="color: var(--green-fg); font-weight: 500">{{ formatMoney(u.total_spent) }}</td>
+              <td class="text-right" style="color: var(--green-fg); font-weight: 500">{{ formatMoney(u.total_spent, rate) }}</td>
             </tr>
           </tbody>
         </table>

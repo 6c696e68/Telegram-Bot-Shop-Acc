@@ -3,8 +3,11 @@ dist/
 .wrangler/
 .dev.vars
 .playwright-mcp/
+docs/ui-review/
 *.log
+*.png
 .DS_Store
 package-lock.json
 cms/node_modules/
 miniapp/node_modules/
+video/

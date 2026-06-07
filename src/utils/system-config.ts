@@ -51,3 +51,12 @@ export function preferDbValue(
   const trimmed = dbValue?.trim()
   return trimmed ? trimmed : (envValue ?? '')
 }
+
+/**
+ * Đọc URL Mini App đã cấu hình (`system_config.miniapp_url`).
+ * Rỗng/chưa cấu hình → `null` (bot sẽ ẩn nút mở Mini App).
+ */
+export async function readMiniAppUrl(db: D1Database): Promise<string | null> {
+  const value = (await readSystemConfigValue(db, 'miniapp_url'))?.trim()
+  return value ? value : null
+}

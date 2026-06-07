@@ -82,7 +82,7 @@ onMounted(async () => {
       <p v-if="state.firstName" class="text-ios-title text-text">
         {{ $t('home.hello', { name: state.firstName }) }}
       </p>
-      <BalanceBadge :balance="state.balance" />
+      <BalanceBadge :balance="state.balance" :display="state.balanceDisplay" />
     </header>
 
     <!-- Lối tắt nhanh (Req 4.3, 4.4) -->

@@ -14,6 +14,7 @@ import { resolveBotToken } from '../services/telegram-config'
 import { sendMessage } from '../bot/telegram-api'
 import { resolveLang } from '../services/user-locale'
 import { renderDepositSuccess } from '../bot/notify-deposit'
+import { buildCurrencyContext } from '../utils/format'
 
 /**
  * Mã chuyển khoản nội bộ: "NAP" + 4-17 ký tự alphanumeric (xem `utils/transfer-code.ts`).
@@ -135,9 +136,14 @@ sepayWebhook.post('/sepay', async (c) => {
   })
 
   if (!result.success && result.error === 'db_error') {
-    // Lỗi atomic tạm thời sau khi đã xác nhận thanh toán — log để theo dõi; dựa vào
-    // retry của SePay (giữ nguyên hành vi cũ: luôn trả success ở cuối — Req 8.5).
+    // Lỗi atomic tạm thời SAU khi đã match đúng giao dịch tiền vào → KHÔNG trả 200.
+    // Trả 500 để SePay gửi lại webhook (R14.5, đối xứng nhánh CryptoBot): deposit CHƯA
+    // bị đánh dấu `completed` nên lần retry còn cộng được; idempotency theo
+    // `sepay_transaction_id` (check ở đầu handler) đảm bảo retry KHÔNG cộng trùng.
+    // Các trường hợp no-op khác (không khớp/đã xử lý/quá hạn/ngoài hạn mức) vẫn trả 200
+    // để SePay không retry vô ích (giữ tinh thần Req 8.5).
     console.error('[SePay] completeDeposit db_error for deposit:', deposit.id)
+    return c.json({ success: false }, 500)
   }
 
   // Gửi notification cho user nếu thành công (Req 2.11, 9.2-9.5) — async via waitUntil.
@@ -145,7 +151,8 @@ sepayWebhook.post('/sepay', async (c) => {
   if (result.success) {
     const botToken = await resolveBotToken(db, c.env)
     const lang = await resolveLang(db, user)
-    const notificationText = renderDepositSuccess(lang, payload.transferAmount, result.newBalance)
+    const currencyCtx = await buildCurrencyContext(db, { lang, region: user.region })
+    const notificationText = renderDepositSuccess(currencyCtx, payload.transferAmount, result.newBalance)
 
     // Fire-and-forget notification (waitUntil pattern for CF Workers)
     const notificationPromise = sendMessage(botToken, user.telegram_id, notificationText, {
@@ -160,7 +167,9 @@ sepayWebhook.post('/sepay', async (c) => {
     }
   }
 
-  // Luôn return success (Req 8.5)
+  // Mọi trường hợp no-op/đã-xử-lý còn lại → 200 success (Req 8.5): không khớp deposit,
+  // đã cộng trước đó (already_processed), quá hạn TTL, ngoài hạn mức, không phải tiền vào…
+  // → SePay không cần gửi lại. Riêng db_error đã trả 500 ở trên để được retry (R14.5).
   return c.json({ success: true })
 })
 

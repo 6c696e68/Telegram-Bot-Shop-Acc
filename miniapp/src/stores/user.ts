@@ -23,6 +23,8 @@ export interface UserState {
   balanceDisplay: string
   region: 'vietnam' | 'international' | null
   language: string | null
+  /** Tỉ giá VNĐ/USD (divisor) để format giá trị động region-aware; null → fallback VNĐ. */
+  rate: number | null
   /** `true` sau khi `fetchMe()` thành công lần đầu (để view phân biệt với trạng thái chưa nạp). */
   loaded: boolean
 }
@@ -35,6 +37,7 @@ const state = reactive<UserState>({
   balanceDisplay: '',
   region: null,
   language: null,
+  rate: null,
   loaded: false,
 })
 
@@ -48,6 +51,7 @@ async function fetchMe(): Promise<void> {
   state.balanceDisplay = me.balance_display
   state.region = me.region
   state.language = me.language
+  state.rate = me.rate
   state.loaded = true
   // Đồng bộ ngôn ngữ hiển thị theo user (R17.2). Chưa xác định → giữ fallback en (R17.3).
   setLocale(me.language)
@@ -58,6 +62,7 @@ async function setRegion(region: 'vietnam' | 'international'): Promise<void> {
   const me = await post<MeDto>('/region', { region })
   state.region = me.region
   state.language = me.language
+  state.rate = me.rate
   setLocale(me.language)
 }
 
@@ -87,6 +92,7 @@ function reset(): void {
   state.balanceDisplay = ''
   state.region = null
   state.language = null
+  state.rate = null
   state.loaded = false
 }
 

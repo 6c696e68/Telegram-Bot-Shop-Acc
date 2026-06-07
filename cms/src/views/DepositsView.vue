@@ -4,8 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import Icon from '@/components/Icon.vue'
 import { formatMoney } from '@/utils/format'
+import { useExchangeRate } from '@/composables/useExchangeRate'
 
 const { t } = useI18n()
+// Tỷ giá dùng chung VND/USD (R4.3). rate=null → VND-only (R4.4).
+const { rate, load: loadRate } = useExchangeRate()
 
 interface Deposit {
   id: number
@@ -117,7 +120,7 @@ async function approveDeposit(deposit: Deposit) {
       `/deposits/${deposit.id}/approve`
     )
     if (res.success && res.data) {
-      approveSuccess.value = t('deposits.approve_ok', { balance: formatMoney(res.data.new_balance) })
+      approveSuccess.value = t('deposits.approve_ok', { balance: formatMoney(res.data.new_balance, rate.value) })
       selectedDeposit.value = null
       await fetchDeposits()
     } else {
@@ -151,6 +154,7 @@ watch(page, () => {
 })
 onMounted(() => {
   fetchDeposits()
+  loadRate()
 })
 </script>
 
@@ -238,7 +242,7 @@ onMounted(() => {
               </div>
             </td>
             <td><span class="chip-code">{{ deposit.transfer_code || '—' }}</span></td>
-            <td class="text-right" style="font-weight: 500; color: var(--ink)">{{ formatMoney(deposit.amount) }}</td>
+            <td class="text-right" style="font-weight: 500; color: var(--ink)">{{ formatMoney(deposit.amount, rate) }}</td>
             <td><span class="badge" :class="statusBadge(deposit.status)">{{ statusLabel(deposit.status) }}</span></td>
             <td class="text-xs" style="color: var(--muted); white-space: nowrap">{{ formatDate(deposit.created_at) }}</td>
             <td class="text-right">
@@ -297,7 +301,7 @@ onMounted(() => {
           </div>
           <div class="flex items-center justify-between">
             <dt style="color: var(--muted)">{{ $t('deposits.col_amount') }}</dt>
-            <dd style="font-weight: 600; color: var(--ink)">{{ formatMoney(selectedDeposit.amount) }}</dd>
+            <dd style="font-weight: 600; color: var(--ink)">{{ formatMoney(selectedDeposit.amount, rate) }}</dd>
           </div>
           <div class="flex items-center justify-between">
             <dt style="color: var(--muted)">{{ $t('deposits.col_method') }}</dt>

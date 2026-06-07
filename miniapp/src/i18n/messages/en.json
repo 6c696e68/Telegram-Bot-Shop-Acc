@@ -99,6 +99,8 @@
     "amount_vnd": "Amount (VND)",
     "amount_usdt": "Amount (USDT)",
     "amount_placeholder": "Enter amount",
+    "approx_vnd": "≈ {vnd}",
+    "rate_hint": "1 USDT ≈ {rate}",
     "min_usdt": "Minimum {min} USDT",
     "create": "Create deposit",
     "pay_crypto": "Pay with Crypto Pay",
@@ -106,6 +108,10 @@
     "transfer_code": "Transfer note",
     "waiting": "Waiting for payment...",
     "success": "Deposit successful",
+    "cancel": "Cancel deposit",
+    "cancelled": "Deposit cancelled",
+    "expired": "Deposit request expired",
+    "cancel_error": "Could not cancel the deposit. Please try again.",
     "method_unavailable": "This method is not available for your region."
   },
   "qr": {

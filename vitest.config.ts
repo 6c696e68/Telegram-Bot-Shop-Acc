@@ -28,6 +28,6 @@ export default defineWorkersConfig({
         },
       },
     },
-    include: ['test/**/*.{test,spec}.ts'],
+    include: ['test/**/*.{test,spec}.ts', 'src/**/*.{test,spec}.ts'],
   },
 })

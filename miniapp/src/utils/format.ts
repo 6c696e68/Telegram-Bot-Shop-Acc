@@ -22,6 +22,28 @@ export function formatCurrency(amount: number): string {
   return amount.toLocaleString(bcp47()) + 'đ'
 }
 
+/** Ngữ cảnh vùng + tỉ giá để format tiền region-aware (mirror backend `formatMoneyFor`). */
+export interface MoneyContext {
+  region: 'vietnam' | 'international' | null
+  rate: number | null
+}
+
+/**
+ * Format số tiền (INTEGER VNĐ) theo vùng — mirror backend `formatMoneyFor`.
+ * Chỉ trả USD khi region='international' và `rate` hữu hạn > 0 và USD tính ra hữu hạn,
+ * `< 1e21`; mọi trường hợp khác fallback VNĐ qua `formatCurrency` (fail-safe). Guard này
+ * khớp backend để giá trị động (vd tổng tiền price × qty) hiển thị y hệt chuỗi server.
+ */
+export function formatMoneyFor(amountVnd: number, ctx: MoneyContext): string {
+  if (ctx.region === 'international' && ctx.rate != null && Number.isFinite(ctx.rate) && ctx.rate > 0) {
+    const usd = amountVnd / ctx.rate
+    if (Number.isFinite(usd) && Math.abs(usd) < 1e21) {
+      return '$' + usd.toFixed(2)
+    }
+  }
+  return formatCurrency(amountVnd)
+}
+
 /**
  * Convert chuỗi ISO 8601 UTC sang "DD/MM/YYYY HH:mm" theo giờ UTC.
  * Khớp `formatDate` backend để hiển thị thời gian đơn hàng nhất quán.

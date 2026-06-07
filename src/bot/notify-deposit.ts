@@ -3,33 +3,33 @@
  * luồng cộng tiền (webhook SePay, webhook CryptoBot, cron credit-awaiting).
  *
  * Gom 1 nơi để tránh lặp 3 lần (DRY) và giữ thông báo nhất quán giữa các provider.
- * Chuỗi lấy từ catalog i18n bot theo `lang` (key `deposit.success.*`) — thêm ngôn ngữ
- * chỉ cần thêm catalog, KHÔNG sửa helper (R4.1, OCP). Số tiền render qua
- * `formatMoney(amount, lang)` để nhóm chữ số đúng locale.
+ * Chuỗi lấy từ catalog i18n bot theo `ctx.lang` (key `deposit.success.*`) — thêm ngôn ngữ
+ * chỉ cần thêm catalog, KHÔNG sửa helper (R4.1, OCP). Số tiền hiển thị render qua
+ * `formatMoneyFor(amount, ctx)`: international + Valid_Rate → USD, còn lại → VND.
+ * Đây CHỈ là hiển thị — số tiền cộng cho user vẫn là VND-native, không đổi (R5.4).
  */
 
-import { formatMoney } from '../utils/format'
+import { formatMoneyFor, type CurrencyContext } from '../utils/format'
 import { t } from './i18n'
-import type { Lang } from '../i18n/locales'
 
 /**
- * Dựng nội dung thông báo nạp thành công theo ngôn ngữ user.
+ * Dựng nội dung thông báo nạp thành công theo Region/Language của user.
  *
- * @param lang - Ngôn ngữ hiển thị đã resolve (`resolveLang`).
- * @param amountVnd - Số VND vừa cộng cho lần nạp này.
- * @param newBalanceVnd - Số dư mới sau khi cộng.
+ * @param ctx - CurrencyContext (Language + Region + rate) để chọn tiền tệ hiển thị.
+ * @param amountVnd - Số VND vừa cộng cho lần nạp này (giá trị crediting gốc, không đổi).
+ * @param newBalanceVnd - Số dư mới (VND) sau khi cộng.
  */
 export function renderDepositSuccess(
-  lang: Lang,
+  ctx: CurrencyContext,
   amountVnd: number,
   newBalanceVnd: number
 ): string {
   return [
-    t(lang, 'deposit.success.header'),
+    t(ctx.lang, 'deposit.success.header'),
     '',
-    t(lang, 'deposit.success.amount', { amount: formatMoney(amountVnd, lang) }),
-    t(lang, 'deposit.success.balance', { balance: formatMoney(newBalanceVnd, lang) }),
+    t(ctx.lang, 'deposit.success.amount', { amount: formatMoneyFor(amountVnd, ctx) }),
+    t(ctx.lang, 'deposit.success.balance', { balance: formatMoneyFor(newBalanceVnd, ctx) }),
     '',
-    t(lang, 'deposit.success.footer'),
+    t(ctx.lang, 'deposit.success.footer'),
   ].join('\n')
 }

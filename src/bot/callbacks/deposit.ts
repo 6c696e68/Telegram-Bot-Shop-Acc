@@ -20,7 +20,7 @@ import {
   editMessageText,
   buildInlineKeyboard,
 } from '../telegram-api'
-import { formatMoney } from '../../utils/format'
+import { formatMoney, parseRate } from '../../utils/format'
 import { getSession, setSession, clearSession } from '../session'
 import { shouldSendNotice } from '../rate-limit'
 import { depositPolicyMessage } from '../../services/deposit-policy'
@@ -233,11 +233,20 @@ async function startCryptoDeposit(
   const minUsdtDisplay =
     Number.isFinite(minUsdt) && minUsdt > 0 ? minUsdt : DEFAULT_CRYPTO_MIN_USDT
 
+  // Tỷ giá hiện tại để hiển thị gợi ý quy đổi (1 USDT ≈ ? VND). Thiếu/không hợp lệ → bỏ qua hint (không crash).
+  const rate = parseRate(await readSystemConfigValue(db, 'exchange_rate_usdt_vnd'))
+  const promptText =
+    rate !== null
+      ? t(lang, 'deposit.crypto.prompt', { min: minUsdtDisplay }) +
+        '\n' +
+        t(lang, 'deposit.crypto.rate_hint', { rate: formatMoney(rate, lang) })
+      : t(lang, 'deposit.crypto.prompt', { min: minUsdtDisplay })
+
   await editOrSendMessage(
     botToken,
     chatId,
     messageId,
-    t(lang, 'deposit.crypto.prompt', { min: minUsdtDisplay }),
+    promptText,
     {
       parse_mode: 'HTML',
       reply_markup: buildInlineKeyboard([
@@ -416,7 +425,7 @@ export async function handleCryptoDepositAmount(
   await sendMessage(
     botToken,
     chatId,
-    t(lang, 'deposit.crypto.created', { usdt: crypto.usdtAmount }),
+    t(lang, 'deposit.crypto.created', { usdt: crypto.usdtAmount, vnd: formatMoney(crypto.creditVnd, lang) }),
     {
       parse_mode: 'HTML',
       reply_markup: buildInlineKeyboard([

@@ -31,7 +31,7 @@ import { get, post, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/stores/user'
 import { showMainButton, showBackButton, type Cleanup } from '@/telegram/sdk'
-import { formatCurrency } from '@/utils/format'
+import { formatMoneyFor } from '@/utils/format'
 import type { ProductTypeDetailDto, PurchaseResultDto } from '@/types'
 
 const props = defineProps<{
@@ -68,8 +68,13 @@ const maxQty = computed(() => {
 
 /** Tổng tiền = giá × số lượng (Req 6.1). */
 const total = computed(() => (detail.value ? detail.value.price * quantity.value : 0))
-/** Tổng tiền đã định dạng tiền tệ thống nhất với hệ thống. */
-const totalDisplay = computed(() => formatCurrency(total.value))
+/**
+ * Tổng tiền (giá trị ĐỘNG) format region-aware ngay trên client để khớp định dạng server:
+ * USD khi international + có rate, ngược lại VNĐ (R1.1, design §6).
+ */
+const totalDisplay = computed(() =>
+  formatMoneyFor(total.value, { region: user.state.region, rate: user.state.rate })
+)
 
 /** Map mã lỗi nghiệp vụ của server sang thông báo cho người mua (theo locale). */
 function purchaseErrorMessage(code: string): string {
@@ -175,7 +180,7 @@ onUnmounted(() => {
       <header class="flex flex-col items-center gap-2 text-center">
         <span class="text-6xl leading-none" aria-hidden="true">{{ detail.emoji }}</span>
         <h1 class="text-ios-title text-text">{{ detail.name }}</h1>
-        <p class="text-ios-title tabular-nums text-accent">{{ formatCurrency(detail.price) }}</p>
+        <p class="text-ios-title tabular-nums text-accent">{{ detail.price_display }}</p>
       </header>
 
       <!-- Mô tả + tồn kho (Req 5.3, 5.4) -->
@@ -239,6 +244,7 @@ onUnmounted(() => {
 
         <BalanceBadge
           :balance="result.new_balance"
+          :display="result.new_balance_display"
           :label="$t('product.remaining_balance')"
         />
       </section>

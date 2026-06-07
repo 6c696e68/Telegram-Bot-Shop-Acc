@@ -87,6 +87,7 @@ onUnmounted(() => {
         :name="item.name"
         :emoji="item.emoji"
         :price="item.price"
+        :price-display="item.price_display"
         :stock="item.stock"
         :in-stock="item.in_stock"
         @click="openDetail(item)"

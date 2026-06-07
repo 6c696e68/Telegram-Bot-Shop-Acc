@@ -25,7 +25,6 @@ import { ReceiptText } from '@lucide/vue'
 import { get, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { showBackButton, type Cleanup } from '@/telegram/sdk'
-import { formatCurrency } from '@/utils/format'
 import type { OrderListItemDto } from '@/types'
 
 const router = useRouter()
@@ -103,7 +102,7 @@ onUnmounted(() => {
             <div class="flex items-baseline justify-between gap-2">
               <span class="truncate text-ios-headline text-text">{{ order.product_name }}</span>
               <span class="shrink-0 tabular-nums text-ios-headline text-accent">
-                {{ formatCurrency(order.total_amount) }}
+                {{ order.total_display }}
               </span>
             </div>
 

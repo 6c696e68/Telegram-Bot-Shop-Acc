@@ -2,9 +2,24 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import fc from 'fast-check'
 import { miniAppApi } from '../src/routes/miniapp-api'
-import { formatCurrency } from '../src/utils/format'
+import { formatMoneyFor, buildCurrencyContext } from '../src/utils/format'
+import { resolveLang } from '../src/services/user-locale'
 import type { ApiResponse } from '../src/types/api'
 import type { MeDto } from '../src/types/miniapp'
+
+/**
+ * Tính chuỗi hiển thị tiền y hệt endpoint (currency-display-usd, task 4.1):
+ * lang = resolveLang(DB, user); ctx = buildCurrencyContext(DB, { lang, region });
+ * display = formatMoneyFor(amount, ctx). Người mua trong test không set region
+ * (region = null) và không set language; system_config rỗng (không default_language,
+ * không exchange_rate_usdt_vnd) → resolveLang lùi BASE_FALLBACK_LANG, ctx.rate = null,
+ * nhánh VND áp dụng. Derive qua helper để test vẫn đúng nếu config đổi về sau.
+ */
+async function expectedMoneyDisplay(amountVnd: number): Promise<string> {
+  const lang = await resolveLang(env.DB, { language: null })
+  const ctx = await buildCurrencyContext(env.DB, { lang, region: null })
+  return formatMoneyFor(amountVnd, ctx)
+}
 
 // Feature: telegram-mini-app, Property 5
 /**
@@ -199,7 +214,7 @@ describe('Property 5: Dữ liệu người mua phản ánh đúng DB và đúng 
         expect(data.username).toBe(b.username)
         expect(data.first_name).toBe(b.firstName)
         expect(data.balance).toBe(b.balance)
-        expect(data.balance_display).toBe(formatCurrency(b.balance))
+        expect(data.balance_display).toBe(await expectedMoneyDisplay(b.balance))
       }),
       { numRuns: 100 }
     )
@@ -229,7 +244,7 @@ describe('Property 5: Dữ liệu người mua phản ánh đúng DB và đúng 
 
         const data = body.data!
         expect(data.balance).toBe(b.balance)
-        expect(data.balance_display).toBe(formatCurrency(b.balance))
+        expect(data.balance_display).toBe(await expectedMoneyDisplay(b.balance))
       }),
       { numRuns: 100 }
     )

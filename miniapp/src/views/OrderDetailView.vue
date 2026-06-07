@@ -21,7 +21,6 @@ import GlassCard from '@/components/GlassCard.vue'
 import { get, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { showBackButton, type Cleanup } from '@/telegram/sdk'
-import { formatCurrency } from '@/utils/format'
 import type { OrderDetailDto } from '@/types'
 
 const props = defineProps<{
@@ -80,7 +79,7 @@ onUnmounted(() => {
       <header class="flex flex-col items-center gap-2 text-center">
         <span class="text-6xl leading-none" aria-hidden="true">{{ order.emoji }}</span>
         <h1 class="text-ios-title text-text">{{ order.product_name }}</h1>
-        <p class="text-ios-title tabular-nums text-accent">{{ formatCurrency(order.total_amount) }}</p>
+        <p class="text-ios-title tabular-nums text-accent">{{ order.total_display }}</p>
       </header>
 
       <GlassCard>

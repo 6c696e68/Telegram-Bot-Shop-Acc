@@ -4,8 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { api, getToken } from '@/api/client'
 import Icon from '@/components/Icon.vue'
 import { formatMoney } from '@/utils/format'
+import { useExchangeRate } from '@/composables/useExchangeRate'
 
 const { t } = useI18n()
+// Tỷ giá dùng chung VND/USD (R4.3). rate=null → VND-only (R4.4).
+const { rate, load: loadRate } = useExchangeRate()
 
 interface Transaction {
   id: number
@@ -119,7 +122,7 @@ function goToPage(p: number) {
 
 function formatCurrency(amount: number): string {
   const prefix = amount < 0 ? '-' : '+'
-  return prefix + formatMoney(Math.abs(amount))
+  return prefix + formatMoney(Math.abs(amount), rate.value)
 }
 
 function formatDate(dateStr: string): string {
@@ -168,6 +171,7 @@ function amountClass(amount: number) {
 }
 
 onMounted(() => {
+  loadRate()
   loadTransactions()
 })
 </script>
@@ -258,8 +262,8 @@ onMounted(() => {
             <td class="amount-cell" :class="amountClass(tx.amount)">
               {{ formatCurrency(tx.amount) }}
             </td>
-            <td class="muted">{{ formatMoney(tx.balance_before) }}</td>
-            <td class="muted">{{ formatMoney(tx.balance_after) }}</td>
+            <td class="muted">{{ formatMoney(tx.balance_before, rate) }}</td>
+            <td class="muted">{{ formatMoney(tx.balance_after, rate) }}</td>
             <td class="muted desc-cell" :title="tx.description || ''">
               {{ tx.description || '—' }}
             </td>

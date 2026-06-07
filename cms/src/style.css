@@ -267,7 +267,12 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 .animate-in {
-  animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* fill-mode = backwards (KHÔNG dùng `both`): áp keyframe `from` trước khi chạy để
+     tránh nháy lúc vào, nhưng KHÔNG giữ lại `transform` của keyframe cuối sau khi xong.
+     Nếu dùng `both`/`forwards`, resting state giữ `transform: translateY(0)` (= matrix,
+     khác `none`) → biến .animate-in thành containing block cho mọi `position: fixed` con,
+     khiến modal/drawer (`fixed inset-0`) bị nhốt trong khung view thay vì phủ viewport. */
+  animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 @media (prefers-reduced-motion: reduce) {
   .animate-in { animation: none; }

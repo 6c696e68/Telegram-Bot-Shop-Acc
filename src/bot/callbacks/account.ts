@@ -6,7 +6,7 @@
  */
 
 import { editOrSendMessage, buildInlineKeyboard, buildBackButton } from '../telegram-api'
-import { formatMoney, formatDateTime } from '../../utils/format'
+import { formatMoneyFor, formatDateTime, type CurrencyContext } from '../../utils/format'
 import { t, type Lang } from '../i18n'
 
 interface UserInfo {
@@ -26,7 +26,8 @@ export async function handleAccount(
   chatId: number,
   messageId: number | undefined,
   userId: number,
-  lang: Lang
+  lang: Lang,
+  ctx: CurrencyContext
 ): Promise<void> {
   const user = await db
     .prepare(
@@ -51,7 +52,7 @@ export async function handleAccount(
 
   const usernameDisplay = user.username ? `@${user.username}` : t(lang, 'account.value_empty')
   const nameDisplay = user.first_name || t(lang, 'account.value_empty')
-  const balanceDisplay = formatMoney(user.balance, lang)
+  const balanceDisplay = formatMoneyFor(user.balance, ctx)
   const txDisplay = txCount?.count ?? 0
   const joinDateDisplay = formatDateTime(user.created_at, lang)
 
@@ -64,7 +65,10 @@ export async function handleAccount(
     t(lang, 'account.join_date', { value: joinDateDisplay }),
   ].join('\n')
 
-  const keyboard = buildInlineKeyboard([buildBackButton('menu:main', lang)])
+  const keyboard = buildInlineKeyboard([
+    [{ text: t(lang, 'account.btn.settings'), callback_data: 'set:menu' }],
+    buildBackButton('menu:main', lang),
+  ])
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
     parse_mode: 'HTML',

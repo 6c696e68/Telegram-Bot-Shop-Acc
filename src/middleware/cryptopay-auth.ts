@@ -1,5 +1,6 @@
 import { createMiddleware } from 'hono/factory'
 import type { Bindings } from '../types'
+import { resolveCryptoPayToken } from '../services/cryptopay-config'
 
 /**
  * Context variables được set bởi `cryptoPayAuth`.
@@ -76,7 +77,7 @@ export const cryptoPayAuth = createMiddleware<CryptoPayEnv>(async (c, next) => {
     return c.json({ success: false }, 401)
   }
 
-  const token = c.env.CRYPTO_PAY_API_TOKEN
+  const token = await resolveCryptoPayToken(c.env.DB, c.env)
   if (!token) {
     console.warn('[cryptopay-auth] Từ chối: chưa cấu hình CRYPTO_PAY_API_TOKEN')
     return c.json({ success: false }, 401)

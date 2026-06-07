@@ -108,7 +108,7 @@ onUnmounted(() => {
     </header>
 
     <!-- Số dư hiện tại (Req 12.1) -->
-    <BalanceBadge :balance="state.balance" />
+    <BalanceBadge :balance="state.balance" :display="state.balanceDisplay" />
 
     <!-- Thông tin định danh (Req 12.2) — màn hình chỉ đọc, KHÔNG có chức năng quản trị (Req 12.3) -->
     <section class="flex flex-col gap-3" :aria-label="$t('account.identity')">

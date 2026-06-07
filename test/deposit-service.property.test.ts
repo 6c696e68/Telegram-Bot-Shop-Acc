@@ -148,7 +148,7 @@ function buildInput(
     provider,
     cryptoInvoiceId: `INV${depositId}`,
     usdtAmount: '10.5',
-    exchangeRate: 30000,
+    exchangeRate: 26000,
   } as const
 }
 
