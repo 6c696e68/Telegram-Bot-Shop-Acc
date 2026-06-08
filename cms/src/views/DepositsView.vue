@@ -13,21 +13,42 @@ const { rate, load: loadRate } = useExchangeRate()
 interface Deposit {
   id: number
   user_id: number
-  provider: 'sepay' | 'cryptobot'
-  transfer_code: string | null
+  provider: 'sepay' | 'cryptobot' | 'payos'
   amount: number
   status: 'pending' | 'completed' | 'expired' | 'cancelled' | 'awaiting_credit'
-  sepay_transaction_id: string | null
-  bank_ref: string | null
-  crypto_invoice_id: string | null
-  asset: string | null
-  usdt_amount: string | null
-  exchange_rate: number | null
+  correlation_ref: string | null
+  provider_txn_id: string | null
+  metadata: string | null
   completed_at: string | null
   expired_at: string | null
   created_at: string
   telegram_id: number | null
   username: string | null
+}
+
+/** Dữ liệu đặc thù provider lấy từ cột chung `metadata` (JSON). */
+interface DepositMeta {
+  asset: string | null
+  usdt_amount: string | null
+  exchange_rate: number | null
+  bank_ref: string | null
+}
+
+/** Parse cột `metadata` (JSON) sang các trường hiển thị; lỗi/null → tất cả null. */
+function depositMeta(d: Deposit): DepositMeta {
+  if (!d.metadata) return { asset: null, usdt_amount: null, exchange_rate: null, bank_ref: null }
+  try {
+    const m = JSON.parse(d.metadata) as Record<string, unknown>
+    const asset = typeof m.asset === 'string' ? m.asset : null
+    const usdt = m.usdt_amount
+    const usdt_amount = usdt === null || usdt === undefined ? null : String(usdt)
+    const rate = Number(m.exchange_rate)
+    const exchange_rate = Number.isFinite(rate) && rate > 0 ? rate : null
+    const bank_ref = typeof m.bank_ref === 'string' ? m.bank_ref : null
+    return { asset, usdt_amount, exchange_rate, bank_ref }
+  } catch {
+    return { asset: null, usdt_amount: null, exchange_rate: null, bank_ref: null }
+  }
 }
 
 const deposits = ref<Deposit[]>([])
@@ -87,7 +108,29 @@ function statusLabel(status: string): string {
 
 /** Nhãn provider hiển thị cho cột Phương thức (R20.6). */
 function providerLabel(provider: string): string {
-  return provider === 'cryptobot' ? t('deposits.method_cryptobot') : t('deposits.method_sepay')
+  switch (provider) {
+    case 'cryptobot': return t('deposits.method_cryptobot')
+    case 'payos': return t('deposits.method_payos')
+    default: return t('deposits.method_sepay')
+  }
+}
+
+/** Màu badge cho từng provider. */
+function providerBadge(provider: string): string {
+  switch (provider) {
+    case 'cryptobot': return 'badge-blue'
+    case 'payos': return 'badge-green'
+    default: return 'badge-gray'
+  }
+}
+
+/** Nhãn cho cột định danh giao dịch phía provider (`provider_txn_id`). */
+function providerTxnLabel(provider: string): string {
+  switch (provider) {
+    case 'payos': return t('deposits.payos_link_id')
+    case 'sepay': return t('deposits.sepay_tx')
+    default: return t('deposits.txn_id')
+  }
 }
 
 async function fetchDeposits() {
@@ -234,14 +277,14 @@ onMounted(() => {
               <div class="text-xs" style="color: var(--muted)">ID: {{ deposit.telegram_id || deposit.user_id }}</div>
             </td>
             <td>
-              <span class="badge" :class="deposit.provider === 'cryptobot' ? 'badge-blue' : 'badge-gray'">
+              <span class="badge" :class="providerBadge(deposit.provider)">
                 {{ providerLabel(deposit.provider) }}
               </span>
-              <div v-if="deposit.provider === 'cryptobot' && deposit.usdt_amount" class="text-xs" style="color: var(--muted)">
-                {{ deposit.usdt_amount }} USDT
+              <div v-if="deposit.provider === 'cryptobot' && depositMeta(deposit).usdt_amount" class="text-xs" style="color: var(--muted)">
+                {{ depositMeta(deposit).usdt_amount }} USDT
               </div>
             </td>
-            <td><span class="chip-code">{{ deposit.transfer_code || '—' }}</span></td>
+            <td><span class="chip-code">{{ deposit.correlation_ref || '—' }}</span></td>
             <td class="text-right" style="font-weight: 500; color: var(--ink)">{{ formatMoney(deposit.amount, rate) }}</td>
             <td><span class="badge" :class="statusBadge(deposit.status)">{{ statusLabel(deposit.status) }}</span></td>
             <td class="text-xs" style="color: var(--muted); white-space: nowrap">{{ formatDate(deposit.created_at) }}</td>
@@ -297,7 +340,7 @@ onMounted(() => {
         <dl class="space-y-2.5 text-[13px]">
           <div class="flex items-center justify-between">
             <dt style="color: var(--muted)">{{ $t('deposits.transfer_code') }}</dt>
-            <dd><span class="chip-code">{{ selectedDeposit.transfer_code }}</span></dd>
+            <dd><span class="chip-code">{{ selectedDeposit.correlation_ref }}</span></dd>
           </div>
           <div class="flex items-center justify-between">
             <dt style="color: var(--muted)">{{ $t('deposits.col_amount') }}</dt>
@@ -306,18 +349,18 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <dt style="color: var(--muted)">{{ $t('deposits.col_method') }}</dt>
             <dd>
-              <span class="badge" :class="selectedDeposit.provider === 'cryptobot' ? 'badge-blue' : 'badge-gray'">
+              <span class="badge" :class="providerBadge(selectedDeposit.provider)">
                 {{ providerLabel(selectedDeposit.provider) }}
               </span>
             </dd>
           </div>
           <div v-if="selectedDeposit.provider === 'cryptobot'" class="flex items-center justify-between">
             <dt style="color: var(--muted)">{{ $t('deposits.usdt') }}</dt>
-            <dd style="color: var(--ink-soft)">{{ selectedDeposit.usdt_amount || '—' }} USDT</dd>
+            <dd style="color: var(--ink-soft)">{{ depositMeta(selectedDeposit).usdt_amount || '—' }} USDT</dd>
           </div>
           <div v-if="selectedDeposit.provider === 'cryptobot'" class="flex items-center justify-between">
             <dt style="color: var(--muted)">{{ $t('deposits.exchange_rate') }}</dt>
-            <dd style="color: var(--ink-soft)">{{ selectedDeposit.exchange_rate ? formatMoney(selectedDeposit.exchange_rate) + '/USDT' : '—' }}</dd>
+            <dd style="color: var(--ink-soft)">{{ depositMeta(selectedDeposit).exchange_rate ? formatMoney(depositMeta(selectedDeposit).exchange_rate!) + '/USDT' : '—' }}</dd>
           </div>
           <div class="flex items-center justify-between">
             <dt style="color: var(--muted)">{{ $t('deposits.col_status') }}</dt>
@@ -328,12 +371,12 @@ onMounted(() => {
             <dd style="color: var(--ink-soft)">{{ selectedDeposit.username || '—' }} ({{ selectedDeposit.telegram_id || selectedDeposit.user_id }})</dd>
           </div>
           <div class="flex items-center justify-between">
-            <dt style="color: var(--muted)">{{ $t('deposits.sepay_tx') }}</dt>
-            <dd class="mono text-xs" style="color: var(--ink-soft)">{{ selectedDeposit.sepay_transaction_id || '—' }}</dd>
+            <dt style="color: var(--muted)">{{ providerTxnLabel(selectedDeposit.provider) }}</dt>
+            <dd class="mono text-xs" style="color: var(--ink-soft)">{{ selectedDeposit.provider_txn_id || '—' }}</dd>
           </div>
           <div class="flex items-center justify-between">
             <dt style="color: var(--muted)">{{ $t('deposits.bank_ref') }}</dt>
-            <dd class="mono text-xs" style="color: var(--ink-soft)">{{ selectedDeposit.bank_ref || '—' }}</dd>
+            <dd class="mono text-xs" style="color: var(--ink-soft)">{{ depositMeta(selectedDeposit).bank_ref || '—' }}</dd>
           </div>
           <div style="border-top: 1px solid var(--border); padding-top: 0.625rem">
             <div class="flex items-center justify-between">

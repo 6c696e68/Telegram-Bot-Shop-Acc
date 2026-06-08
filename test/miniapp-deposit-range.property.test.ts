@@ -58,12 +58,12 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS deposits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    provider TEXT NOT NULL DEFAULT 'sepay' CHECK(provider IN ('sepay','cryptobot')),
-    transfer_code TEXT UNIQUE NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'sepay',
     amount INTEGER NOT NULL CHECK(amount > 0),
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
-    sepay_transaction_id TEXT,
-    bank_ref TEXT,
+    correlation_ref TEXT,
+    provider_txn_id TEXT,
+    metadata TEXT,
     completed_at TEXT,
     expired_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -271,15 +271,15 @@ describe('Property 13: Validate khoảng số tiền nạp', () => {
             expect(typeof body.data!.transfer_code).toBe('string')
             expect(body.data!.transfer_code.length).toBeGreaterThan(0)
 
-            // Sổ cái: đúng 1 bản ghi pending cho user, đúng amount, transfer_code khớp.
+            // Sổ cái: đúng 1 bản ghi pending cho user, đúng amount, correlation_ref khớp.
             const pending = await env.DB.prepare(
-              "SELECT id, amount, transfer_code, status FROM deposits WHERE user_id = ? AND status = 'pending'"
+              "SELECT id, amount, correlation_ref, status FROM deposits WHERE user_id = ? AND status = 'pending'"
             )
               .bind(userId)
-              .all<{ id: number; amount: number; transfer_code: string; status: string }>()
+              .all<{ id: number; amount: number; correlation_ref: string; status: string }>()
             expect(pending.results).toHaveLength(1)
             expect(pending.results[0].amount).toBe(amount)
-            expect(pending.results[0].transfer_code).toBe(body.data!.transfer_code)
+            expect(pending.results[0].correlation_ref).toBe(body.data!.transfer_code)
           } else {
             // --- Ngoài khoảng: 400 + message giới hạn + KHÔNG tạo deposit (Req 8.2) ---
             expect(res.status).toBe(400)

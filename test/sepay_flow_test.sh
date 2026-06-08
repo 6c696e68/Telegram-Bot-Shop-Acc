@@ -39,13 +39,13 @@ sepay() {
 seed_deposit() {
   local code="$1" amount="$2" age="${3:-0}"
   if [[ "$age" -gt 0 ]]; then
-    d1 "INSERT INTO deposits (user_id, transfer_code, amount, status, created_at) VALUES ($USER_ID, '$code', $amount, 'pending', datetime('now','-$age minutes'))" >/dev/null
+    d1 "INSERT INTO deposits (user_id, correlation_ref, amount, status, created_at) VALUES ($USER_ID, '$code', $amount, 'pending', datetime('now','-$age minutes'))" >/dev/null
   else
-    d1 "INSERT INTO deposits (user_id, transfer_code, amount, status) VALUES ($USER_ID, '$code', $amount, 'pending')" >/dev/null
+    d1 "INSERT INTO deposits (user_id, correlation_ref, amount, status) VALUES ($USER_ID, '$code', $amount, 'pending')" >/dev/null
   fi
 }
 
-dep_status() { d1_val "SELECT status s FROM deposits WHERE transfer_code='$1'" "s"; }
+dep_status() { d1_val "SELECT status s FROM deposits WHERE correlation_ref='$1'" "s"; }
 balance()    { d1_val "SELECT balance b FROM users WHERE id=$USER_ID" "b"; }
 
 echo "===== SePay flow test bắt đầu ====="

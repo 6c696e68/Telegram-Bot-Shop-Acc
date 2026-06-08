@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import fc from 'fast-check'
-import { methodsForRegion, isMethodAllowedForRegion } from '../src/services/payments/registry'
+import {
+  methodsForRegion,
+  isMethodAllowedForRegion,
+  isProviderEnabled,
+  enabledMethodsForRegion,
+  providerEnabledConfigKey,
+} from '../src/services/payments/registry'
 import { sePayProvider } from '../src/services/payments/sepay-provider'
 import { cryptoPayProvider } from '../src/services/payments/cryptopay-provider'
 import type { Region } from '../src/i18n/locales'
@@ -11,8 +17,8 @@ import type { ProviderId } from '../src/services/payments/types'
  * Property-based tests cho phương thức nạp theo vùng + phân tách provider/đơn vị.
  *
  * Validates: Requirements 7.7, 8.4, 13.2
- *  - Property 5 (Phân tách provider/đơn vị): deposit `sepay` luôn có `transfer_code` +
- *    đơn vị VND; deposit `cryptobot` luôn có `crypto_invoice_id` + `asset='USDT'` + USDT;
+ *  - Property 5 (Phân tách provider/đơn vị): deposit `sepay` luôn có `correlation_ref` +
+ *    đơn vị VND; deposit `cryptobot` luôn có `provider_txn_id` + `asset='USDT'` + USDT (metadata);
  *    không lẫn lộn.
  *  - Property 6 (Method hợp lệ theo vùng): `methodsForRegion` đúng theo vùng; provider
  *    ngoài danh sách của vùng bị từ chối (enforce `isMethodAllowedForRegion`).
@@ -38,17 +44,13 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS deposits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    provider TEXT NOT NULL DEFAULT 'sepay' CHECK(provider IN ('sepay','cryptobot')),
+    provider TEXT NOT NULL DEFAULT 'sepay',
     amount INTEGER NOT NULL CHECK(amount > 0),
     status TEXT NOT NULL DEFAULT 'pending'
       CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
-    transfer_code TEXT,
-    sepay_transaction_id TEXT,
-    bank_ref TEXT,
-    crypto_invoice_id TEXT,
-    asset TEXT,
-    usdt_amount TEXT,
-    exchange_rate INTEGER,
+    correlation_ref TEXT,
+    provider_txn_id TEXT,
+    metadata TEXT,
     completed_at TEXT,
     expired_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -99,19 +101,22 @@ async function seedUser(region: Region): Promise<{ id: number; telegramId: numbe
 
 async function getDeposit(depositId: number): Promise<{
   provider: string
-  transfer_code: string | null
-  crypto_invoice_id: string | null
+  correlation_ref: string | null
+  provider_txn_id: string | null
   asset: string | null
   usdt_amount: string | null
 }> {
   const row = await env.DB.prepare(
-    'SELECT provider, transfer_code, crypto_invoice_id, asset, usdt_amount FROM deposits WHERE id = ?'
+    `SELECT provider, correlation_ref, provider_txn_id,
+            json_extract(metadata, '$.asset') AS asset,
+            json_extract(metadata, '$.usdt_amount') AS usdt_amount
+     FROM deposits WHERE id = ?`
   )
     .bind(depositId)
     .first<{
       provider: string
-      transfer_code: string | null
-      crypto_invoice_id: string | null
+      correlation_ref: string | null
+      provider_txn_id: string | null
       asset: string | null
       usdt_amount: string | null
     }>()
@@ -150,14 +155,16 @@ describe('Property 6: Method hợp lệ theo vùng', () => {
    * methodsForRegion đúng theo vùng và provider ngoài danh sách bị từ chối.
    */
   it('methodsForRegion + isMethodAllowedForRegion phản ánh đúng chính sách vùng', () => {
-    expect(methodsForRegion('vietnam')).toEqual(['sepay', 'cryptobot'])
+    expect(methodsForRegion('vietnam')).toEqual(['sepay', 'payos', 'cryptobot'])
     expect(methodsForRegion('international')).toEqual(['cryptobot'])
 
-    // vietnam cho cả hai; international chỉ cryptobot (sepay bị từ chối).
+    // vietnam cho cả ba; international chỉ cryptobot (sepay + payos bị từ chối).
     expect(isMethodAllowedForRegion('vietnam', 'sepay')).toBe(true)
+    expect(isMethodAllowedForRegion('vietnam', 'payos')).toBe(true)
     expect(isMethodAllowedForRegion('vietnam', 'cryptobot')).toBe(true)
     expect(isMethodAllowedForRegion('international', 'cryptobot')).toBe(true)
     expect(isMethodAllowedForRegion('international', 'sepay')).toBe(false)
+    expect(isMethodAllowedForRegion('international', 'payos')).toBe(false)
   })
 
   /**
@@ -166,7 +173,7 @@ describe('Property 6: Method hợp lệ theo vùng', () => {
    */
   it('isMethodAllowedForRegion nhất quán với methodsForRegion cho mọi cặp', () => {
     const regions: Region[] = ['vietnam', 'international']
-    const providers: ProviderId[] = ['sepay', 'cryptobot']
+    const providers: ProviderId[] = ['sepay', 'payos', 'cryptobot']
     fc.assert(
       fc.property(fc.constantFrom(...regions), fc.constantFrom(...providers), (region, provider) => {
         const inList = methodsForRegion(region).includes(provider)
@@ -180,9 +187,9 @@ describe('Property 6: Method hợp lệ theo vùng', () => {
 describe('Property 5: Phân tách provider/đơn vị', () => {
   /**
    * **Validates: Requirements 7.7, 13.2**
-   * Deposit SePay luôn có transfer_code + đơn vị VND; KHÔNG có crypto_invoice_id.
+   * Deposit SePay luôn có correlation_ref (transfer_code, VND); KHÔNG có provider_txn_id lúc tạo.
    */
-  it('SePay deposit luôn có transfer_code (VND), không có crypto_invoice_id', async () => {
+  it('SePay deposit luôn có correlation_ref (VND), không có provider_txn_id', async () => {
     expect(sePayProvider.amountUnit).toBe('vnd')
     await fc.assert(
       fc.asyncProperty(fc.integer({ min: 20_000, max: 1_000_000 }), async (amountVnd) => {
@@ -208,8 +215,8 @@ describe('Property 5: Phân tách provider/đơn vị', () => {
 
         const dep = await getDeposit(result.output.depositId)
         expect(dep.provider).toBe('sepay')
-        expect(dep.transfer_code).toBeTruthy()
-        expect(dep.crypto_invoice_id).toBeNull()
+        expect(dep.correlation_ref).toBeTruthy()
+        expect(dep.provider_txn_id).toBeNull()
       }),
       { numRuns: 25 }
     )
@@ -217,9 +224,9 @@ describe('Property 5: Phân tách provider/đơn vị', () => {
 
   /**
    * **Validates: Requirements 7.7, 13.2**
-   * Deposit CryptoBot luôn có crypto_invoice_id + asset='USDT' + usdt_amount; KHÔNG có transfer_code.
+   * Deposit CryptoBot luôn có provider_txn_id (invoice id) + asset='USDT' + usdt_amount (qua metadata).
    */
-  it('CryptoBot deposit luôn có invoice_id + USDT, không có transfer_code', async () => {
+  it('CryptoBot deposit luôn có provider_txn_id + USDT (metadata)', async () => {
     expect(cryptoPayProvider.amountUnit).toBe('usdt')
 
     // Mock Crypto Pay createInvoice → trả invoice hợp lệ.
@@ -271,12 +278,136 @@ describe('Property 5: Phân tách provider/đơn vị', () => {
 
         const dep = await getDeposit(result.output.depositId)
         expect(dep.provider).toBe('cryptobot')
-        expect(dep.crypto_invoice_id).toBeTruthy()
+        expect(dep.provider_txn_id).toBeTruthy()
         expect(dep.asset).toBe('USDT')
         expect(dep.usdt_amount).toBe(String(usdt))
-        expect(dep.transfer_code).toBeNull()
       }),
       { numRuns: 25 }
+    )
+  })
+})
+
+/** Ghi (hoặc ghi đè) một giá trị `system_config` để điều khiển cờ bật provider. */
+async function setConfig(key: string, value: string): Promise<void> {
+  await env.DB.prepare(
+    'INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)'
+  )
+    .bind(key, value)
+    .run()
+}
+
+/** Chuẩn hoá giống registry: trim + lowercase, bật khi '1' hoặc 'true'. */
+function expectedEnabled(raw: string): boolean {
+  const norm = raw.trim().toLowerCase()
+  return norm === '1' || norm === 'true'
+}
+
+// Feature: payos-deposit, Property 16
+describe('Property 16: Enabled flag normalization governs availability', () => {
+  /**
+   * **Validates: Requirements 10.1, 10.2, 10.3, 10.6**
+   * Với mọi giá trị thô của `payment_payos_enabled`, `isProviderEnabled('payos')` đúng
+   * KHI VÀ CHỈ KHI giá trị sau chuẩn hoá (trim + lowercase) là '1' hoặc 'true'.
+   */
+  it('isProviderEnabled(payos) = (normalize(raw) ∈ {1,true}) cho mọi raw value', async () => {
+    // Sinh raw value: phủ token có nghĩa (1/true/0/false/'') + biến thể hoa/thường +
+    // khoảng trắng bao quanh + chuỗi rác bất kỳ.
+    const meaningful = fc.constantFrom(
+      '1',
+      '0',
+      'true',
+      'false',
+      'TRUE',
+      'True',
+      'FALSE',
+      'yes',
+      'no',
+      'on',
+      'off',
+      '',
+      '2',
+      'enabled'
+    )
+    const ws = fc.constantFrom('', ' ', '  ', '\t', '\n', ' \t ', '\r\n')
+    const rawArb = fc.oneof(
+      fc.tuple(ws, meaningful, ws).map(([a, b, c]) => `${a}${b}${c}`),
+      fc.string()
+    )
+
+    await fc.assert(
+      fc.asyncProperty(rawArb, async (raw) => {
+        await setConfig(providerEnabledConfigKey('payos'), raw)
+        const enabled = await isProviderEnabled(env.DB, 'payos')
+        expect(enabled).toBe(expectedEnabled(raw))
+      }),
+      { numRuns: 60 }
+    )
+  })
+
+  /**
+   * **Validates: Requirements 10.6**
+   * Chưa cấu hình `payment_payos_enabled` → provider bị tắt (mặc định an toàn).
+   */
+  it('payos chưa cấu hình → disabled', async () => {
+    await cleanTables()
+    await seedConfig()
+    expect(await isProviderEnabled(env.DB, 'payos')).toBe(false)
+  })
+
+  /**
+   * **Validates: Requirements 10.1**
+   * Provider luôn-bật (sepay) → true bất kể cờ; điều này phân biệt với provider mới.
+   */
+  it('sepay luôn enabled bất kể giá trị cờ', async () => {
+    await setConfig(providerEnabledConfigKey('sepay'), '0')
+    expect(await isProviderEnabled(env.DB, 'sepay')).toBe(true)
+  })
+})
+
+// Feature: payos-deposit, Property 17
+describe('Property 17: PayOS appears only when region-allowed and enabled', () => {
+  /**
+   * **Validates: Requirements 10.4, 11.1, 11.2, 11.3, 11.4**
+   * `enabledMethodsForRegion` chứa 'payos' KHI VÀ CHỈ KHI vùng cho phép payos
+   * (region.METHODS_BY_REGION chứa payos, tức 'vietnam') VÀ cờ payos bật.
+   * Không bao giờ với 'international'. SePay luôn có mặt ở 'vietnam' bất kể cờ.
+   */
+  it('payos ∈ enabledMethodsForRegion ⇔ (region cho phép payos) ∧ (cờ bật)', async () => {
+    const regions: Region[] = ['vietnam', 'international']
+    const flagArb = fc.constantFrom('1', 'true', ' TRUE ', '0', 'false', '', 'garbage')
+
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom(...regions),
+        flagArb,
+        async (region, flag) => {
+          await cleanTables()
+          await seedConfig()
+          await setConfig(providerEnabledConfigKey('payos'), flag)
+
+          const methods = await enabledMethodsForRegion(env.DB, region)
+
+          const regionAllowsPayos = isMethodAllowedForRegion(region, 'payos')
+          const flagOn = expectedEnabled(flag)
+          // Property 17 core: payos hiển thị ⇔ region cho phép ∧ cờ bật.
+          expect(methods.includes('payos')).toBe(regionAllowsPayos && flagOn)
+
+          // International không bao giờ có payos.
+          if (region === 'international') {
+            expect(methods.includes('payos')).toBe(false)
+          }
+
+          // sepay (always-enabled) luôn có mặt ở vietnam, bất kể cờ payos.
+          if (region === 'vietnam') {
+            expect(methods.includes('sepay')).toBe(true)
+          }
+
+          // Kết quả luôn là tập con (giữ thứ tự) của methodsForRegion(region).
+          const ordered = methodsForRegion(region).filter((m) => methods.includes(m))
+          expect(methods).toEqual(ordered)
+        }
+      ),
+      { numRuns: 40 }
     )
   })
 })

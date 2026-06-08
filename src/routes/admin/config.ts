@@ -24,7 +24,13 @@ const configRoutes = new Hono<ConfigEnv>()
  * báo "đã đặt hay chưa" qua `secrets_set`. PUT bỏ qua giá trị rỗng cho các key này
  * (rỗng = giữ nguyên — vì GET luôn mask thành rỗng, lưu form sẽ không vô tình xoá secret).
  */
-const SECRET_CONFIG_KEYS = new Set(['bot_token', 'telegram_secret_token', 'sepay_api_key'])
+const SECRET_CONFIG_KEYS = new Set([
+  'bot_token',
+  'telegram_secret_token',
+  'sepay_api_key',
+  'payos_api_key',
+  'payos_checksum_key',
+])
 
 // All config routes require JWT auth
 configRoutes.use('/*', jwtAuth)
@@ -61,6 +67,7 @@ configRoutes.get('/', async (c) => {
     bank_owner: c.env.BANK_OWNER,
     admin_ids: c.env.ADMIN_IDS,
     crypto_pay_api_token: c.env.CRYPTO_PAY_API_TOKEN,
+    payos_client_id: c.env.PAYOS_CLIENT_ID,
   }
   for (const [key, envValue] of Object.entries(envFallback)) {
     const current = configs[key]
@@ -74,6 +81,8 @@ configRoutes.get('/', async (c) => {
     bot_token: c.env.BOT_TOKEN,
     telegram_secret_token: c.env.TELEGRAM_SECRET_TOKEN,
     sepay_api_key: c.env.SEPAY_API_KEY,
+    payos_api_key: c.env.PAYOS_API_KEY,
+    payos_checksum_key: c.env.PAYOS_CHECKSUM_KEY,
   }
   for (const key of SECRET_CONFIG_KEYS) {
     if (!secretsSet[key] && (secretEnv[key]?.trim() ?? '') !== '') {

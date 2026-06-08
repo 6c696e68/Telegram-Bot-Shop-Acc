@@ -31,7 +31,7 @@ export interface MeDto {
 
 /** `GET /api/app/deposit-methods` — phương thức nạp khả dụng theo vùng (Req 8.3). */
 export interface DepositMethodDto {
-  id: 'sepay' | 'cryptobot'
+  id: 'sepay' | 'cryptobot' | 'payos'
   amount_unit: 'vnd' | 'usdt'
 }
 
@@ -44,6 +44,16 @@ export interface CryptoDepositCreatedDto {
   invoice_id: string
   credit_vnd: number // VND quy đổi để user biết ~bao nhiêu
   credit_vnd_display: string // VND quy đổi để user biết ~bao nhiêu
+  status: 'pending'
+}
+
+/** `POST /api/app/deposits` (method=payos) — link thanh toán PayOS vừa tạo. */
+export interface PayosDepositCreatedDto {
+  deposit_id: number
+  method: 'payos'
+  checkout_url: string
+  amount: number
+  amount_display: string
   status: 'pending'
 }
 
@@ -108,7 +118,7 @@ export interface DepositCreatedDto {
 /** `GET /api/app/deposits/:id` — trạng thái yêu cầu nạp để frontend poll (Req 8.5, 9.1). */
 export interface DepositStatusDto {
   deposit_id: number
-  provider: 'sepay' | 'cryptobot'
+  provider: 'sepay' | 'cryptobot' | 'payos'
   status: 'pending' | 'completed' | 'expired' | 'cancelled' | 'awaiting_credit'
   amount: number
   new_balance?: number // chỉ có khi status='completed'

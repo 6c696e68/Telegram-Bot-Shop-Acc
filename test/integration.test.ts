@@ -80,11 +80,12 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS deposits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    transfer_code TEXT UNIQUE NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'sepay',
     amount INTEGER NOT NULL CHECK(amount > 0),
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled')),
-    sepay_transaction_id TEXT,
-    bank_ref TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
+    correlation_ref TEXT,
+    provider_txn_id TEXT,
+    metadata TEXT,
     completed_at TEXT,
     expired_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -374,7 +375,7 @@ describe('Integration: Full Deposit Flow (SePay webhook → balance update)', ()
     // Setup: create pending deposit
     await db
       .prepare(
-        "INSERT INTO deposits (user_id, transfer_code, amount, status, created_at) VALUES (?, ?, ?, 'pending', datetime('now'))"
+        "INSERT INTO deposits (user_id, correlation_ref, amount, status, created_at) VALUES (?, ?, ?, 'pending', datetime('now'))"
       )
       .bind(user!.id, transferCode, depositAmount)
       .run()
@@ -411,11 +412,11 @@ describe('Integration: Full Deposit Flow (SePay webhook → balance update)', ()
 
     // Verify: deposit status = 'completed'
     const deposit = await db
-      .prepare('SELECT * FROM deposits WHERE transfer_code = ?')
+      .prepare('SELECT * FROM deposits WHERE correlation_ref = ?')
       .bind(transferCode)
-      .first<{ status: string; sepay_transaction_id: string; completed_at: string }>()
+      .first<{ status: string; provider_txn_id: string; completed_at: string }>()
     expect(deposit!.status).toBe('completed')
-    expect(deposit!.sepay_transaction_id).toBe('9876543')
+    expect(deposit!.provider_txn_id).toBe('9876543')
     expect(deposit!.completed_at).not.toBeNull()
 
     // Verify: user balance increased

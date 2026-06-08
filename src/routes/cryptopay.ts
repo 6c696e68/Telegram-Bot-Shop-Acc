@@ -6,7 +6,7 @@
  *    đọc raw body và lưu vào `c.get('rawBody')` — handler KHÔNG đọc lại body (tránh
  *    "body already consumed") mà `JSON.parse` từ raw đã verify.
  *  - Chỉ xử lý update `invoice_paid`; loại khác bỏ qua (trả 200).
- *  - Idempotency theo `crypto_invoice_id` (R11.2).
+ *  - Idempotency theo `provider_txn_id` (invoice id) (R11.2).
  *  - Tỷ giá thiếu/không hợp lệ → `markAwaitingCredit`, KHÔNG mất tiền (R12.4).
  *  - Lỗi atomic tạm thời (`db_error`) → trả 500 để Crypto Pay retry callback (R14.5).
  *
@@ -38,7 +38,7 @@ const EXCHANGE_RATE_CONFIG = 'exchange_rate_usdt_vnd'
  * Tham chiếu: https://help.crypt.bot/crypto-pay-api#webhook-updates
  */
 interface CryptoPayInvoicePayload {
-  /** Định danh hoá đơn (số nguyên) — khớp `deposits.crypto_invoice_id` (dạng chuỗi). */
+  /** Định danh hoá đơn (số nguyên) — khớp `deposits.provider_txn_id` (dạng chuỗi). */
   invoice_id: number
   /** Trạng thái hoá đơn; webhook `invoice_paid` mang `status='paid'`. */
   status?: string
@@ -120,11 +120,12 @@ cryptoPayWebhook.post('/cryptopay', async (c) => {
     return c.json({ success: true })
   }
 
-  // Tra deposit theo crypto_invoice_id để lấy id/user/status thực tế trong DB.
+  // Tra deposit theo provider_txn_id (invoice id) để lấy id/user/status thực tế trong DB.
+  // USDT đã ghi đọc lại từ cột chung metadata qua json_extract khi cần.
   const deposit = await db
     .prepare(
-      `SELECT id, user_id, status, usdt_amount
-       FROM deposits WHERE crypto_invoice_id = ?`
+      `SELECT id, user_id, status, json_extract(metadata, '$.usdt_amount') AS usdt_amount
+       FROM deposits WHERE provider = 'cryptobot' AND provider_txn_id = ?`
     )
     .bind(cryptoInvoiceId)
     .first<CryptoDepositRow>()
@@ -157,7 +158,7 @@ cryptoPayWebhook.post('/cryptopay', async (c) => {
       '[CryptoPay] Tỷ giá exchange_rate_usdt_vnd thiếu/không hợp lệ; giữ awaiting_credit cho deposit:',
       deposit.id
     )
-    await markAwaitingCredit(db, deposit.id, usdtAmountStr)
+    await markAwaitingCredit(db, deposit.id, { usdt_amount: usdtAmountStr })
     return c.json({ success: true })
   }
 
@@ -171,9 +172,13 @@ cryptoPayWebhook.post('/cryptopay', async (c) => {
     userId: deposit.user_id,
     creditVnd,
     provider: 'cryptobot',
-    cryptoInvoiceId,
-    usdtAmount: usdtAmountStr,
-    exchangeRate: rate,
+    providerTxnId: cryptoInvoiceId,
+    correlationRef: cryptoInvoiceId,
+    metadata: {
+      asset: 'USDT',
+      usdt_amount: usdtAmountStr,
+      exchange_rate: rate,
+    },
   })
 
   if (!result.success) {

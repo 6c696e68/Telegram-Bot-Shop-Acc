@@ -28,7 +28,13 @@ import { readDepositLimits } from '../../services/deposit-limits'
 import { readSystemConfigValue } from '../../utils/system-config'
 import { sePayProvider, buildDepositCaption } from '../../services/payments/sepay-provider'
 import { cryptoPayProvider } from '../../services/payments/cryptopay-provider'
-import { isMethodAllowedForRegion, enabledMethodsForRegion, isProviderEnabled } from '../../services/payments/registry'
+import { payOsProvider } from '../../services/payments/payos-provider'
+import {
+  isMethodAllowedForRegion,
+  enabledMethodsForRegion,
+  isProviderEnabled,
+  getProvider,
+} from '../../services/payments/registry'
 import type { ProviderId } from '../../services/payments/types'
 import { resolveLang } from '../../services/user-locale'
 import { t, type Lang } from '../i18n'
@@ -127,22 +133,21 @@ export async function handleDepositMethod(
     return
   }
 
-  // Enforce phương thức theo vùng (R8.4): method ngoài danh sách → từ chối.
-  if (
-    (method !== 'sepay' && method !== 'cryptobot') ||
-    !isMethodAllowedForRegion(user.region, method)
-  ) {
+  // Validate phương thức theo registry (provider-agnostic): chấp nhận mọi ProviderId đã
+  // đăng ký + thuộc vùng, KHÔNG còn allowlist cứng sepay/cryptobot (R20.1, R20.2, R20.3).
+  const provider = getProvider(method as ProviderId)
+  if (!provider || !isMethodAllowedForRegion(user.region, provider.id)) {
     await sendMessage(botToken, chatId, t(lang, 'deposit.method.unavailable'))
     return
   }
 
-  // Enforce cờ bật provider (R7.6): provider mới chưa được admin mở → từ chối.
-  if (!(await isProviderEnabled(db, method))) {
+  // Enforce cờ bật provider (R10.5): provider chưa được admin mở → không khả dụng, không tạo deposit.
+  if (!(await isProviderEnabled(db, provider.id))) {
     await sendMessage(botToken, chatId, t(lang, 'deposit.method.unavailable'))
     return
   }
 
-  await startDepositMethod(db, botToken, chatId, telegramId, method, env, lang, user, messageId)
+  await startDepositMethod(db, botToken, chatId, telegramId, provider.id, env, lang, user, messageId)
 }
 
 /** Điều phối vào flow của phương thức cụ thể. */
@@ -159,6 +164,10 @@ async function startDepositMethod(
 ): Promise<void> {
   if (method === 'cryptobot') {
     await startCryptoDeposit(db, botToken, chatId, telegramId, lang, messageId)
+    return
+  }
+  if (method === 'payos') {
+    await startPayOsDeposit(db, botToken, chatId, telegramId, lang, messageId)
     return
   }
   await startSepayDeposit(db, botToken, chatId, telegramId, lang, messageId)
@@ -254,6 +263,43 @@ async function startCryptoDeposit(
       ]),
     }
   )
+}
+
+/**
+ * PayOS flow: yêu cầu user nhập số tiền VND (nhập qua text, KHÔNG dùng grid preset
+ * `dep:{amount}` vì callback đó route về SePay). Theo mẫu CryptoBot dùng session step
+ * RIÊNG `'payos_amount'` (KHÔNG reuse `'amount'` vì `handleDepositAmount` gắn cứng
+ * `sePayProvider`).
+ * Session: flow='deposit', step='payos_amount'.
+ */
+async function startPayOsDeposit(
+  db: D1Database,
+  botToken: string,
+  chatId: number,
+  telegramId: number,
+  lang: Lang,
+  messageId?: number
+): Promise<void> {
+  setSession(telegramId, 'deposit', 'payos_amount')
+
+  // Hạn mức VND lấy từ system_config (đồng bộ với SePay/Mini App/webhook).
+  const { min: minAmount } = await readDepositLimits(db)
+
+  const text = [
+    t(lang, 'deposit.title'),
+    '',
+    t(lang, 'deposit.payos.prompt'),
+    '',
+    t(lang, 'deposit.amount.hint_min', { min: formatMoney(minAmount, lang) }),
+    t(lang, 'deposit.amount.hint_cancel'),
+  ].join('\n')
+
+  await editOrSendMessage(botToken, chatId, messageId, text, {
+    parse_mode: 'HTML',
+    reply_markup: buildInlineKeyboard([
+      [{ text: t(lang, 'deposit.cancel'), callback_data: 'dep:cancel' }],
+    ]),
+  })
 }
 
 /**
@@ -440,6 +486,86 @@ export async function handleCryptoDepositAmount(
 }
 
 /**
+ * Xử lý nhập số tiền VND (session step='payos_amount') → tạo Payment_Link PayOS qua
+ * `payOsProvider.createDeposit` + gửi nút inline mở `checkout_url`.
+ */
+export async function handlePayOsDepositAmount(
+  db: D1Database,
+  botToken: string,
+  chatId: number,
+  telegramId: number,
+  amount: number,
+  env: Bindings
+): Promise<void> {
+  const user = await loadDepositUser(db, telegramId)
+  const lang = await resolveLang(db, { language: user?.language ?? null })
+
+  if (!user) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.account_not_found'))
+    return
+  }
+
+  const result = await payOsProvider.createDeposit({
+    db,
+    env,
+    userId: user.id,
+    telegramId,
+    rawAmount: amount,
+    lang,
+    channel: 'bot',
+  })
+
+  if (!result.success) {
+    const err = result.error
+    if (err.type === 'limit') {
+      await sendMessage(botToken, chatId, err.message, { parse_mode: 'HTML' })
+      return
+    }
+    if (err.type === 'policy') {
+      if (shouldSendNotice(`dep:${telegramId}`)) {
+        const message = depositPolicyMessage(
+          {
+            allowed: false,
+            reason: err.reason,
+            retryAfterMs: err.retryAfterMs,
+          },
+          lang
+        )
+        await sendMessage(botToken, chatId, message, { parse_mode: 'HTML' })
+      }
+      return
+    }
+    // provider_error (gồm tạo Payment_Link thất bại — R14.3): không tạo pending, báo lỗi chung.
+    await sendMessage(botToken, chatId, err.message, { parse_mode: 'HTML' })
+    return
+  }
+
+  const { payos } = result.output
+  if (!payos) {
+    await sendMessage(botToken, chatId, t(lang, 'deposit.generic_error'))
+    return
+  }
+
+  // Gửi nút inline mở trang thanh toán PayOS (R20.4). KHÔNG kèm nút Huỷ:
+  // PayOS không cho huỷ thủ công (R23.1) — giữ pending để TTL→expired vẫn cộng được
+  // nếu thanh toán xác nhận tới sau.
+  await sendMessage(
+    botToken,
+    chatId,
+    t(lang, 'deposit.payos.created', { amount: formatMoney(payos.amountVnd, lang) }),
+    {
+      parse_mode: 'HTML',
+      reply_markup: buildInlineKeyboard([
+        [{ text: t(lang, 'deposit.payos.pay_button'), url: payos.checkoutUrl }],
+      ]),
+    }
+  )
+
+  // Clear session — user đã nhận liên kết thanh toán.
+  clearSession(telegramId)
+}
+
+/**
  * Huỷ deposit đang chờ.
  * Callback: `dep:cancel` hoặc lệnh /huy
  */
@@ -458,27 +584,50 @@ export async function handleDepositCancel(
     return
   }
 
-  // Tìm deposit pending của user (mọi provider).
+  // Tìm deposit pending CÓ THỂ HUỶ (mọi provider TRỪ payos). PayOS không cho huỷ thủ công
+  // (R23) — nếu chọn nhầm deposit payos mới nhất sẽ chặn oan việc huỷ một deposit
+  // sepay/cryptobot cũ hơn. Vì vậy ưu tiên huỷ deposit non-payos mới nhất.
   const pendingDeposit = await db
     .prepare(
-      `SELECT id, amount, transfer_code FROM deposits WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`
+      `SELECT id, amount, correlation_ref, provider FROM deposits WHERE user_id = ? AND status = 'pending' AND provider != 'payos' ORDER BY created_at DESC LIMIT 1`
     )
     .bind(user.id)
-    .first<Pick<DbDeposit, 'id' | 'amount' | 'transfer_code'>>()
+    .first<Pick<DbDeposit, 'id' | 'amount' | 'correlation_ref' | 'provider'>>()
 
   // Clear session
   clearSession(telegramId)
 
   if (!pendingDeposit) {
+    // Không có deposit huỷ được. Nếu user vẫn còn deposit payos pending → báo PayOS không
+    // cho huỷ (R23); ngược lại báo không có deposit nào đang chờ.
+    const payosPending = await db
+      .prepare(
+        `SELECT id FROM deposits WHERE user_id = ? AND status = 'pending' AND provider = 'payos' LIMIT 1`
+      )
+      .bind(user.id)
+      .first<{ id: number }>()
+
+    if (payosPending) {
+      await editOrSendMessage(
+        botToken,
+        chatId,
+        messageId,
+        t(lang, 'deposit.cancel.payos_not_allowed'),
+        { parse_mode: 'HTML' }
+      )
+      return
+    }
+
     await editOrSendMessage(botToken, chatId, messageId, t(lang, 'deposit.cancel.none'), {
       parse_mode: 'HTML',
     })
     return
   }
 
-  // Cancel deposit
+  // Cancel deposit (non-payos) — guard provider != 'payos' để chắc chắn không bao giờ
+  // huỷ một deposit payos (R23.2), kể cả khi có race thay đổi trạng thái.
   await db
-    .prepare(`UPDATE deposits SET status = 'cancelled' WHERE id = ?`)
+    .prepare(`UPDATE deposits SET status = 'cancelled' WHERE id = ? AND provider != 'payos'`)
     .bind(pendingDeposit.id)
     .run()
 
@@ -486,8 +635,8 @@ export async function handleDepositCancel(
     t(lang, 'deposit.cancel.done'),
     '',
     t(lang, 'deposit.cancel.amount', { amount: formatMoney(pendingDeposit.amount, lang) }),
-    pendingDeposit.transfer_code
-      ? t(lang, 'deposit.cancel.code', { code: pendingDeposit.transfer_code })
+    pendingDeposit.correlation_ref
+      ? t(lang, 'deposit.cancel.code', { code: pendingDeposit.correlation_ref })
       : '',
     '',
     t(lang, 'deposit.cancel.back_hint'),

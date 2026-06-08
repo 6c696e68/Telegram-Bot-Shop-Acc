@@ -65,12 +65,12 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS deposits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    provider TEXT NOT NULL DEFAULT 'sepay' CHECK(provider IN ('sepay','cryptobot')),
-    transfer_code TEXT UNIQUE NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'sepay',
     amount INTEGER NOT NULL CHECK(amount > 0),
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
-    sepay_transaction_id TEXT,
-    bank_ref TEXT,
+    correlation_ref TEXT,
+    provider_txn_id TEXT,
+    metadata TEXT,
     completed_at TEXT,
     expired_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -370,7 +370,7 @@ describe('Build & serve — đồng bộ tin nhắn bot đúng tham số (Req 10
     const user = await db.prepare('SELECT id FROM users WHERE telegram_id = ?').bind(telegramId).first<{ id: number }>()
     await db
       .prepare(
-        "INSERT INTO deposits (user_id, transfer_code, amount, status, created_at) VALUES (?, ?, ?, 'pending', datetime('now'))"
+        "INSERT INTO deposits (user_id, correlation_ref, amount, status, created_at) VALUES (?, ?, ?, 'pending', datetime('now'))"
       )
       .bind(user!.id, transferCode, depositAmount)
       .run()
@@ -407,7 +407,7 @@ describe('Build & serve — đồng bộ tin nhắn bot đúng tham số (Req 10
 
     // Deposit đã completed + số dư cộng đúng (tiền đề cho thông báo Req 10.2).
     const deposit = await db
-      .prepare('SELECT status FROM deposits WHERE transfer_code = ?')
+      .prepare('SELECT status FROM deposits WHERE correlation_ref = ?')
       .bind(transferCode)
       .first<{ status: string }>()
     expect(deposit!.status).toBe('completed')

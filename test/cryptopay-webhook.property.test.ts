@@ -64,17 +64,13 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS deposits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    provider TEXT NOT NULL DEFAULT 'sepay' CHECK(provider IN ('sepay','cryptobot')),
+    provider TEXT NOT NULL DEFAULT 'sepay',
     amount INTEGER NOT NULL CHECK(amount > 0),
     status TEXT NOT NULL DEFAULT 'pending'
       CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
-    transfer_code TEXT,
-    sepay_transaction_id TEXT,
-    bank_ref TEXT,
-    crypto_invoice_id TEXT,
-    asset TEXT,
-    usdt_amount TEXT,
-    exchange_rate INTEGER,
+    correlation_ref TEXT,
+    provider_txn_id TEXT,
+    metadata TEXT,
     completed_at TEXT,
     expired_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -132,10 +128,10 @@ async function seedCryptoDeposit(
 ): Promise<{ depositId: number; invoiceId: string }> {
   const invoiceId = String(Math.floor(Math.random() * 2_000_000_000))
   await env.DB.prepare(
-    `INSERT INTO deposits (user_id, provider, amount, status, crypto_invoice_id, asset, created_at)
-     VALUES (?, 'cryptobot', ?, ?, ?, 'USDT', datetime('now'))`
+    `INSERT INTO deposits (user_id, provider, amount, status, correlation_ref, provider_txn_id, metadata, created_at)
+     VALUES (?, 'cryptobot', ?, ?, ?, ?, ?, datetime('now'))`
   )
-    .bind(userId, amount, status, invoiceId)
+    .bind(userId, amount, status, invoiceId, invoiceId, JSON.stringify({ asset: 'USDT' }))
     .run()
   const row = await env.DB.prepare('SELECT MAX(id) as id FROM deposits').first<{ id: number }>()
   return { depositId: row!.id, invoiceId }
@@ -155,7 +151,10 @@ async function getDeposit(depositId: number): Promise<{
   usdt_amount: string | null
 }> {
   const row = await env.DB.prepare(
-    'SELECT status, amount, exchange_rate, usdt_amount FROM deposits WHERE id = ?'
+    `SELECT status, amount,
+            json_extract(metadata, '$.exchange_rate') AS exchange_rate,
+            json_extract(metadata, '$.usdt_amount') AS usdt_amount
+     FROM deposits WHERE id = ?`
   )
     .bind(depositId)
     .first<{ status: string; amount: number; exchange_rate: number | null; usdt_amount: string | null }>()

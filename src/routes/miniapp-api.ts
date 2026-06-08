@@ -28,6 +28,7 @@ import type {
   PurchaseResultDto,
   DepositCreatedDto,
   CryptoDepositCreatedDto,
+  PayosDepositCreatedDto,
   DepositMethodDto,
   DepositStatusDto,
   OrderListItemDto,
@@ -48,6 +49,7 @@ import { depositPolicyMessage } from '../services/deposit-policy'
 import { resolveBotToken } from '../services/telegram-config'
 import { sePayProvider, buildDepositCaption } from '../services/payments/sepay-provider'
 import { cryptoPayProvider } from '../services/payments/cryptopay-provider'
+import { payOsProvider } from '../services/payments/payos-provider'
 import { isMethodAllowedForRegion, enabledMethodsForRegion, isProviderEnabled } from '../services/payments/registry'
 import type { ProviderId } from '../services/payments/types'
 
@@ -274,6 +276,7 @@ miniAppApi.get('/deposit-methods', async (c) => {
   const amountUnitByProvider: Record<ProviderId, 'vnd' | 'usdt'> = {
     sepay: 'vnd',
     cryptobot: 'usdt',
+    payos: 'vnd',
   }
 
   // Chỉ provider đã được bật (R7.6) + thuộc vùng (R8.3).
@@ -546,7 +549,8 @@ miniAppApi.post('/deposits', async (c) => {
 
   const amount = Number(payload.amount)
   // method mặc định 'sepay' để giữ tương thích client cũ (chỉ gửi {amount}).
-  const method: ProviderId = payload.method === 'cryptobot' ? 'cryptobot' : 'sepay'
+  const method: ProviderId =
+    payload.method === 'cryptobot' ? 'cryptobot' : payload.method === 'payos' ? 'payos' : 'sepay'
 
   // Enforce phương thức theo vùng (R8.4). Region chưa xác định → bắt onboarding.
   if (user.region === null) {
@@ -572,7 +576,8 @@ miniAppApi.post('/deposits', async (c) => {
     return c.json(unavailable, 400)
   }
 
-  const provider = method === 'cryptobot' ? cryptoPayProvider : sePayProvider
+  const provider =
+    method === 'cryptobot' ? cryptoPayProvider : method === 'payos' ? payOsProvider : sePayProvider
 
   // Ngôn ngữ hiển thị của user (đã resolve) — message lỗi/hạn mức trả về theo lang (R4.2).
   const depositLang = await resolveLang(c.env.DB, user)
@@ -637,6 +642,29 @@ miniAppApi.post('/deposits', async (c) => {
       status: 'pending',
     }
     const body: ApiResponse<CryptoDepositCreatedDto> = { success: true, data, error: null }
+    return c.json(body)
+  }
+
+  // --- Nhánh PayOS: trả checkout_url (Req 18.4, 18.5, 8.4) ---
+  if (method === 'payos') {
+    const { depositId, payos } = result.output
+    if (!payos) {
+      const failed: ApiResponse<null> = {
+        success: false,
+        data: null,
+        error: t(depositLang, 'deposit.generic_error'),
+      }
+      return c.json(failed, 500)
+    }
+    const data: PayosDepositCreatedDto = {
+      deposit_id: depositId,
+      method: 'payos',
+      checkout_url: payos.checkoutUrl,
+      amount,
+      amount_display: formatMoney(amount, depositLang),
+      status: 'pending',
+    }
+    const body: ApiResponse<PayosDepositCreatedDto> = { success: true, data, error: null }
     return c.json(body)
   }
 
@@ -760,7 +788,9 @@ miniAppApi.get('/deposits/:id', async (c) => {
  *
  * `:id` parse sang integer — không hợp lệ → 404. Deposit không tồn tại / không thuộc
  * người mua → 404 `not_found` (không phân biệt, tránh dò ID). Deposit không còn `pending`
- * → 409 `not_pending`.
+ * → 409 `not_pending`. Deposit `provider = 'payos'` → 409 `payos_not_cancellable` (R23):
+ * không cho huỷ thủ công, giữ nguyên `pending` để TTL→`expired` vẫn cộng được nếu thanh
+ * toán tới sau.
  */
 miniAppApi.post('/deposits/:id/cancel', async (c) => {
   const user = c.get('user')
@@ -786,6 +816,17 @@ miniAppApi.post('/deposits/:id/cancel', async (c) => {
   // Chỉ huỷ được khi đang chờ thanh toán.
   if (deposit.status !== 'pending') {
     const conflict: ApiResponse<null> = { success: false, data: null, error: 'not_pending' }
+    return c.json(conflict, 409)
+  }
+
+  // PayOS (R23): KHÔNG cho huỷ thủ công. Giữ nguyên `pending` để TTL→`expired`
+  // qua cron vẫn cho `completeDeposit` cộng tiền nếu thanh toán xác nhận tới sau.
+  if (deposit.provider === 'payos') {
+    const conflict: ApiResponse<null> = {
+      success: false,
+      data: null,
+      error: 'payos_not_cancellable',
+    }
     return c.json(conflict, 409)
   }
 

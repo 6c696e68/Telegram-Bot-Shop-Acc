@@ -16,10 +16,11 @@
 import { getProvider, registerProvider } from './registry'
 import { sePayProvider } from './sepay-provider'
 import { cryptoPayProvider } from './cryptopay-provider'
+import { payOsProvider } from './payos-provider'
 import type { PaymentProvider } from './types'
 
 /** Danh sách provider tích hợp sẵn. Thêm provider mới → thêm instance vào đây. */
-const builtInProviders: readonly PaymentProvider[] = [sePayProvider, cryptoPayProvider]
+const builtInProviders: readonly PaymentProvider[] = [sePayProvider, cryptoPayProvider, payOsProvider]
 
 /**
  * Đảm bảo toàn bộ provider tích hợp sẵn đã được đăng ký vào registry.

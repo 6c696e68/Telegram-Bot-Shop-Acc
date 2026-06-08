@@ -61,9 +61,10 @@ sepayWebhook.post('/sepay', async (c) => {
     return c.json({ success: true })
   }
 
-  // Idempotency check: kiểm tra sepay_transaction_id đã xử lý chưa (Req 2.12)
+  // Idempotency check: kiểm tra provider_txn_id đã xử lý chưa (Req 2.12, 4.4).
+  // Schema provider-agnostic: định danh giao dịch SePay lưu ở cột chung provider_txn_id.
   const existingDeposit = await db
-    .prepare('SELECT id FROM deposits WHERE sepay_transaction_id = ?')
+    .prepare("SELECT id FROM deposits WHERE provider = 'sepay' AND provider_txn_id = ?")
     .bind(String(payload.id))
     .first<{ id: number }>()
 
@@ -78,11 +79,12 @@ sepayWebhook.post('/sepay', async (c) => {
     return c.json({ success: true })
   }
 
-  // Find pending deposit by transfer_code (Req 2.7). Kèm tuổi (giây) để áp luật TTL.
+  // Find pending deposit by correlation_ref (Req 2.7, 4.4). Mã đối soát nội bộ
+  // (transfer_code) lưu ở cột chung correlation_ref. Kèm tuổi (giây) để áp luật TTL.
   const deposit = await db
     .prepare(
       `SELECT *, strftime('%s','now') - strftime('%s', created_at) AS age_sec
-       FROM deposits WHERE transfer_code = ? AND status = 'pending'`
+       FROM deposits WHERE provider = 'sepay' AND correlation_ref = ? AND status = 'pending'`
     )
     .bind(transferCode)
     .first<DbDeposit & { age_sec: number }>()
@@ -132,14 +134,16 @@ sepayWebhook.post('/sepay', async (c) => {
     userId: user.id,
     creditVnd: payload.transferAmount,
     provider: 'sepay',
-    sepayTransactionId: String(payload.id),
+    providerTxnId: String(payload.id),
+    // Mã tham chiếu ngân hàng → cột chung metadata (bank_ref) khi có giá trị.
+    metadata: payload.referenceCode ? { bank_ref: payload.referenceCode } : undefined,
   })
 
   if (!result.success && result.error === 'db_error') {
     // Lỗi atomic tạm thời SAU khi đã match đúng giao dịch tiền vào → KHÔNG trả 200.
     // Trả 500 để SePay gửi lại webhook (R14.5, đối xứng nhánh CryptoBot): deposit CHƯA
     // bị đánh dấu `completed` nên lần retry còn cộng được; idempotency theo
-    // `sepay_transaction_id` (check ở đầu handler) đảm bảo retry KHÔNG cộng trùng.
+    // `provider_txn_id` (check ở đầu handler) đảm bảo retry KHÔNG cộng trùng.
     // Các trường hợp no-op khác (không khớp/đã xử lý/quá hạn/ngoài hạn mức) vẫn trả 200
     // để SePay không retry vô ích (giữ tinh thần Req 8.5).
     console.error('[SePay] completeDeposit db_error for deposit:', deposit.id)

@@ -89,18 +89,12 @@ export interface DbTransaction {
 export interface DbDeposit {
   id: number
   user_id: number
-  provider: 'sepay' | 'cryptobot'
+  provider: 'sepay' | 'cryptobot' | 'payos'
   amount: number // VND kỳ vọng (lúc tạo) / VND đã cộng (sau hoàn tất)
   status: 'pending' | 'completed' | 'expired' | 'cancelled' | 'awaiting_credit'
-  // SePay
-  transfer_code: string | null // null với provider != sepay
-  sepay_transaction_id: string | null
-  bank_ref: string | null
-  // CryptoBot
-  crypto_invoice_id: string | null // id invoice Crypto Pay (idempotency)
-  asset: string | null // 'USDT'
-  usdt_amount: string | null // chuỗi thập phân, giữ nguyên độ chính xác
-  exchange_rate: number | null // VND cho 1 USDT, áp lúc cộng tiền
+  correlation_ref: string | null // mã đối soát nội bộ: transfer_code (sepay) / orderCode (payos) / invoice_id (cryptobot)
+  provider_txn_id: string | null // định danh phía provider: sepay_transaction_id / paymentLinkId / invoice_id — idempotency
+  metadata: string | null // JSON đặc thù provider
   completed_at: string | null
   expired_at: string | null
   created_at: string

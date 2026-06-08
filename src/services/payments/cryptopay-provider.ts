@@ -125,14 +125,16 @@ class CryptoPayProvider implements PaymentProvider {
     }
 
     // 4) Tạo deposit pending TRƯỚC để lấy id dùng làm payload invoice. usdt_amount giữ
-    //    chuỗi thập phân; amount = creditVnd (VND kỳ vọng). transfer_code để NULL.
+    //    chuỗi thập phân; amount = creditVnd (VND kỳ vọng). Dữ liệu đặc thù provider
+    //    (asset/usdt_amount) lưu vào cột chung metadata (JSON) theo schema mới.
     const usdtAmount = String(usdt)
     const now = new Date().toISOString()
+    const metadataJson = JSON.stringify({ asset: 'USDT', usdt_amount: usdtAmount })
     const inserted = await db
       .prepare(
-        "INSERT INTO deposits (user_id, provider, amount, status, asset, usdt_amount, created_at) VALUES (?, 'cryptobot', ?, 'pending', 'USDT', ?, ?) RETURNING id"
+        "INSERT INTO deposits (user_id, provider, amount, status, metadata, created_at) VALUES (?, 'cryptobot', ?, 'pending', ?, ?) RETURNING id"
       )
-      .bind(userId, creditVnd, usdtAmount, now)
+      .bind(userId, creditVnd, metadataJson, now)
       .first<{ id: number }>()
 
     if (!inserted) {
@@ -163,10 +165,13 @@ class CryptoPayProvider implements PaymentProvider {
         throw new CryptoPayApiError('Crypto Pay không trả về liên kết thanh toán')
       }
 
-      // Gắn invoice id vào deposit (idempotency cho webhook).
+      // Gắn invoice id vào deposit (idempotency cho webhook). Cột chung schema mới:
+      // provider_txn_id = correlation_ref = invoice id.
       await db
-        .prepare("UPDATE deposits SET crypto_invoice_id = ? WHERE id = ? AND status = 'pending'")
-        .bind(invoice.invoiceId, inserted.id)
+        .prepare(
+          "UPDATE deposits SET provider_txn_id = ?, correlation_ref = ? WHERE id = ? AND status = 'pending'"
+        )
+        .bind(invoice.invoiceId, invoice.invoiceId, inserted.id)
         .run()
 
       return {
@@ -177,9 +182,9 @@ class CryptoPayProvider implements PaymentProvider {
         },
       }
     } catch (cause) {
-      // Dọn deposit mồ côi: chỉ xoá khi vẫn pending và chưa gắn invoice (an toàn idempotent).
+      // Dọn deposit mồ côi: chỉ xoá khi vẫn pending và chưa gắn provider_txn_id (an toàn idempotent).
       await db
-        .prepare("DELETE FROM deposits WHERE id = ? AND status = 'pending' AND crypto_invoice_id IS NULL")
+        .prepare("DELETE FROM deposits WHERE id = ? AND status = 'pending' AND provider_txn_id IS NULL")
         .bind(inserted.id)
         .run()
 

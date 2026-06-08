@@ -36,6 +36,7 @@ import {
   handleDepositMethod,
   handleDepositAmount,
   handleCryptoDepositAmount,
+  handlePayOsDepositAmount,
   handleDepositCancel,
 } from './callbacks/deposit'
 import { handleRegionCallback, sendRegionOnboarding, sendRegionPicker } from './callbacks/region'
@@ -546,6 +547,16 @@ async function handleDepositTextInput(
       return
     }
     await handleCryptoDepositAmount(db, botToken, chatId, userId, usdt, env)
+  } else if (step === 'payos_amount') {
+    // PayOS nhập số tiền VND qua TEXT (tránh đụng preset callback `dep:{amount}` route về SePay).
+    const amount = parseInt(text.replace(/[.,\s]/g, ''), 10)
+    if (isNaN(amount)) {
+      await sendMessage(botToken, chatId, t(lang, 'deposit.amount.invalid'), {
+        parse_mode: 'HTML',
+      })
+      return
+    }
+    await handlePayOsDepositAmount(db, botToken, chatId, userId, amount, env)
   } else {
     clearSession(userId)
     await sendMessage(botToken, chatId, t(lang, 'common.session_expired'), {

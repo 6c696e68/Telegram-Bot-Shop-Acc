@@ -19,7 +19,7 @@ import type { DepositPolicyReason } from '../deposit-policy'
 import type { Lang } from '../../i18n/locales'
 
 /** Định danh loại phương thức nạp được hỗ trợ. */
-export type ProviderId = 'sepay' | 'cryptobot'
+export type ProviderId = 'sepay' | 'cryptobot' | 'payos'
 
 /**
  * Đơn vị nhập tiền của provider — quyết định cách validate hạn mức.
@@ -76,9 +76,23 @@ export interface CryptoDepositData {
   creditVnd: number
 }
 
+/** Dữ liệu hiển thị cho nhánh nạp PayOS (PayOS_Provider). */
+export interface PayOsDepositData {
+  /** URL trang thanh toán PayOS để mở cho user. */
+  checkoutUrl: string
+  /** Chuỗi QR (EMV) PayOS trả về — render QR tại client nếu cần. */
+  qrCode: string
+  /** paymentLinkId PayOS cấp (đã lưu vào provider_txn_id). */
+  paymentLinkId: string
+  /** Số VND cần thanh toán. */
+  amountVnd: number
+  /** orderCode đã sinh (đã lưu vào correlation_ref). */
+  orderCode: number
+}
+
 /**
  * Kết quả tạo deposit thành công: id deposit pending + dữ liệu thanh toán.
- * Đúng một trong hai nhánh (`vietqr` hoặc `crypto`) được điền theo provider.
+ * Đúng một trong các nhánh (`vietqr`, `crypto` hoặc `payos`) được điền theo provider.
  */
 export interface CreateDepositOutput {
   /** `deposits.id` vừa tạo ở trạng thái `pending`. */
@@ -87,6 +101,8 @@ export interface CreateDepositOutput {
   vietqr?: VietQrDepositData
   /** Dữ liệu hiển thị cho nhánh CryptoBot. */
   crypto?: CryptoDepositData
+  /** Dữ liệu hiển thị cho nhánh PayOS. */
+  payos?: PayOsDepositData
 }
 
 /** Lý do tạo deposit bị từ chối (provider tự validate trước khi tạo pending). */

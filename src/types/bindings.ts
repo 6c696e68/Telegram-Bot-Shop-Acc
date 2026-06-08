@@ -22,6 +22,12 @@ export type Bindings = {
   BANK_OWNER: string
   /** Token Crypto Pay API (secret) cho thanh toán crypto đa khu vực */
   CRYPTO_PAY_API_TOKEN: string
+  /** PayOS Client ID (định danh merchant) cho nạp tiền PayOS */
+  PAYOS_CLIENT_ID: string
+  /** PayOS API key (secret) — không log */
+  PAYOS_API_KEY: string
+  /** PayOS Checksum key (secret) dùng ký/verify chữ ký — không log */
+  PAYOS_CHECKSUM_KEY: string
   /** KV namespace cho static assets (Wrangler Sites) */
   __STATIC_CONTENT: KVNamespace
 }

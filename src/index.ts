@@ -4,6 +4,7 @@ import type { Bindings } from './types/bindings'
 import { telegramWebhook } from './routes/telegram'
 import { sepayWebhook } from './routes/sepay'
 import { cryptoPayWebhook } from './routes/cryptopay'
+import { payOsWebhook } from './routes/payos'
 import { adminApi } from './routes/admin'
 import { miniAppApi } from './routes/miniapp-api'
 import { staticAssets } from './routes/static'
@@ -44,6 +45,8 @@ app.route('/webhook', telegramWebhook)
 app.route('/webhook', sepayWebhook)
 // Crypto Pay webhook (POST /webhook/cryptopay) — xác thực chữ ký qua cryptoPayAuth.
 app.route('/webhook', cryptoPayWebhook)
+// PayOS webhook (POST /webhook/payos) — verify chữ ký HMAC trên data đã sort key (R12.1).
+app.route('/webhook', payOsWebhook)
 
 // CMS API (JWT protected)
 app.route('/api/admin', adminApi)

@@ -12,6 +12,7 @@ import { configRoutes } from './config'
 import { depositsRoutes } from './deposits'
 import { statsRoutes } from './stats'
 import { bannerRoutes } from './banners'
+import { payosAdminRoutes } from './payos'
 
 type AdminEnv = {
   Bindings: Bindings
@@ -34,6 +35,7 @@ adminApi.route('/config', configRoutes)
 adminApi.route('/deposits', depositsRoutes)
 adminApi.route('/stats', statsRoutes)
 adminApi.route('/banners', bannerRoutes)
+adminApi.route('/payos', payosAdminRoutes)
 
 // Root endpoint (protected)
 adminApi.get('/', jwtAuth, (c) => {

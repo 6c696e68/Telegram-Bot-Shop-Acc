@@ -109,14 +109,16 @@ depositsRoutes.post('/:id/approve', async (c) => {
     )
   }
 
-  // Execute deposit via DepositService (manual SePay tx id như cũ)
+  // Execute deposit via DepositService. provider_txn_id phải DUY NHẤT theo từng deposit:
+  // index mới (provider, provider_txn_id) UNIQUE → hằng số 'manual-approve' sẽ vỡ ở lần
+  // duyệt tay thứ 2. Dùng `manual-<depositId>` để mỗi lần duyệt tay có khoá riêng.
   const result = await completeDeposit({
     db: c.env.DB,
     depositId,
     userId: deposit.user_id,
     creditVnd: deposit.amount,
     provider: 'sepay',
-    sepayTransactionId: 'manual-approve',
+    providerTxnId: `manual-${depositId}`,
   })
 
   if (!result.success) {

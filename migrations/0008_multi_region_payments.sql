@@ -85,6 +85,6 @@ PRAGMA foreign_keys=ON;
 -- 4. system_config: seed cau hinh moi
 -- ---------------------------------------------
 INSERT INTO system_config (key, value, description) VALUES
-  ('exchange_rate_usdt_vnd', '26000', 'Ty gia quy doi 1 USDT sang VND (admin chinh)'),
+  ('exchange_rate_usdt_vnd', '20000', 'Ty gia quy doi 1 USDT sang VND (admin chinh)'),
   ('crypto_min_usdt', '5', 'So USDT toi thieu cho nap qua CryptoBot'),
   ('default_language', 'en', 'Ma locale mac dinh khi user chua xac dinh');

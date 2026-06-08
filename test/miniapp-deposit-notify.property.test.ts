@@ -59,12 +59,12 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS deposits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    provider TEXT NOT NULL DEFAULT 'sepay' CHECK(provider IN ('sepay','cryptobot')),
-    transfer_code TEXT UNIQUE NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'sepay',
     amount INTEGER NOT NULL CHECK(amount > 0),
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
-    sepay_transaction_id TEXT,
-    bank_ref TEXT,
+    correlation_ref TEXT,
+    provider_txn_id TEXT,
+    metadata TEXT,
     completed_at TEXT,
     expired_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -233,13 +233,13 @@ async function depositsOf(db: D1Database, telegramId: number) {
   return (
     await db
       .prepare(
-        `SELECT d.amount, d.status, d.transfer_code
+        `SELECT d.amount, d.status, d.correlation_ref
          FROM deposits d
          JOIN users u ON u.id = d.user_id
          WHERE u.telegram_id = ?`
       )
       .bind(telegramId)
-      .all<{ amount: number; status: string; transfer_code: string }>()
+      .all<{ amount: number; status: string; correlation_ref: string }>()
   ).results
 }
 

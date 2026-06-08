@@ -37,6 +37,10 @@ const form = ref({
   crypto_min_usdt: '5',
   default_language: 'en',
   payment_cryptobot_enabled: '0',
+  payos_client_id: '',
+  payos_api_key: '',
+  payos_checksum_key: '',
+  payment_payos_enabled: '0',
   admin_ids: '',
 })
 
@@ -45,11 +49,38 @@ const showBotToken = ref(false)
 const showTgSecret = ref(false)
 const showSepayKey = ref(false)
 const showCryptoToken = ref(false)
+const showPayosApiKey = ref(false)
+const showPayosChecksumKey = ref(false)
+
+// --- Đăng ký webhook PayOS (R24.2, R24.3) ---
+const payosRegistering = ref(false)
+const payosRegisterSuccess = ref('')
+const payosRegisterError = ref('')
+
+async function registerPayosWebhook() {
+  payosRegistering.value = true
+  payosRegisterSuccess.value = ''
+  payosRegisterError.value = ''
+  try {
+    const res = await api.post('/payos/confirm-webhook')
+    if (res.success) {
+      payosRegisterSuccess.value = t('config.payos.register_success')
+      setTimeout(() => { payosRegisterSuccess.value = '' }, 3000)
+    } else {
+      payosRegisterError.value = res.error || t('config.payos.register_failed')
+    }
+  } catch {
+    payosRegisterError.value = t('config.payos.register_failed')
+  } finally {
+    payosRegistering.value = false
+  }
+}
 
 // --- Webhook URLs (cùng origin với CMS — để admin copy dán vào SePay/Crypto Pay) ---
 const webhookBase = computed(() => window.location.origin)
 const sepayWebhookUrl = computed(() => `${webhookBase.value}/webhook/sepay`)
 const cryptoWebhookUrl = computed(() => `${webhookBase.value}/webhook/cryptopay`)
+const payosWebhookUrl = computed(() => `${webhookBase.value}/webhook/payos`)
 
 // Key của ô vừa copy (để hiện phản hồi "đã copy" tạm thời).
 const copiedKey = ref('')
@@ -95,6 +126,10 @@ async function loadConfig() {
       form.value.crypto_min_usdt = c.crypto_min_usdt ?? '5'
       form.value.default_language = c.default_language ?? 'en'
       form.value.payment_cryptobot_enabled = c.payment_cryptobot_enabled ?? '0'
+      form.value.payos_client_id = c.payos_client_id ?? ''
+      form.value.payos_api_key = c.payos_api_key ?? ''
+      form.value.payos_checksum_key = c.payos_checksum_key ?? ''
+      form.value.payment_payos_enabled = c.payment_payos_enabled ?? '0'
       form.value.admin_ids = c.admin_ids ?? ''
     } else {
       configError.value = res.error || t('config.save_failed')
@@ -528,6 +563,110 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
               role="switch"
               :aria-checked="form.payment_cryptobot_enabled === '1'"
               @click="form.payment_cryptobot_enabled = form.payment_cryptobot_enabled === '1' ? '0' : '1'"
+            >
+              <span class="toggle-knob" />
+            </button>
+          </div>
+        </section>
+
+        <!-- PayOS (R16.1-16.3) -->
+        <section class="card p-5 space-y-4">
+          <h3 class="section-head"><Icon name="key" :size="18" /> {{ $t('config.payos.section') }}</h3>
+          <div>
+            <label class="label">{{ $t('config.payos.client_id') }}</label>
+            <input
+              v-model="form.payos_client_id"
+              class="field"
+              :placeholder="$t('config.payos.client_id_ph')"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div>
+            <label class="label">{{ $t('config.payos.api_key') }}</label>
+            <div class="key-row">
+              <input
+                v-model="form.payos_api_key"
+                :type="showPayosApiKey ? 'text' : 'password'"
+                class="field"
+                :placeholder="$t('config.payos.api_key_ph')"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button
+                type="button"
+                class="key-toggle"
+                :title="showPayosApiKey ? $t('config.hide_key') : $t('config.show_key')"
+                @click="showPayosApiKey = !showPayosApiKey"
+              >
+                <Icon :name="showPayosApiKey ? 'eyeOff' : 'eye'" :size="16" />
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="label">{{ $t('config.payos.checksum_key') }}</label>
+            <div class="key-row">
+              <input
+                v-model="form.payos_checksum_key"
+                :type="showPayosChecksumKey ? 'text' : 'password'"
+                class="field"
+                :placeholder="$t('config.payos.checksum_key_ph')"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button
+                type="button"
+                class="key-toggle"
+                :title="showPayosChecksumKey ? $t('config.hide_key') : $t('config.show_key')"
+                @click="showPayosChecksumKey = !showPayosChecksumKey"
+              >
+                <Icon :name="showPayosChecksumKey ? 'eyeOff' : 'eye'" :size="16" />
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="label">{{ $t('config.payos.webhook_url') }}</label>
+            <div class="key-row">
+              <input :value="payosWebhookUrl" class="field" readonly @focus="(e) => (e.target as HTMLInputElement).select()" />
+              <button
+                type="button"
+                class="key-toggle"
+                :title="$t('config.copy')"
+                @click="copyText('payos', payosWebhookUrl)"
+              >
+                <Icon :name="copiedKey === 'payos' ? 'check' : 'copy'" :size="16" />
+              </button>
+            </div>
+            <p class="hint">{{ $t('config.payos.webhook_hint') }}</p>
+            <p v-if="copiedKey === 'payos'" class="hint" style="color: var(--green-fg)">{{ $t('config.copied') }}</p>
+            <div class="flex flex-col gap-2" style="margin-top: 0.5rem">
+              <div>
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  :disabled="payosRegistering"
+                  @click="registerPayosWebhook"
+                >
+                  <Icon name="link" :size="16" />
+                  {{ payosRegistering ? $t('config.payos.registering') : $t('config.payos.register_webhook') }}
+                </button>
+              </div>
+              <p v-if="payosRegisterSuccess" class="hint" style="color: var(--green-fg)">{{ payosRegisterSuccess }}</p>
+              <p v-if="payosRegisterError" class="hint" style="color: var(--red-fg)">{{ payosRegisterError }}</p>
+            </div>
+          </div>
+          <div class="flex items-center justify-between" style="padding-top: 0.25rem">
+            <div>
+              <span class="label" style="margin-bottom: 0">{{ $t('config.payos.enabled') }}</span>
+              <p class="hint">{{ $t('config.payos.enabled_hint') }}</p>
+            </div>
+            <button
+              type="button"
+              class="toggle"
+              :class="{ 'is-on': form.payment_payos_enabled === '1' }"
+              role="switch"
+              :aria-checked="form.payment_payos_enabled === '1'"
+              @click="form.payment_payos_enabled = form.payment_payos_enabled === '1' ? '0' : '1'"
             >
               <span class="toggle-knob" />
             </button>

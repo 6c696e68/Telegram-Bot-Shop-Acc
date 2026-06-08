@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import fc from 'fast-check'
-import { completeDeposit } from '../src/services/deposit-service'
+import { completeDeposit, markAwaitingCredit } from '../src/services/deposit-service'
 
 /**
  * Property-based tests cho DepositService.completeDeposit.
@@ -50,17 +50,13 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS deposits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    provider TEXT NOT NULL DEFAULT 'sepay' CHECK(provider IN ('sepay','cryptobot')),
+    provider TEXT NOT NULL DEFAULT 'sepay',
     amount INTEGER NOT NULL CHECK(amount > 0),
     status TEXT NOT NULL DEFAULT 'pending'
       CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
-    transfer_code TEXT,
-    sepay_transaction_id TEXT,
-    bank_ref TEXT,
-    crypto_invoice_id TEXT,
-    asset TEXT,
-    usdt_amount TEXT,
-    exchange_rate INTEGER,
+    correlation_ref TEXT,
+    provider_txn_id TEXT,
+    metadata TEXT,
     completed_at TEXT,
     expired_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -101,15 +97,15 @@ async function seedDeposit(
   const unique = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`.toUpperCase()
   if (provider === 'sepay') {
     await env.DB.prepare(
-      "INSERT INTO deposits (user_id, provider, amount, status, transfer_code, created_at) VALUES (?, 'sepay', ?, 'pending', ?, datetime('now'))"
+      "INSERT INTO deposits (user_id, provider, amount, status, correlation_ref, created_at) VALUES (?, 'sepay', ?, 'pending', ?, datetime('now'))"
     )
       .bind(userId, amount, `NAP${unique}`)
       .run()
   } else {
     await env.DB.prepare(
-      "INSERT INTO deposits (user_id, provider, amount, status, crypto_invoice_id, asset, created_at) VALUES (?, 'cryptobot', ?, 'pending', ?, 'USDT', datetime('now'))"
+      "INSERT INTO deposits (user_id, provider, amount, status, correlation_ref, metadata, created_at) VALUES (?, 'cryptobot', ?, 'pending', ?, ?, datetime('now'))"
     )
-      .bind(userId, amount, `INV${unique}`)
+      .bind(userId, amount, `INV${unique}`, JSON.stringify({ asset: 'USDT' }))
       .run()
   }
   const row = await env.DB.prepare('SELECT MAX(id) as id FROM deposits').first<{ id: number }>()
@@ -137,7 +133,7 @@ function buildInput(
       userId,
       creditVnd,
       provider,
-      sepayTransactionId: `SEP${depositId}`,
+      providerTxnId: `SEP${depositId}`,
     } as const
   }
   return {
@@ -146,9 +142,9 @@ function buildInput(
     userId,
     creditVnd,
     provider,
-    cryptoInvoiceId: `INV${depositId}`,
-    usdtAmount: '10.5',
-    exchangeRate: 26000,
+    providerTxnId: `INV${depositId}`,
+    correlationRef: `INV${depositId}`,
+    metadata: { asset: 'USDT', usdt_amount: '10.5', exchange_rate: 26000 },
   } as const
 }
 
@@ -282,4 +278,222 @@ describe('Property 2: Số dư không âm', () => {
       )
     })
   }
+})
+
+// --- Helpers cho Property 5/6/7 (deposit-service tổng quát hoá) ---
+
+/** Đếm số transaction 'deposit' tham chiếu một deposit cụ thể. */
+async function countDepositTransactions(depositId: number): Promise<number> {
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS c FROM transactions WHERE type = 'deposit' AND reference_type = 'deposit' AND reference_id = ?"
+  )
+    .bind(depositId)
+    .first<{ c: number }>()
+  return row!.c
+}
+
+/** Đọc nguyên dòng deposit (cột chung). */
+async function getDepositRow(depositId: number): Promise<{
+  status: string
+  provider: string
+  provider_txn_id: string | null
+  correlation_ref: string | null
+  metadata: string | null
+  amount: number
+}> {
+  const row = await env.DB.prepare(
+    'SELECT status, provider, provider_txn_id, correlation_ref, metadata, amount FROM deposits WHERE id = ?'
+  )
+    .bind(depositId)
+    .first<{
+      status: string
+      provider: string
+      provider_txn_id: string | null
+      correlation_ref: string | null
+      metadata: string | null
+      amount: number
+    }>()
+  return row!
+}
+
+/** Seed deposit với status tuỳ ý (phục vụ Property 7). Trả về deposits.id. */
+async function seedDepositWithStatus(
+  userId: number,
+  amount: number,
+  status: 'pending' | 'completed' | 'expired' | 'cancelled' | 'awaiting_credit'
+): Promise<number> {
+  const unique = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`.toUpperCase()
+  const completedAt = status === 'completed' ? new Date().toISOString() : null
+  await env.DB.prepare(
+    "INSERT INTO deposits (user_id, provider, amount, status, correlation_ref, completed_at, created_at) VALUES (?, 'payos', ?, ?, ?, ?, datetime('now'))"
+  )
+    .bind(userId, amount, status, `ORD${unique}`, completedAt)
+    .run()
+  const row = await env.DB.prepare('SELECT MAX(id) as id FROM deposits').first<{ id: number }>()
+  return row!.id
+}
+
+// Feature: payos-deposit, Property 5
+describe('Property 5: completeDeposit credits exactly once', () => {
+  /**
+   * **Validates: Requirements 4.2, 12.9, 13.4**
+   * Với một deposit và bất kỳ số lần gọi completeDeposit lặp hoặc đồng thời tham chiếu nó,
+   * users.balance chỉ tăng đúng một lần creditVnd VÀ chỉ đúng MỘT transaction 'deposit'
+   * được ghi (không sinh giao dịch ma ở các lần gọi trùng).
+   */
+  for (const provider of ['sepay', 'cryptobot'] as const) {
+    it(`[${provider}] repeated/concurrent calls credit exactly once and record exactly one transaction`, async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          arbInitialBalance,
+          arbCreditVnd,
+          arbRepeat,
+          fc.boolean(), // concurrent?
+          async (initialBalance, creditVnd, repeat, concurrent) => {
+            await cleanTables()
+            const userId = await seedUser(initialBalance)
+            const depositId = await seedDeposit(userId, creditVnd, provider)
+
+            let results
+            if (concurrent) {
+              results = await Promise.all(
+                Array.from({ length: repeat }, () =>
+                  completeDeposit(buildInput(depositId, userId, creditVnd, provider))
+                )
+              )
+            } else {
+              results = []
+              for (let i = 0; i < repeat; i++) {
+                results.push(
+                  await completeDeposit(buildInput(depositId, userId, creditVnd, provider))
+                )
+              }
+            }
+
+            // Đúng MỘT lần success.
+            const successCount = results.filter((r) => r.success).length
+            expect(successCount).toBe(1)
+
+            // Balance tăng đúng một lần creditVnd.
+            const finalBalance = await getUserBalance(userId)
+            expect(finalBalance).toBe(initialBalance + creditVnd)
+
+            // Đúng MỘT transaction 'deposit' được ghi cho deposit này.
+            const txCount = await countDepositTransactions(depositId)
+            expect(txCount).toBe(1)
+          }
+        ),
+        { numRuns: 40 }
+      )
+    })
+  }
+})
+
+// Feature: payos-deposit, Property 6
+describe('Property 6: completeDeposit persists provider fields via common columns', () => {
+  /**
+   * **Validates: Requirements 4.1**
+   * Với mọi completeDeposit kèm providerTxnId/correlationRef/metadata, dòng deposit hoàn tất
+   * lưu các giá trị đó vào cột chung provider_txn_id/correlation_ref/metadata, status thành
+   * 'completed', amount == creditVnd, và metadata JSON round-trip nguyên vẹn.
+   */
+  it('persists provider_txn_id/correlation_ref/metadata into common columns and metadata round-trips', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        arbInitialBalance,
+        arbCreditVnd,
+        fc.string({ minLength: 1, maxLength: 40 }),
+        fc.string({ minLength: 1, maxLength: 40 }),
+        fc.record({
+          asset: fc.constantFrom('USDT', 'USDC', 'TON'),
+          usdt_amount: fc.float({ min: Math.fround(0.01), max: 100000, noNaN: true }).map((n) => String(n)),
+          exchange_rate: fc.integer({ min: 1, max: 100000 }),
+          note: fc.string({ maxLength: 50 }),
+        }),
+        async (initialBalance, creditVnd, providerTxnId, correlationRef, metadata) => {
+          await cleanTables()
+          const userId = await seedUser(initialBalance)
+          // provider 'payos' không CHECK → dùng để kiểm cột chung không phụ thuộc provider.
+          const depositId = await seedDepositWithStatus(userId, creditVnd, 'pending')
+
+          const result = await completeDeposit({
+            db: env.DB,
+            depositId,
+            userId,
+            creditVnd,
+            provider: 'payos',
+            providerTxnId,
+            correlationRef,
+            metadata,
+          })
+
+          expect(result.success).toBe(true)
+
+          const row = await getDepositRow(depositId)
+          expect(row.status).toBe('completed')
+          expect(row.amount).toBe(creditVnd)
+          expect(row.provider_txn_id).toBe(providerTxnId)
+          expect(row.correlation_ref).toBe(correlationRef)
+
+          // metadata JSON round-trips.
+          expect(row.metadata).not.toBeNull()
+          const parsed = JSON.parse(row.metadata as string)
+          expect(parsed).toEqual(metadata)
+        }
+      ),
+      { numRuns: 40 }
+    )
+  })
+})
+
+// Feature: payos-deposit, Property 7
+describe('Property 7: markAwaitingCredit only affects creditable deposits', () => {
+  /**
+   * **Validates: Requirements 4.3**
+   * markAwaitingCredit lưu metadata và đặt status 'awaiting_credit' CHỈ khi deposit đang
+   * 'pending' hoặc 'expired'; KHÔNG bao giờ ghi đè deposit 'completed'/'cancelled'/
+   * 'awaiting_credit' (giữ nguyên status + metadata cũ).
+   */
+  const arbStatus = fc.constantFrom(
+    'pending',
+    'completed',
+    'expired',
+    'cancelled',
+    'awaiting_credit'
+  ) as fc.Arbitrary<'pending' | 'completed' | 'expired' | 'cancelled' | 'awaiting_credit'>
+
+  it('transitions to awaiting_credit only from pending/expired, never overwrites others', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        arbInitialBalance,
+        arbCreditVnd,
+        arbStatus,
+        fc.record({
+          usdt_amount: fc
+            .float({ min: Math.fround(0.01), max: 100000, noNaN: true })
+            .map((n) => String(n)),
+        }),
+        async (initialBalance, creditVnd, initialStatus, metadata) => {
+          await cleanTables()
+          const userId = await seedUser(initialBalance)
+          const depositId = await seedDepositWithStatus(userId, creditVnd, initialStatus)
+
+          await markAwaitingCredit(env.DB, depositId, metadata)
+
+          const row = await getDepositRow(depositId)
+          if (initialStatus === 'pending' || initialStatus === 'expired') {
+            // Chỉ các trạng thái creditable mới chuyển sang awaiting_credit + ghi metadata.
+            expect(row.status).toBe('awaiting_credit')
+            expect(row.metadata).not.toBeNull()
+            expect(JSON.parse(row.metadata as string)).toEqual(metadata)
+          } else {
+            // completed/cancelled/awaiting_credit: giữ nguyên status, KHÔNG ghi metadata mới.
+            expect(row.status).toBe(initialStatus)
+            expect(row.metadata).toBeNull()
+          }
+        }
+      ),
+      { numRuns: 40 }
+    )
+  })
 })

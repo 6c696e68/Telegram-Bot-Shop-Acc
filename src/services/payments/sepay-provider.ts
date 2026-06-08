@@ -76,9 +76,10 @@ class SePayProvider implements PaymentProvider {
     const now = new Date().toISOString()
 
     // 4) Tạo deposit pending — set provider='sepay' tường minh (phân tách provider — Property 5).
+    //    correlation_ref = transfer_code (mã đối soát nội bộ, cột chung schema mới).
     const inserted = await db
       .prepare(
-        "INSERT INTO deposits (user_id, provider, transfer_code, amount, status, created_at) VALUES (?, 'sepay', ?, ?, 'pending', ?) RETURNING id"
+        "INSERT INTO deposits (user_id, provider, correlation_ref, amount, status, created_at) VALUES (?, 'sepay', ?, ?, 'pending', ?) RETURNING id"
       )
       .bind(userId, transferCode, rawAmount, now)
       .first<{ id: number }>()

@@ -1,6 +1,7 @@
 import { createMiddleware } from 'hono/factory'
 import type { Bindings } from '../types'
 import { resolveCryptoPayToken } from '../services/cryptopay-config'
+import { timingSafeEqualHex, toHex } from '../utils/crypto-signature'
 
 /**
  * Context variables được set bởi `cryptoPayAuth`.
@@ -22,37 +23,6 @@ type CryptoPayEnv = {
 
 /** Tên header chứa chữ ký webhook của Crypto Pay. */
 const SIGNATURE_HEADER = 'crypto-pay-api-signature'
-
-/**
- * So sánh hai chuỗi hex theo kiểu hằng-thời-gian.
- *
- * Luôn duyệt hết độ dài của `expected` (không early-return theo từng ký tự) để
- * không rò rỉ thông tin timing về vị trí ký tự sai. Khác độ dài → coi như không
- * khớp nhưng vẫn duyệt đủ vòng lặp.
- */
-function timingSafeEqualHex(a: string, b: string): boolean {
-  const lengthMismatch = a.length !== b.length
-  // Chọn chuỗi tham chiếu có độ dài cố định để số vòng lặp không phụ thuộc input.
-  const reference = a
-  let diff = lengthMismatch ? 1 : 0
-  for (let i = 0; i < reference.length; i++) {
-    const ca = reference.charCodeAt(i)
-    // Nếu lệch độ dài, `b` có thể không có ký tự ở vị trí i → dùng 0 (vẫn lệch).
-    const cb = i < b.length ? b.charCodeAt(i) : 0
-    diff |= ca ^ cb
-  }
-  return diff === 0
-}
-
-/** Chuyển ArrayBuffer/Uint8Array sang chuỗi hex thường. */
-function toHex(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
-  let hex = ''
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i].toString(16).padStart(2, '0')
-  }
-  return hex
-}
 
 /**
  * Middleware xác thực webhook từ Crypto Pay (R19.2 - R19.5).

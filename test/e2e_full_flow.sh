@@ -120,8 +120,8 @@ USER_A=$(d1_first_int "SELECT id FROM users WHERE telegram_id=$TG_A" "id")
   || log_step "TC-01a" "Tạo user A qua /start" "FAIL" "user not created"
 
 # Create deposit pending
-d1 "INSERT INTO deposits (user_id, transfer_code, amount, status) VALUES ($USER_A, 'NAPFLOWA01', 100000, 'pending');" >/dev/null
-DEP_A=$(d1_first_int "SELECT id FROM deposits WHERE transfer_code='NAPFLOWA01'" "id")
+d1 "INSERT INTO deposits (user_id, correlation_ref, amount, status) VALUES ($USER_A, 'NAPFLOWA01', 100000, 'pending');" >/dev/null
+DEP_A=$(d1_first_int "SELECT id FROM deposits WHERE correlation_ref='NAPFLOWA01'" "id")
 
 # Simulate SePay webhook
 SEPAY_RES=$(curl -s -X POST "$BASE/webhook/sepay" \
@@ -233,7 +233,7 @@ fi
 TG_D=44444
 tg_start 400 $TG_D "userD" >/dev/null
 USER_D=$(d1_first_int "SELECT id FROM users WHERE telegram_id=$TG_D" "id")
-d1 "INSERT INTO deposits (user_id, transfer_code, amount, status) VALUES ($USER_D, 'NAPFLOWD01', 50000, 'pending');" >/dev/null
+d1 "INSERT INTO deposits (user_id, correlation_ref, amount, status) VALUES ($USER_D, 'NAPFLOWD01', 50000, 'pending');" >/dev/null
 
 # First call
 curl -s -X POST "$BASE/webhook/sepay" -H 'Content-Type: application/json' -H "Authorization: Apikey $SEPAY_KEY" \
@@ -257,8 +257,8 @@ fi
 TG_E=55555
 tg_start 500 $TG_E "userE" >/dev/null
 USER_E=$(d1_first_int "SELECT id FROM users WHERE telegram_id=$TG_E" "id")
-d1 "INSERT INTO deposits (user_id, transfer_code, amount, status) VALUES ($USER_E, 'NAPFLOWE01', 75000, 'pending');" >/dev/null
-DEP_E=$(d1_first_int "SELECT id FROM deposits WHERE transfer_code='NAPFLOWE01'" "id")
+d1 "INSERT INTO deposits (user_id, correlation_ref, amount, status) VALUES ($USER_E, 'NAPFLOWE01', 75000, 'pending');" >/dev/null
+DEP_E=$(d1_first_int "SELECT id FROM deposits WHERE correlation_ref='NAPFLOWE01'" "id")
 
 APPROVE_RES=$(curl -s -X POST "$BASE/api/admin/deposits/$DEP_E/approve" -H "Authorization: Bearer $TOKEN")
 sleep 1

@@ -18,10 +18,12 @@ export interface CompleteDepositInput {
   userId: number
   creditVnd: number // số VND thực cộng
   provider: ProviderId
-  sepayTransactionId?: string // chỉ sepay
-  cryptoInvoiceId?: string // chỉ cryptobot
-  usdtAmount?: string // chỉ cryptobot (R12.5)
-  exchangeRate?: number // chỉ cryptobot (R12.5)
+  /** Định danh giao dịch phía provider → cột chung provider_txn_id (idempotency). */
+  providerTxnId?: string
+  /** Mã đối soát nội bộ → cột chung correlation_ref (chỉ set khi cần cập nhật). */
+  correlationRef?: string
+  /** Dữ liệu đặc thù provider → cột chung metadata. Service tự JSON.stringify. */
+  metadata?: Record<string, unknown>
 }
 
 export type CompleteDepositResult =
@@ -50,11 +52,9 @@ export async function completeDeposit(
     depositId,
     userId,
     creditVnd,
-    provider,
-    sepayTransactionId,
-    cryptoInvoiceId,
-    usdtAmount,
-    exchangeRate,
+    providerTxnId,
+    correlationRef,
+    metadata,
   } = input
   const now = new Date().toISOString()
 
@@ -70,34 +70,28 @@ export async function completeDeposit(
   const balanceBefore = user.balance
   const balanceAfter = balanceBefore + creditVnd
 
-  // UPDATE deposits: cột chung + cột đặc thù provider. Guard status IN (...) chống
-  // cộng trùng (chỉ hoàn tất từ pending/expired/awaiting_credit).
-  let depositUpdate: D1PreparedStatement
-  if (provider === 'sepay') {
-    depositUpdate = db
-      .prepare(
-        `UPDATE deposits
-         SET status = 'completed', completed_at = ?, amount = ?, sepay_transaction_id = ?
-         WHERE id = ? AND status IN ('pending','expired','awaiting_credit')`
-      )
-      .bind(now, creditVnd, sepayTransactionId ?? null, depositId)
-  } else {
-    depositUpdate = db
-      .prepare(
-        `UPDATE deposits
+  // UPDATE deposits: một câu chung dùng COALESCE ghi cột chung provider_txn_id/
+  // correlation_ref/metadata (không rẽ nhánh theo provider). COALESCE giữ nguyên giá
+  // trị đã có khi caller không truyền (tránh xoá provider_txn_id thật → phá idempotency).
+  // Guard status IN (...) chống cộng trùng (chỉ hoàn tất từ pending/expired/awaiting_credit).
+  const metadataJson = metadata ? JSON.stringify(metadata) : null
+  const depositUpdate: D1PreparedStatement = db
+    .prepare(
+      `UPDATE deposits
          SET status = 'completed', completed_at = ?, amount = ?,
-             crypto_invoice_id = ?, asset = 'USDT', usdt_amount = ?, exchange_rate = ?
-         WHERE id = ? AND status IN ('pending','expired','awaiting_credit')`
-      )
-      .bind(
-        now,
-        creditVnd,
-        cryptoInvoiceId ?? null,
-        usdtAmount ?? null,
-        exchangeRate ?? null,
-        depositId
-      )
-  }
+             provider_txn_id = COALESCE(?, provider_txn_id),
+             correlation_ref = COALESCE(?, correlation_ref),
+             metadata        = COALESCE(?, metadata)
+       WHERE id = ? AND status IN ('pending','expired','awaiting_credit')`
+    )
+    .bind(
+      now,
+      creditVnd,
+      providerTxnId ?? null,
+      correlationRef ?? null,
+      metadataJson,
+      depositId
+    )
 
   // Guard "deposit còn cộng được": cộng balance + ghi transaction CHỈ khi deposit vẫn
   // ở trạng thái cho phép hoàn tất. Tránh cộng trùng khi gọi lặp/đồng thời (R14.2, R14.4):
@@ -156,24 +150,26 @@ export async function completeDeposit(
 }
 
 /**
- * Đánh dấu một deposit USDT sang `awaiting_credit` khi tỷ giá lỗi lúc nhận thanh toán
- * (R12.4): lưu `usdt_amount` để cron `credit-awaiting` cộng lại sau khi rate hợp lệ.
+ * Đánh dấu một deposit sang `awaiting_credit` khi tỷ giá lỗi lúc nhận thanh toán
+ * (R12.4): lưu dữ liệu đặc thù provider vào cột chung `metadata` (ví dụ `{ usdt_amount }`)
+ * để cron `credit-awaiting` cộng lại sau khi rate hợp lệ.
  *
  * Guard `WHERE id=? AND status IN ('pending','expired')`: KHÔNG bao giờ ghi đè deposit
  * đã `completed` (giữ idempotency khi callback trùng tới đúng lúc rate tạm lỗi).
- * `changes === 0` → bỏ qua (đã hoàn tất hoặc đã ở awaiting_credit).
+ * `changes === 0` → bỏ qua (đã hoàn tất hoặc đã ở awaiting_credit). COALESCE giữ
+ * metadata cũ khi không truyền giá trị mới.
  */
 export async function markAwaitingCredit(
   db: D1Database,
   depositId: number,
-  usdtAmount: string
+  metadata: Record<string, unknown> // ví dụ { usdt_amount }
 ): Promise<void> {
   await db
     .prepare(
       `UPDATE deposits
-       SET status = 'awaiting_credit', usdt_amount = ?
+       SET status = 'awaiting_credit', metadata = COALESCE(?, metadata)
        WHERE id = ? AND status IN ('pending','expired')`
     )
-    .bind(usdtAmount, depositId)
+    .bind(JSON.stringify(metadata), depositId)
     .run()
 }

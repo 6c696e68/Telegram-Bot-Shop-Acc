@@ -67,7 +67,9 @@ export async function creditAwaitingDeposits(
 
   const { results } = await db
     .prepare(
-      `SELECT id, user_id, usdt_amount, crypto_invoice_id
+      `SELECT id, user_id,
+              json_extract(metadata, '$.usdt_amount') AS usdt_amount,
+              provider_txn_id AS crypto_invoice_id
        FROM deposits WHERE status = 'awaiting_credit'`
     )
     .all<AwaitingDepositRow>()
@@ -103,9 +105,13 @@ export async function creditAwaitingDeposits(
         userId: deposit.user_id,
         creditVnd,
         provider: 'cryptobot',
-        cryptoInvoiceId: deposit.crypto_invoice_id ?? undefined,
-        usdtAmount: deposit.usdt_amount ?? undefined,
-        exchangeRate: rate,
+        providerTxnId: deposit.crypto_invoice_id ?? undefined,
+        correlationRef: deposit.crypto_invoice_id ?? undefined,
+        metadata: {
+          asset: 'USDT',
+          usdt_amount: deposit.usdt_amount ?? undefined,
+          exchange_rate: rate,
+        },
       })
 
       if (!result.success) {

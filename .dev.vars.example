@@ -7,3 +7,6 @@ BANK_NAME=Vietcombank
 BANK_ACCOUNT=1017588888
 BANK_OWNER=NGUYEN VAN A
 CRYPTO_PAY_API_TOKEN=your_crypto_pay_api_token
+PAYOS_CLIENT_ID=your_payos_client_id
+PAYOS_API_KEY=your_payos_api_key
+PAYOS_CHECKSUM_KEY=your_payos_checksum_key

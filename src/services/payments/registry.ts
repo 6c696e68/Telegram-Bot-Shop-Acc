@@ -18,13 +18,13 @@ const registry: Map<ProviderId, PaymentProvider> = new Map()
 
 /**
  * Tập phương thức nạp khả dụng theo vùng (bảng tra, mở rộng được).
- *  - `vietnam` → SePay + CryptoBot (R8.1).
+ *  - `vietnam` → SePay + PayOS + CryptoBot (R8.1, R11.1).
  *  - `international` → chỉ CryptoBot (R8.2).
  *
- * Thứ tự phần tử quyết định thứ tự hiển thị cho user.
+ * Thứ tự phần tử quyết định thứ tự hiển thị cho user (sepay, payos, cryptobot).
  */
 const METHODS_BY_REGION: Record<Region, readonly ProviderId[]> = {
-  vietnam: ['sepay', 'cryptobot'],
+  vietnam: ['sepay', 'payos', 'cryptobot'],
   international: ['cryptobot'],
 }
 

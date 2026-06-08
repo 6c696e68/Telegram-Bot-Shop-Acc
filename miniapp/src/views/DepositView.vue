@@ -10,7 +10,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { CircleCheck, Wallet, CircleDollarSign, Landmark } from '@lucide/vue'
+import { CircleCheck, Wallet, CircleDollarSign, Landmark, QrCode } from '@lucide/vue'
+import type { FunctionalComponent } from 'vue'
 import TopAppBar from '@/components/TopAppBar.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import QrPanel from '@/components/QrPanel.vue'
@@ -23,6 +24,7 @@ import { formatCurrency } from '@/utils/format'
 import type {
   DepositCreatedDto,
   CryptoDepositCreatedDto,
+  PayosDepositCreatedDto,
   DepositMethodDto,
   DepositStatusDto,
 } from '@/types'
@@ -37,13 +39,21 @@ const ui = useUiStore()
 const user = useUserStore()
 const { t } = useI18n()
 
-type Method = 'sepay' | 'cryptobot'
+type Method = 'sepay' | 'cryptobot' | 'payos'
+
+// Icon theo từng phương thức (map theo id thay vì biểu thức nhị phân).
+const METHOD_ICONS: Record<Method, FunctionalComponent> = {
+  sepay: Landmark,
+  cryptobot: CircleDollarSign,
+  payos: QrCode,
+}
 
 const methods = ref<DepositMethodDto[]>([])
 const selectedMethod = ref<Method>('sepay')
 const amountInput = ref('')
 const createdSepay = ref<DepositCreatedDto | null>(null)
 const createdCrypto = ref<CryptoDepositCreatedDto | null>(null)
+const createdPayos = ref<PayosDepositCreatedDto | null>(null)
 const depositId = ref<number | null>(null)
 const status = ref<DepositStatusDto['status']>('pending')
 const submitting = ref(false)
@@ -51,13 +61,17 @@ const cancelling = ref(false)
 
 const isCrypto = computed(() => selectedMethod.value === 'cryptobot')
 
+const methodIcon = computed<FunctionalComponent>(() => METHOD_ICONS[selectedMethod.value])
+
 const methodOptions = computed(() =>
   methods.value.map((m) => ({
     value: m.id,
-    label: m.id === 'sepay' ? t('deposit.method_sepay_short') : t('deposit.method_cryptobot_short'),
+    label: t(`deposit.method_${m.id}_short`),
   }))
 )
-const created = computed(() => createdSepay.value !== null || createdCrypto.value !== null)
+const created = computed(
+  () => createdSepay.value !== null || createdCrypto.value !== null || createdPayos.value !== null
+)
 
 const amount = computed<number | null>(() => {
   if (!amountInput.value) return null
@@ -185,6 +199,16 @@ async function submitDeposit(): Promise<void> {
       ui.haptic('success')
       openLink(res.pay_url)
       startPolling()
+    } else if (selectedMethod.value === 'payos') {
+      const res = await ui.withLoading(
+        post<PayosDepositCreatedDto>('/deposits', { method: 'payos', amount: value })
+      )
+      createdPayos.value = res
+      depositId.value = res.deposit_id
+      status.value = 'pending'
+      ui.haptic('success')
+      openLink(res.checkout_url)
+      startPolling()
     } else {
       const res = await ui.withLoading(
         post<DepositCreatedDto>('/deposits', { method: 'sepay', amount: value })
@@ -212,6 +236,7 @@ function resetDeposit(): void {
   stopPolling()
   createdSepay.value = null
   createdCrypto.value = null
+  createdPayos.value = null
   depositId.value = null
   status.value = 'pending'
   amountInput.value = ''
@@ -268,21 +293,21 @@ onUnmounted(() => {
             v-if="methods.length > 1"
             :model-value="selectedMethod"
             :options="methodOptions"
-            @update:model-value="selectMethod($event as 'sepay' | 'cryptobot')"
+            @update:model-value="selectMethod($event as Method)"
           />
           <div
             v-else
             class="glass-card flex items-center gap-4 rounded-xl border border-primary/50 p-4"
           >
             <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-container/20 text-primary">
-              <component :is="isCrypto ? CircleDollarSign : Landmark" :size="22" :stroke-width="2" aria-hidden="true" />
+              <component :is="methodIcon" :size="22" :stroke-width="2" aria-hidden="true" />
             </div>
             <div class="flex-1">
               <h4 class="text-[16px] text-on-surface">
-                {{ isCrypto ? $t('deposit.method_cryptobot') : $t('deposit.method_sepay') }}
+                {{ $t(`deposit.method_${selectedMethod}`) }}
               </h4>
               <p class="font-mono text-[12px] text-on-surface-variant">
-                {{ isCrypto ? $t('deposit.method_cryptobot_desc') : $t('deposit.method_sepay_desc') }}
+                {{ $t(`deposit.method_${selectedMethod}_desc`) }}
               </p>
             </div>
           </div>
@@ -383,6 +408,11 @@ onUnmounted(() => {
           {{ $t('deposit.pay_crypto') }}
         </GlassButton>
 
+        <!-- PayOS: mở lại trang thanh toán -->
+        <GlassButton v-if="createdPayos && status === 'pending'" block @click="openLink(createdPayos.checkout_url)">
+          {{ $t('deposit.pay_payos') }}
+        </GlassButton>
+
         <!-- SePay: VietQR -->
         <QrPanel
           v-if="createdSepay && status === 'pending'"
@@ -394,7 +424,7 @@ onUnmounted(() => {
           :transfer-code="createdSepay.transfer_code"
         />
 
-        <GlassButton v-if="status === 'pending'" variant="secondary" block :disabled="cancelling" @click="cancelDeposit">
+        <GlassButton v-if="status === 'pending' && !createdPayos" variant="secondary" block :disabled="cancelling" @click="cancelDeposit">
           {{ $t('deposit.cancel') }}
         </GlassButton>
 
