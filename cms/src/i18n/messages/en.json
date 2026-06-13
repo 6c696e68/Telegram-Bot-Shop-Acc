@@ -192,6 +192,7 @@
     "subtitle": "Total {count} orders",
     "filter_all_status": "All statuses",
     "filter_all_category": "All types",
+    "filter_all_product": "All products",
     "status_completed": "Completed",
     "status_refunded": "Refunded",
     "empty": "No orders",

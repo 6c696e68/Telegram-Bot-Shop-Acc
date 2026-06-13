@@ -113,11 +113,13 @@ function renderBody(template: string, vars: SuccessTemplateVars, ctx: CurrencyCo
 export function renderSuccessMessage(
   templatesByLang: Map<Lang, string | null>,
   vars: SuccessTemplateVars,
-  ctx: CurrencyContext
+  ctx: CurrencyContext,
+  defaultLang: Lang = BASE_FALLBACK_LANG
 ): string {
   const header = buildHeader(vars, ctx.lang)
   const tpl =
     templatesByLang.get(ctx.lang)?.trim() ||
+    templatesByLang.get(defaultLang)?.trim() ||
     templatesByLang.get(BASE_FALLBACK_LANG)?.trim()
   const body = tpl ? renderBody(tpl, vars, ctx) : defaultBody(vars, ctx)
   return `${header}\n${body}`

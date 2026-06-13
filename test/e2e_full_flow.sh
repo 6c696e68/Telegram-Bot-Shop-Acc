@@ -100,17 +100,19 @@ if [[ -z "$TOKEN" ]]; then
 fi
 log_step "AUTH" "Admin login admin/admin123" "PASS" "JWT length=${#TOKEN}"
 
-# Seed product type + 5 products (đủ cho mọi case)
-d1 "INSERT INTO product_types (name, price, emoji) VALUES ('FlowCat', 26000, '📦');" >/dev/null
+# Seed category + product + 5 product_items (đủ cho mọi case)
+d1 "INSERT INTO product_types (name, emoji) VALUES ('FlowCat', NULL);" >/dev/null
 CAT_ID=$(d1_first_int "SELECT id FROM product_types WHERE name='FlowCat'" "id")
-d1 "INSERT INTO products (type_id, content, status) VALUES
-  ($CAT_ID, 'flow-acc-1', 'available'),
-  ($CAT_ID, 'flow-acc-2', 'available'),
-  ($CAT_ID, 'flow-acc-3', 'available'),
-  ($CAT_ID, 'flow-acc-4', 'available'),
-  ($CAT_ID, 'flow-acc-5', 'available');" >/dev/null
-STOCK=$(d1_first_int "SELECT COUNT(*) c FROM products WHERE type_id=$CAT_ID AND status='available'" "c")
-log_step "SEED" "Tạo category 30k + 5 products" "PASS" "cat_id=$CAT_ID stock=$STOCK"
+d1 "INSERT INTO products (product_type_id, name, description, price, emoji, is_visible) VALUES ($CAT_ID, 'Flow Product', 'Flow product', 26000, NULL, 1);" >/dev/null
+PROD_ID=$(d1_first_int "SELECT id FROM products WHERE name='Flow Product'" "id")
+d1 "INSERT INTO product_items (product_id, content, status) VALUES
+  ($PROD_ID, 'flow-acc-1', 'available'),
+  ($PROD_ID, 'flow-acc-2', 'available'),
+  ($PROD_ID, 'flow-acc-3', 'available'),
+  ($PROD_ID, 'flow-acc-4', 'available'),
+  ($PROD_ID, 'flow-acc-5', 'available');" >/dev/null
+STOCK=$(d1_first_int "SELECT COUNT(*) c FROM product_items WHERE product_id=$PROD_ID AND status='available'" "c")
+log_step "SEED" "Tạo category + product 26k + 5 product_items" "PASS" "cat_id=$CAT_ID product_id=$PROD_ID stock=$STOCK"
 
 # ============== TC-01: Nạp tiền qua webhook SePay rồi mua ==============
 TG_A=11111
@@ -137,24 +139,24 @@ else
   log_step "TC-01b" "SePay webhook → cộng balance + deposit completed" "FAIL" "balance=$BAL_A deposit=$DEP_STAT res=$SEPAY_RES"
 fi
 
-# User A mua 1 sản phẩm (30k) — đủ tiền, đủ stock
-tg_callback 101 $TG_A "userA" "buy:$CAT_ID:1" >/dev/null
+# User A mua 1 sản phẩm (26k) — đủ tiền, đủ stock
+tg_callback 101 $TG_A "userA" "buy:$PROD_ID:1" >/dev/null
 sleep 1
 BAL_A2=$(d1_first_int "SELECT balance b FROM users WHERE id=$USER_A" "b")
-SOLD_A=$(d1_first_int "SELECT COUNT(*) c FROM products WHERE buyer_id=$USER_A AND status='sold'" "c")
+SOLD_A=$(d1_first_int "SELECT COUNT(*) c FROM product_items WHERE buyer_id=$USER_A AND status='sold'" "c")
 ORD_A=$(d1_first_int "SELECT COUNT(*) c FROM orders WHERE user_id=$USER_A" "c")
 TX_A=$(d1_first_int "SELECT COUNT(*) c FROM transactions WHERE user_id=$USER_A AND type='purchase'" "c")
-if [[ "$BAL_A2" == "70000" && "$SOLD_A" == "1" && "$ORD_A" == "1" && "$TX_A" == "1" ]]; then
-  log_step "TC-01c" "User A mua 1×30k với balance 100k" "PASS" "bal=70000 sold=1 orders=1 tx=1"
+if [[ "$BAL_A2" == "74000" && "$SOLD_A" == "1" && "$ORD_A" == "1" && "$TX_A" == "1" ]]; then
+  log_step "TC-01c" "User A mua 1x26k với balance 100k" "PASS" "bal=74000 sold=1 orders=1 tx=1"
 else
-  log_step "TC-01c" "User A mua 1×30k với balance 100k" "FAIL" "bal=$BAL_A2 sold=$SOLD_A orders=$ORD_A tx=$TX_A"
+  log_step "TC-01c" "User A mua 1x26k với balance 100k" "FAIL" "bal=$BAL_A2 sold=$SOLD_A orders=$ORD_A tx=$TX_A"
 fi
 
-# Verify FK link products↔orders↔order_items↔transactions
-JOIN_RES=$(d1 "SELECT p.id pid, p.order_id pord, oi.order_id ioid, t.reference_id tref, o.id oid FROM products p JOIN order_items oi ON oi.product_id=p.id JOIN orders o ON o.id=p.order_id JOIN transactions t ON t.user_id=$USER_A AND t.type='purchase' AND t.reference_type='order' WHERE p.buyer_id=$USER_A")
-JOIN_OK=$(echo "$JOIN_RES" | python3 -c "import sys,json;d=json.load(sys.stdin);r=d[0]['results'];print('1' if r and all(x['pord']==x['ioid']==x['tref']==x['oid'] for x in r) else '0')")
+# Verify FK link product_items↔orders↔order_items↔transactions
+JOIN_RES=$(d1 "SELECT pi.id item_id, pi.order_id item_order, oi.order_id oi_order, t.reference_id tref, o.id oid FROM product_items pi JOIN order_items oi ON oi.product_item_id=pi.id JOIN orders o ON o.id=pi.order_id JOIN transactions t ON t.user_id=$USER_A AND t.type='purchase' AND t.reference_type='order' WHERE pi.buyer_id=$USER_A")
+JOIN_OK=$(echo "$JOIN_RES" | python3 -c "import sys,json;d=json.load(sys.stdin);r=d[0]['results'];print('1' if r and all(x['item_order']==x['oi_order']==x['tref']==x['oid'] for x in r) else '0')")
 if [[ "$JOIN_OK" == "1" ]]; then
-  log_step "TC-01d" "FK toàn vẹn: products.order_id = order_items.order_id = transactions.reference_id" "PASS" "all matched"
+  log_step "TC-01d" "FK toàn vẹn: product_items.order_id = order_items.order_id = transactions.reference_id" "PASS" "all matched"
 else
   log_step "TC-01d" "FK toàn vẹn" "FAIL" "$JOIN_RES"
 fi
@@ -180,16 +182,16 @@ tg_start 200 $TG_B "userB" >/dev/null
 USER_B=$(d1_first_int "SELECT id FROM users WHERE telegram_id=$TG_B" "id")
 
 BAL_B_BEFORE=$(d1_first_int "SELECT balance b FROM users WHERE id=$USER_B" "b")
-STOCK_BEFORE=$(d1_first_int "SELECT COUNT(*) c FROM products WHERE type_id=$CAT_ID AND status='available'" "c")
+STOCK_BEFORE=$(d1_first_int "SELECT COUNT(*) c FROM product_items WHERE product_id=$PROD_ID AND status='available'" "c")
 
-tg_callback 201 $TG_B "userB" "buy:$CAT_ID:1" >/dev/null
+tg_callback 201 $TG_B "userB" "buy:$PROD_ID:1" >/dev/null
 sleep 1
 
 BAL_B_AFTER=$(d1_first_int "SELECT balance b FROM users WHERE id=$USER_B" "b")
 ORDS_B=$(d1_first_int "SELECT COUNT(*) c FROM orders WHERE user_id=$USER_B" "c")
 TXS_B=$(d1_first_int "SELECT COUNT(*) c FROM transactions WHERE user_id=$USER_B" "c")
-SOLD_B=$(d1_first_int "SELECT COUNT(*) c FROM products WHERE buyer_id=$USER_B" "c")
-STOCK_AFTER=$(d1_first_int "SELECT COUNT(*) c FROM products WHERE type_id=$CAT_ID AND status='available'" "c")
+SOLD_B=$(d1_first_int "SELECT COUNT(*) c FROM product_items WHERE buyer_id=$USER_B" "c")
+STOCK_AFTER=$(d1_first_int "SELECT COUNT(*) c FROM product_items WHERE product_id=$PROD_ID AND status='available'" "c")
 
 if [[ "$BAL_B_BEFORE" == "0" && "$BAL_B_AFTER" == "0" && "$ORDS_B" == "0" && "$TXS_B" == "0" && "$SOLD_B" == "0" && "$STOCK_BEFORE" == "$STOCK_AFTER" ]]; then
   log_step "TC-02" "User B (balance=0) mua → bị từ chối, KHÔNG ghi gì" "PASS" "bal=0 ords=0 txs=0 sold=0 stock=$STOCK_AFTER"
@@ -206,11 +208,11 @@ tg_start 300 $TG_C "userC" >/dev/null
 USER_C=$(d1_first_int "SELECT id FROM users WHERE telegram_id=$TG_C" "id")
 d1 "UPDATE users SET balance=26000 WHERE id=$USER_C; INSERT INTO transactions (user_id, type, amount, balance_before, balance_after, reference_type, description, status) VALUES ($USER_C, 'adjustment', 26000, 0, 26000, 'manual_seed', 'seed for race test', 'success');" >/dev/null
 
-STOCK_C_BEFORE=$(d1_first_int "SELECT COUNT(*) c FROM products WHERE type_id=$CAT_ID AND status='available'" "c")
+STOCK_C_BEFORE=$(d1_first_int "SELECT COUNT(*) c FROM product_items WHERE product_id=$PROD_ID AND status='available'" "c")
 
 # Fire 5 concurrent webhooks
 for i in 1 2 3 4 5; do
-  tg_callback $((300+i)) $TG_C "userC" "buy:$CAT_ID:1" >/dev/null &
+  tg_callback $((300+i)) $TG_C "userC" "buy:$PROD_ID:1" >/dev/null &
 done
 wait
 sleep 2
@@ -218,8 +220,8 @@ sleep 2
 BAL_C_AFTER=$(d1_first_int "SELECT balance b FROM users WHERE id=$USER_C" "b")
 ORDS_C=$(d1_first_int "SELECT COUNT(*) c FROM orders WHERE user_id=$USER_C" "c")
 TXS_C=$(d1_first_int "SELECT COUNT(*) c FROM transactions WHERE user_id=$USER_C AND type='purchase'" "c")
-SOLD_C=$(d1_first_int "SELECT COUNT(*) c FROM products WHERE buyer_id=$USER_C AND status='sold'" "c")
-STOCK_C_AFTER=$(d1_first_int "SELECT COUNT(*) c FROM products WHERE type_id=$CAT_ID AND status='available'" "c")
+SOLD_C=$(d1_first_int "SELECT COUNT(*) c FROM product_items WHERE buyer_id=$USER_C AND status='sold'" "c")
+STOCK_C_AFTER=$(d1_first_int "SELECT COUNT(*) c FROM product_items WHERE product_id=$PROD_ID AND status='available'" "c")
 DELTA_STOCK=$((STOCK_C_BEFORE - STOCK_C_AFTER))
 
 # Acceptance: chính xác 1 order, 1 tx, 1 product, balance=0, stock giảm đúng 1
@@ -367,9 +369,9 @@ print('\n'.join(lines))")
   echo
   echo "## Quy trình test"
   echo
-  echo "1. **TC-01 Nạp + mua (full flow user A):** /start tạo user → tạo deposit pending → SePay webhook giả lập (real HTTP với Apikey) → verify balance/deposit.status → mua 1×30k → verify balance giảm, products marked sold, FK chains đúng (orders ↔ products.order_id ↔ order_items.order_id ↔ transactions.reference_id), sổ cái balance_before+amount=balance_after."
-  echo "2. **TC-02 Mua không có tiền:** user mới balance=0 spam buy → phải reject, không ghi orders/transactions/products."
-  echo "3. **TC-03 Race condition (spam 2 nơi cùng lúc):** user balance đủ mua 1 sản phẩm, fire 5 callback buy đồng thời (giả lập 2+ device hoặc spam) → CHỈ 1 đơn thành công, balance=0, đúng 1 product sold."
+  echo "1. **TC-01 Nạp + mua (full flow user A):** /start tạo user → tạo deposit pending → SePay webhook giả lập (real HTTP với Apikey) → verify balance/deposit.status → mua 1x26k → verify balance giảm, product_items marked sold, FK chains đúng (orders ↔ product_items.order_id ↔ order_items.order_id ↔ transactions.reference_id), sổ cái balance_before+amount=balance_after."
+  echo "2. **TC-02 Mua không có tiền:** user mới balance=0 spam buy → phải reject, không ghi orders/transactions/product_items."
+  echo "3. **TC-03 Race condition (spam 2 nơi cùng lúc):** user balance đủ mua 1 sản phẩm, fire 5 callback buy đồng thời (giả lập 2+ device hoặc spam) → CHỈ 1 đơn thành công, balance=0, đúng 1 product_item sold."
   echo "4. **TC-04 Webhook idempotency:** SePay gọi 2 lần cùng id → chỉ cộng balance 1 lần."
   echo "5. **TC-05 Manual approve:** admin login → POST /deposits/:id/approve → balance cộng, audit_log ghi. Replay phải bị reject."
   echo "6. **TC-06 Admin API auth:** GET /api/admin/deposits không token / sai token → 401."

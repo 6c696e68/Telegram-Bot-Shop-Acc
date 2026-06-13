@@ -14,7 +14,7 @@ const props = withDefaults(
   defineProps<{
     id: number | string
     name: string
-    emoji?: string
+    emoji?: string | null
     imageUrl?: string | null
     priceDisplay: string
     stock?: number

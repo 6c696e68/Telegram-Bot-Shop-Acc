@@ -3,6 +3,11 @@ import { env } from 'cloudflare:test'
 import { miniAppApi } from '../src/routes/miniapp-api'
 import type { ApiResponse } from '../src/types/api'
 import type { OrderListItemDto } from '../src/types/miniapp'
+import {
+  resetThreeTierSchema,
+  seedCategory,
+  seedPricedProduct,
+} from './helpers/three-tier-schema'
 
 // Feature: telegram-mini-app, Task 8.3
 /**
@@ -25,67 +30,6 @@ const BOT_TOKEN = 'test-bot-token'
 
 // Người mua cố định để ký initData hợp lệ (middleware tự upsert vào `users`).
 const BUYER_TELEGRAM_ID = 770_000_222
-
-// --- Schema (khớp migration 0001) ---
-
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS system_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    description TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_by INTEGER
-  )`,
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    success_template TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER REFERENCES users(id),
-    order_id INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id),
-    quantity INTEGER NOT NULL CHECK(quantity > 0),
-    total_amount INTEGER NOT NULL,
-    transaction_id INTEGER,
-    status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed','refunded')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS order_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL REFERENCES orders(id),
-    product_id INTEGER NOT NULL REFERENCES products(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-]
 
 // --- Helper: ký initData hợp lệ (tái hiện thuật toán Telegram WebApp) ---
 
@@ -178,14 +122,7 @@ async function ensureBuyer(): Promise<number> {
 // --- Setup: tạo bảng + dọn sạch trước mỗi test ---
 
 beforeEach(async () => {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await env.DB.prepare(stmt).run()
-  }
-  await env.DB.prepare('DELETE FROM order_items').run()
-  await env.DB.prepare('DELETE FROM orders').run()
-  await env.DB.prepare('DELETE FROM products').run()
-  await env.DB.prepare('DELETE FROM product_types').run()
-  await env.DB.prepare('DELETE FROM users').run()
+  await resetThreeTierSchema(env.DB)
 })
 
 describe('GET /api/app/orders — trạng thái trống lịch sử (Req 11.4)', () => {
@@ -207,18 +144,19 @@ describe('GET /api/app/orders — trạng thái trống lịch sử (Req 11.4)',
   it('positive control: seed 1 đơn cho người mua → trả mảng đúng 1 phần tử', async () => {
     const userId = await ensureBuyer()
 
-    // Seed product_type + 1 order thuộc người mua hiện tại.
-    const pt = await env.DB.prepare(
-      `INSERT INTO product_types (name, description, price, emoji, is_visible, success_template)
-       VALUES ('Netflix', 'Tài khoản xem phim', 50000, '🎬', 1, 'Tài khoản: [content]')
-       RETURNING id`
-    ).first<{ id: number }>()
+    const categoryId = await seedCategory(env.DB, 'Streaming')
+    const productId = await seedPricedProduct(env.DB, {
+      categoryId,
+      name: 'Netflix',
+      description: 'Tài khoản xem phim',
+      price: 50_000,
+    })
 
     await env.DB.prepare(
-      `INSERT INTO orders (user_id, product_type_id, quantity, total_amount, status)
+      `INSERT INTO orders (user_id, product_id, quantity, total_amount, status)
        VALUES (?, ?, 2, 100000, 'completed')`
     )
-      .bind(userId, pt!.id)
+      .bind(userId, productId)
       .run()
 
     const res = await getOrders()

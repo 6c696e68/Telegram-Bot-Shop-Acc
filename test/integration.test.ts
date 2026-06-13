@@ -4,6 +4,12 @@ import { SignJWT } from 'jose'
 import { app } from '../src/index'
 import { transactionService } from '../src/services/transaction'
 import { hashPassword } from '../src/utils/auth'
+import {
+  resetThreeTierSchema,
+  seedCategory,
+  seedPricedProduct,
+  seedProductItems,
+} from './helpers/three-tier-schema'
 
 /**
  * Integration Tests — end-to-end flows qua D1 test environment.
@@ -14,133 +20,8 @@ import { hashPassword } from '../src/utils/auth'
 // Schema & Helpers
 // ============================
 
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id),
-    quantity INTEGER NOT NULL CHECK(quantity > 0),
-    total_amount INTEGER NOT NULL,
-    transaction_id INTEGER,
-    status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed','refunded')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    type TEXT NOT NULL CHECK(type IN ('deposit','purchase','refund','adjustment')),
-    amount INTEGER NOT NULL,
-    balance_before INTEGER NOT NULL,
-    balance_after INTEGER NOT NULL,
-    reference_type TEXT,
-    reference_id INTEGER,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'success' CHECK(status IN ('success','failed','pending')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER REFERENCES users(id),
-    order_id INTEGER REFERENCES orders(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_content_type ON products(type_id, content)`,
-  `CREATE TABLE IF NOT EXISTS order_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL REFERENCES orders(id),
-    product_id INTEGER NOT NULL REFERENCES products(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS deposits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    provider TEXT NOT NULL DEFAULT 'sepay',
-    amount INTEGER NOT NULL CHECK(amount > 0),
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
-    correlation_ref TEXT,
-    provider_txn_id TEXT,
-    metadata TEXT,
-    completed_at TEXT,
-    expired_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS admin_users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    display_name TEXT,
-    last_login_at TEXT,
-    failed_login_count INTEGER DEFAULT 0,
-    locked_until TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS system_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    description TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_by INTEGER REFERENCES admin_users(id)
-  )`,
-  `CREATE TABLE IF NOT EXISTS audit_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    admin_id INTEGER NOT NULL REFERENCES admin_users(id),
-    action TEXT NOT NULL,
-    resource_type TEXT NOT NULL,
-    resource_id INTEGER,
-    old_value TEXT,
-    new_value TEXT,
-    ip_address TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-]
-
 const JWT_SECRET = 'test-jwt-secret'
 const SEPAY_API_KEY = 'test-sepay-api-key-12345'
-
-async function applySchema(db: D1Database) {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await db.prepare(stmt).run()
-  }
-}
-
-async function cleanTables(db: D1Database) {
-  await db.prepare('DELETE FROM audit_logs').run()
-  await db.prepare('DELETE FROM order_items').run()
-  await db.prepare('DELETE FROM products').run()
-  await db.prepare('DELETE FROM orders').run()
-  await db.prepare('DELETE FROM transactions').run()
-  await db.prepare('DELETE FROM deposits').run()
-  await db.prepare('DELETE FROM users').run()
-  await db.prepare('DELETE FROM product_types').run()
-  await db.prepare('DELETE FROM system_config').run()
-  await db.prepare('DELETE FROM admin_users').run()
-}
 
 function getEnvBindings() {
   return {
@@ -169,8 +50,7 @@ function getExecutionCtx() {
 
 describe('Integration: Full Purchase Flow', () => {
   beforeEach(async () => {
-    await applySchema(env.DB)
-    await cleanTables(env.DB)
+    await resetThreeTierSchema(env.DB)
   })
 
   it('should complete purchase: deduct balance, mark products sold, create order & transaction', async () => {
@@ -187,29 +67,19 @@ describe('Integration: Full Purchase Flow', () => {
     const user = await db.prepare("SELECT id FROM users WHERE telegram_id = 111222333").first<{ id: number }>()
     const userId = user!.id
 
-    // Setup: create product_type
-    await db
-      .prepare(
-        "INSERT INTO product_types (name, description, price, created_at, updated_at) VALUES ('Netflix Premium', 'Tài khoản Netflix 1 tháng', 50000, datetime('now'), datetime('now'))"
-      )
-      .run()
-    const pt = await db.prepare("SELECT id FROM product_types WHERE name = 'Netflix Premium'").first<{ id: number }>()
-    const categoryId = pt!.id
-
-    // Setup: create 5 available products
-    for (let i = 1; i <= 5; i++) {
-      await db
-        .prepare(
-          "INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, 'available', datetime('now'))"
-        )
-        .bind(categoryId, `netflix_acc_${i}@mail.com:pass${i}`)
-        .run()
-    }
+    const categoryId = await seedCategory(db, 'Streaming')
+    const productId = await seedPricedProduct(db, {
+      categoryId,
+      name: 'Netflix Premium',
+      description: 'Tài khoản Netflix 1 tháng',
+      price: 50_000,
+    })
+    await seedProductItems(db, productId, 5)
 
     // Execute: purchase 3 products
     const quantity = 3
     const unitPrice = 50000
-    const result = await transactionService.executePurchase(db, userId, categoryId, quantity, unitPrice)
+    const result = await transactionService.executePurchase(db, userId, productId, quantity, unitPrice)
 
     // Verify: purchase succeeded
     expect(result.success).toBe(true)
@@ -222,8 +92,8 @@ describe('Integration: Full Purchase Flow', () => {
 
     // Verify: products marked as sold
     const soldProducts = await db
-      .prepare("SELECT * FROM products WHERE type_id = ? AND status = 'sold'")
-      .bind(categoryId)
+      .prepare("SELECT * FROM product_items WHERE product_id = ? AND status = 'sold'")
+      .bind(productId)
       .all<{ id: number; status: string; buyer_id: number; sold_at: string }>()
     expect(soldProducts.results).toHaveLength(3)
     for (const p of soldProducts.results) {
@@ -233,8 +103,8 @@ describe('Integration: Full Purchase Flow', () => {
 
     // Verify: remaining available products
     const availableProducts = await db
-      .prepare("SELECT * FROM products WHERE type_id = ? AND status = 'available'")
-      .bind(categoryId)
+      .prepare("SELECT * FROM product_items WHERE product_id = ? AND status = 'available'")
+      .bind(productId)
       .all()
     expect(availableProducts.results).toHaveLength(2)
 
@@ -242,12 +112,12 @@ describe('Integration: Full Purchase Flow', () => {
     const order = await db
       .prepare('SELECT * FROM orders WHERE user_id = ?')
       .bind(userId)
-      .first<{ quantity: number; total_amount: number; status: string; product_type_id: number }>()
+      .first<{ quantity: number; total_amount: number; status: string; product_id: number }>()
     expect(order).not.toBeNull()
     expect(order!.quantity).toBe(3)
     expect(order!.total_amount).toBe(150_000)
     expect(order!.status).toBe('completed')
-    expect(order!.product_type_id).toBe(categoryId)
+    expect(order!.product_id).toBe(productId)
 
     // Verify: transaction record created
     const tx = await db
@@ -272,24 +142,12 @@ describe('Integration: Full Purchase Flow', () => {
       .run()
     const user = await db.prepare("SELECT id FROM users WHERE telegram_id = 222333444").first<{ id: number }>()
 
-    // Setup: product type with price higher than balance
-    await db
-      .prepare(
-        "INSERT INTO product_types (name, price, created_at, updated_at) VALUES ('Expensive', 100000, datetime('now'), datetime('now'))"
-      )
-      .run()
-    const pt = await db.prepare("SELECT id FROM product_types WHERE name = 'Expensive'").first<{ id: number }>()
-
-    // Setup: products
-    await db
-      .prepare(
-        "INSERT INTO products (type_id, content, status, created_at) VALUES (?, 'content1', 'available', datetime('now'))"
-      )
-      .bind(pt!.id)
-      .run()
+    const categoryId = await seedCategory(db, 'Premium')
+    const productId = await seedPricedProduct(db, { categoryId, name: 'Expensive', price: 100_000 })
+    await seedProductItems(db, productId, 1)
 
     // Execute
-    const result = await transactionService.executePurchase(db, user!.id, pt!.id, 1, 100000)
+    const result = await transactionService.executePurchase(db, user!.id, productId, 1, 100_000)
 
     // Verify: rejected
     expect(result.success).toBe(false)
@@ -311,23 +169,12 @@ describe('Integration: Full Purchase Flow', () => {
       .run()
     const user = await db.prepare("SELECT id FROM users WHERE telegram_id = 333444555").first<{ id: number }>()
 
-    // Setup: product type with only 1 product
-    await db
-      .prepare(
-        "INSERT INTO product_types (name, price, created_at, updated_at) VALUES ('Limited', 20000, datetime('now'), datetime('now'))"
-      )
-      .run()
-    const pt = await db.prepare("SELECT id FROM product_types WHERE name = 'Limited'").first<{ id: number }>()
-
-    await db
-      .prepare(
-        "INSERT INTO products (type_id, content, status, created_at) VALUES (?, 'only_one', 'available', datetime('now'))"
-      )
-      .bind(pt!.id)
-      .run()
+    const categoryId = await seedCategory(db, 'Limited Category')
+    const productId = await seedPricedProduct(db, { categoryId, name: 'Limited', price: 20_000 })
+    await seedProductItems(db, productId, 1)
 
     // Execute: try to buy 3 but only 1 available
-    const result = await transactionService.executePurchase(db, user!.id, pt!.id, 3, 20000)
+    const result = await transactionService.executePurchase(db, user!.id, productId, 3, 20_000)
 
     // Verify: rejected
     expect(result.success).toBe(false)
@@ -347,8 +194,7 @@ describe('Integration: Full Deposit Flow (SePay webhook → balance update)', ()
   let mockFetch: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
-    await applySchema(env.DB)
-    await cleanTables(env.DB)
+    await resetThreeTierSchema(env.DB)
     mockFetch = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
     vi.stubGlobal('fetch', mockFetch)
   })
@@ -502,8 +348,7 @@ describe('Integration: JWT Auth Flow', () => {
   const ADMIN_PASSWORD = 'SecurePass123!'
 
   beforeEach(async () => {
-    await applySchema(env.DB)
-    await cleanTables(env.DB)
+    await resetThreeTierSchema(env.DB)
   })
 
   it('should login with correct credentials, access protected route, and reject invalid token', async () => {
@@ -649,4 +494,3 @@ describe('Integration: JWT Auth Flow', () => {
     expect(body.error).toContain('locked')
   })
 })
-

@@ -15,8 +15,8 @@ orderRoutes.use('/*', jwtAuth)
 
 /**
  * GET /orders
- * List orders with pagination + filters: status, product_type_id, date range (from/to).
- * JOIN product_types and users for display info.
+ * List orders with pagination + filters: status, product_id, date range (from/to).
+ * JOIN products and users for display info.
  * Requirements: 11.7, 13.1, 13.3
  */
 orderRoutes.get('/', async (c) => {
@@ -28,7 +28,7 @@ orderRoutes.get('/', async (c) => {
 
   // Filters
   const status = c.req.query('filter[status]') || c.req.query('status')
-  const productTypeId = c.req.query('filter[product_type_id]') || c.req.query('product_type_id')
+  const productId = c.req.query('filter[product_id]') || c.req.query('product_id') || c.req.query('product_type_id')
   const dateFrom = c.req.query('filter[from]') || c.req.query('from')
   const dateTo = c.req.query('filter[to]') || c.req.query('to')
 
@@ -44,9 +44,9 @@ orderRoutes.get('/', async (c) => {
     conditions.push('o.status = ?')
     bindings.push(status)
   }
-  if (productTypeId) {
-    conditions.push('o.product_type_id = ?')
-    bindings.push(Number(productTypeId))
+  if (productId) {
+    conditions.push('o.product_id = ?')
+    bindings.push(Number(productId))
   }
   if (dateFrom) {
     conditions.push('o.created_at >= ?')
@@ -66,13 +66,15 @@ orderRoutes.get('/', async (c) => {
 
   // Fetch orders with JOINs
   const dataSql = `
-    SELECT 
-      o.id, o.user_id, o.product_type_id, o.quantity, o.total_amount, 
+    SELECT
+      o.id, o.user_id, o.product_id, o.quantity, o.total_amount,
       o.transaction_id, o.status, o.created_at,
-      pt.name as product_type_name, pt.emoji as product_type_emoji, pt.price as unit_price,
+      p.name as product_name, p.emoji as product_emoji, p.price as unit_price,
+      pt.id as product_type_id, pt.name as product_type_name,
       u.telegram_id, u.username, u.first_name
     FROM orders o
-    LEFT JOIN product_types pt ON o.product_type_id = pt.id
+    LEFT JOIN products p ON o.product_id = p.id
+    LEFT JOIN product_types pt ON p.product_type_id = pt.id
     LEFT JOIN users u ON o.user_id = u.id
     ${whereClause}
     ORDER BY ${sortField} ${order}
@@ -91,7 +93,7 @@ orderRoutes.get('/', async (c) => {
 
 /**
  * GET /orders/:id
- * Order detail including user info, product_type info, and order_items with product content.
+ * Order detail including user info, product info, and order_items with product item content.
  * Requirements: 11.7, 13.1
  */
 orderRoutes.get('/:id', async (c) => {
@@ -103,13 +105,15 @@ orderRoutes.get('/:id', async (c) => {
 
   // Fetch order with user and product_type info
   const order = await c.env.DB.prepare(`
-    SELECT 
-      o.id, o.user_id, o.product_type_id, o.quantity, o.total_amount, 
+    SELECT
+      o.id, o.user_id, o.product_id, o.quantity, o.total_amount,
       o.transaction_id, o.status, o.created_at,
-      pt.name as product_type_name, pt.emoji as product_type_emoji, pt.price as unit_price,
+      p.name as product_name, p.emoji as product_emoji, p.price as unit_price,
+      pt.id as product_type_id, pt.name as product_type_name,
       u.telegram_id, u.username, u.first_name, u.balance as user_balance
     FROM orders o
-    LEFT JOIN product_types pt ON o.product_type_id = pt.id
+    LEFT JOIN products p ON o.product_id = p.id
+    LEFT JOIN product_types pt ON p.product_type_id = pt.id
     LEFT JOIN users u ON o.user_id = u.id
     WHERE o.id = ?
   `).bind(orderId).first()
@@ -121,10 +125,10 @@ orderRoutes.get('/:id', async (c) => {
   // Fetch order items with product content
   const { results: items } = await c.env.DB.prepare(`
     SELECT 
-      oi.id, oi.product_id, oi.created_at,
-      p.content, p.status as product_status, p.sold_at
+      oi.id, oi.product_item_id, oi.created_at,
+      pi.content, pi.status as product_status, pi.sold_at
     FROM order_items oi
-    LEFT JOIN products p ON oi.product_id = p.id
+    LEFT JOIN product_items pi ON oi.product_item_id = pi.id
     WHERE oi.order_id = ?
     ORDER BY oi.id ASC
   `).bind(orderId).all()

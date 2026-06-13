@@ -5,6 +5,12 @@ import { formatMoneyFor, buildCurrencyContext } from '../src/utils/format'
 import { resolveLang } from '../src/services/user-locale'
 import type { ApiResponse } from '../src/types/api'
 import type { ProductTypeDetailDto } from '../src/types/miniapp'
+import {
+  resetThreeTierSchema,
+  seedCategory,
+  seedPricedProduct,
+  seedProductItems,
+} from './helpers/three-tier-schema'
 
 // Feature: telegram-mini-app, Task 4.3
 /**
@@ -27,51 +33,6 @@ const BOT_TOKEN = 'test-bot-token'
 
 // Người mua cố định để ký initData hợp lệ (middleware tự upsert vào `users`).
 const BUYER_TELEGRAM_ID = 555_000_111
-
-// --- Schema (khớp migration 0001 + 0002 success_template) ---
-
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS system_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    description TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_by INTEGER
-  )`,
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    success_template TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER REFERENCES users(id),
-    order_id INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-]
 
 // --- Helper: ký initData hợp lệ (tái hiện thuật toán Telegram WebApp) ---
 
@@ -164,42 +125,33 @@ interface SeedProductType {
   availableStock: number
 }
 
-/** Seed một product_type (+ N products available) và trả về id vừa tạo. */
+/** Seed một Product có category cha (+ N product_items available) và trả về id sản phẩm. */
 async function seedProductType(setup: SeedProductType): Promise<number> {
-  const inserted = await env.DB.prepare(
-    `INSERT INTO product_types (name, description, price, emoji, sort_order, is_visible, success_template)
-     VALUES (?, ?, ?, '🎬', 0, ?, ?)
-     RETURNING id`
-  )
-    .bind(
-      setup.name,
-      setup.description,
-      setup.price,
-      setup.isVisible ? 1 : 0,
-      setup.successTemplate
-    )
-    .first<{ id: number }>()
+  const categoryId = await seedCategory(env.DB, 'Streaming')
+  const productId = await seedPricedProduct(env.DB, {
+    categoryId,
+    name: setup.name,
+    description: setup.description,
+    price: setup.price,
+    isVisible: setup.isVisible,
+  })
 
-  const typeId = inserted!.id
-  for (let i = 0; i < setup.availableStock; i++) {
+  if (setup.successTemplate !== null) {
     await env.DB.prepare(
-      `INSERT INTO products (type_id, content, status) VALUES (?, ?, 'available')`
+      `INSERT INTO product_type_templates (product_type_id, lang, success_template)
+       VALUES (?, 'vi', ?)`
     )
-      .bind(typeId, `${setup.name}-acc-${i}`)
+      .bind(productId, setup.successTemplate)
       .run()
   }
-  return typeId
+  await seedProductItems(env.DB, productId, setup.availableStock)
+  return productId
 }
 
 // --- Setup: tạo bảng + dọn sạch trước mỗi test ---
 
 beforeEach(async () => {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await env.DB.prepare(stmt).run()
-  }
-  await env.DB.prepare('DELETE FROM products').run()
-  await env.DB.prepare('DELETE FROM product_types').run()
-  await env.DB.prepare('DELETE FROM users').run()
+  await resetThreeTierSchema(env.DB)
 })
 
 describe('GET /api/app/product-types/:id — chi tiết loại sản phẩm (Req 5.3, 5.4)', () => {
@@ -211,7 +163,7 @@ describe('GET /api/app/product-types/:id — chi tiết loại sản phẩm (Req
     expect(body).toEqual({ success: false, data: null, error: 'not_found' })
   })
 
-  it('trả 404 not_found khi product_type bị ẩn (is_visible = 0)', async () => {
+  it('trả 404 not_found khi product bị ẩn (is_visible = 0)', async () => {
     const hiddenId = await seedProductType({
       name: 'Hidden',
       description: 'Loại ẩn',
@@ -223,7 +175,7 @@ describe('GET /api/app/product-types/:id — chi tiết loại sản phẩm (Req
 
     const res = await getDetail(hiddenId)
 
-    // Loại ẩn hành xử như không tồn tại (Req 5.4) — không lộ sự tồn tại.
+    // Product ẩn hành xử như không tồn tại (Req 5.4) — không lộ sự tồn tại.
     expect(res.status).toBe(404)
     const body = (await res.json()) as ApiResponse<null>
     expect(body).toEqual({ success: false, data: null, error: 'not_found' })
@@ -258,6 +210,9 @@ describe('GET /api/app/product-types/:id — chi tiết loại sản phẩm (Req
     const data = body.data!
     // Đầy đủ field chi tiết (Req 5.3).
     expect(data.id).toBe(visibleId)
+    expect(data.product_type_id).toBeGreaterThan(0)
+    expect(data.category_id).toBe(data.product_type_id)
+    expect(data.category_name).toBe('Streaming')
     expect(data.name).toBe('Netflix')
     expect(data.description).toBe('Tài khoản xem phim 1 tháng')
     expect(data.price).toBe(50_000)

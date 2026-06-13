@@ -43,11 +43,12 @@ interface Transaction {
 interface Order {
   id: number
   user_id: number
-  product_type_id: number
+  product_id: number
   quantity: number
   total_amount: number
   status: string
   created_at: string
+  product_name: string | null
   category_name: string | null
 }
 
@@ -557,7 +558,10 @@ onMounted(() => {
               >
                 <div class="flex items-center gap-2 min-w-0">
                   <span class="text-[13px] font-medium truncate" style="color: var(--ink-soft)">
-                    {{ order.category_name || 'N/A' }}
+                    {{ order.product_name || 'N/A' }}
+                  </span>
+                  <span v-if="order.category_name" class="text-xs truncate" style="color: var(--muted)">
+                    {{ order.category_name }}
                   </span>
                   <span class="text-xs" style="color: var(--muted)">x{{ order.quantity }}</span>
                 </div>

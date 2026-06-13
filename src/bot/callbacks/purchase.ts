@@ -4,7 +4,6 @@
  * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10, 3.11, 4.1, 4.6, 7.5, 7.6, 7.7
  */
 
-import type { DbProductType } from '../../types/db'
 import type { InlineKeyboardButton } from '../../types/telegram'
 import {
   editOrSendMessage,
@@ -14,12 +13,22 @@ import {
 } from '../telegram-api'
 import { formatMoneyFor, buildCurrencyContext, type CurrencyContext } from '../../utils/format'
 import { transactionService } from '../../services/transaction'
-import { renderSuccessMessage } from '../../utils/telegram-template'
-import { loadProductTypeTemplates } from '../../services/product-template'
+import { escapeHtml, renderSuccessMessage } from '../../utils/telegram-template'
+import { loadProductTemplates } from '../../services/product-template'
 import { resolveLang } from '../../services/user-locale'
-import { t, type Lang } from '../i18n'
+import { t, BASE_FALLBACK_LANG, type Lang } from '../i18n'
 import { type Region } from '../../i18n/locales'
 import { setSession } from '../session'
+import {
+  buildDisplayPlaceholder,
+  isValidText,
+  loadDisplayLang,
+  loadProductTranslations,
+  loadProductTypeTranslations,
+  resolveDisplayText,
+  type EntityTranslations,
+  type Field,
+} from '../../services/i18n-catalog'
 import {
   consumeToken,
   shouldSendNotice,
@@ -32,12 +41,79 @@ const MAX_QTY = 50
 
 // --- Interfaces ---
 
-interface CategoryWithStock {
+interface CategoryRow {
   id: number
   name: string
-  price: number
-  emoji: string
+  description: string | null
+  content: string | null
+  emoji: string | null
+  product_count: number
   stock: number
+}
+
+interface ProductRow {
+  id: number
+  product_type_id: number
+  name: string
+  description: string | null
+  content: string | null
+  price: number
+  emoji: string | null
+  category_name: string
+  category_emoji: string | null
+  stock: number
+}
+
+function withEmoji(emoji: string | null, text: string): string {
+  const trimmed = typeof emoji === 'string' ? emoji.trim() : ''
+  return trimmed ? `${trimmed} ${text}` : text
+}
+
+async function resolveCategoryName(db: D1Database, row: Pick<CategoryRow, 'id' | 'name'>, lang: Lang): Promise<string> {
+  const [defaultLang, translations] = await Promise.all([
+    loadDisplayLang(db),
+    loadProductTypeTranslations(db, row.id),
+  ])
+  return resolveDisplayText(translations, 'name', row.name, lang, defaultLang, buildDisplayPlaceholder(row.id))
+}
+
+async function resolveProductName(db: D1Database, row: Pick<ProductRow, 'id' | 'name'>, lang: Lang): Promise<string> {
+  const [defaultLang, translations] = await Promise.all([
+    loadDisplayLang(db),
+    loadProductTranslations(db, row.id),
+  ])
+  return resolveDisplayText(translations, 'name', row.name, lang, defaultLang, buildDisplayPlaceholder(row.id))
+}
+
+function resolveOptionalDisplayText(
+  translations: EntityTranslations,
+  field: Field,
+  baseValue: string | null,
+  displayLang: Lang,
+  defaultLang: Lang
+): string | null {
+  for (const candidateLang of [displayLang, defaultLang, BASE_FALLBACK_LANG]) {
+    const value = translations.byLang.get(candidateLang)?.[field]
+    if (isValidText(value)) return value.trim()
+  }
+  return isValidText(baseValue) ? baseValue.trim() : null
+}
+
+async function loadVisibleProduct(db: D1Database, productId: number): Promise<ProductRow | null> {
+  return db
+    .prepare(
+      `SELECT p.id, p.product_type_id, p.name, p.description, p.content, p.price, p.emoji,
+              pt.name AS category_name,
+              pt.emoji AS category_emoji,
+              COUNT(CASE WHEN pi.status = 'available' THEN 1 END) AS stock
+       FROM products p
+       JOIN product_types pt ON pt.id = p.product_type_id
+       LEFT JOIN product_items pi ON pi.product_id = p.id
+       WHERE p.id = ? AND p.is_visible = 1 AND pt.is_visible = 1
+       GROUP BY p.id`
+    )
+    .bind(productId)
+    .first<ProductRow>()
 }
 
 // --- 1. Category List ---
@@ -55,19 +131,20 @@ export async function handleCategoryList(
   ctx: CurrencyContext,
   page = 0
 ): Promise<void> {
-  // Query categories có stock > 0
+  // Query danh mục hiển thị; không lọc tồn kho để danh mục rỗng vẫn có trạng thái rõ ràng.
   const result = await db
     .prepare(
-      `SELECT pt.id, pt.name, pt.price, pt.emoji,
-              COUNT(p.id) as stock
+      `SELECT pt.id, pt.name, pt.description, pt.content, pt.emoji,
+              COUNT(DISTINCT p.id) AS product_count,
+              COUNT(CASE WHEN pi.status = 'available' THEN 1 END) AS stock
        FROM product_types pt
-       INNER JOIN products p ON p.type_id = pt.id AND p.status = 'available'
+       LEFT JOIN products p ON p.product_type_id = pt.id AND p.is_visible = 1
+       LEFT JOIN product_items pi ON pi.product_id = p.id
        WHERE pt.is_visible = 1
        GROUP BY pt.id
-       HAVING stock > 0
        ORDER BY pt.sort_order ASC, pt.name ASC`
     )
-    .all<CategoryWithStock>()
+    .all<CategoryRow>()
 
   const categories = result.results
 
@@ -85,17 +162,17 @@ export async function handleCategoryList(
   const pageItems = categories.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
 
   // Build category buttons (1 per row)
-  const buttons: InlineKeyboardButton[][] = pageItems.map((cat) => [
-    {
-      text: t(lang, 'shop.item_label', {
-        emoji: cat.emoji,
-        name: cat.name,
-        price: formatMoneyFor(cat.price, ctx),
-        stock: cat.stock,
-      }),
-      callback_data: `cat:${cat.id}`,
-    },
-  ])
+  const buttons: InlineKeyboardButton[][] = await Promise.all(
+    pageItems.map(async (cat) => {
+      const name = await resolveCategoryName(db, cat, lang)
+      return [
+        {
+          text: `${withEmoji(cat.emoji, name)} (${cat.product_count})`,
+          callback_data: `cat:${cat.id}`,
+        },
+      ]
+    })
+  )
 
   // Pagination nav buttons
   const navRow: InlineKeyboardButton[] = []
@@ -124,10 +201,10 @@ export async function handleCategoryList(
   })
 }
 
-// --- 2. Category Detail ---
+// --- 2. Product List In Category ---
 
 /**
- * Hiển thị chi tiết category + grid số lượng 1-10 (5×2).
+ * Hiển thị danh sách Product thuộc một Product_Type.
  * Callback: `cat:{id}`
  */
 export async function handleCategoryDetail(
@@ -140,11 +217,11 @@ export async function handleCategoryDetail(
   lang: Lang,
   ctx: CurrencyContext
 ): Promise<void> {
-  // Query category info + stock count
+  // Query category info
   const category = await db
-    .prepare('SELECT * FROM product_types WHERE id = ?')
+    .prepare('SELECT id, name, description, content, emoji, 0 AS product_count, 0 AS stock FROM product_types WHERE id = ? AND is_visible = 1')
     .bind(categoryId)
-    .first<DbProductType>()
+    .first<CategoryRow>()
 
   if (!category) {
     await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.not_found'), {
@@ -153,21 +230,29 @@ export async function handleCategoryDetail(
     return
   }
 
-  const stockResult = await db
+  const categoryName = await resolveCategoryName(db, category, lang)
+  const result = await db
     .prepare(
-      `SELECT COUNT(*) as stock FROM products WHERE type_id = ? AND status = 'available'`
+      `SELECT p.id, p.product_type_id, p.name, p.description, p.content, p.price, p.emoji,
+              pt.name AS category_name,
+              pt.emoji AS category_emoji,
+              COUNT(CASE WHEN pi.status = 'available' THEN 1 END) AS stock
+       FROM products p
+       JOIN product_types pt ON pt.id = p.product_type_id
+       LEFT JOIN product_items pi ON pi.product_id = p.id
+       WHERE p.product_type_id = ? AND p.is_visible = 1 AND pt.is_visible = 1
+       GROUP BY p.id
+       ORDER BY p.sort_order ASC, p.name ASC`
     )
     .bind(categoryId)
-    .first<{ stock: number }>()
+    .all<ProductRow>()
 
-  const stock = stockResult?.stock ?? 0
-
-  if (stock === 0) {
+  if (result.results.length === 0) {
     await editOrSendMessage(
       botToken,
       chatId,
       messageId,
-      `${category.emoji} <b>${category.name}</b>\n\n${t(lang, 'shop.out_of_stock')}`,
+      `${escapeHtml(withEmoji(category.emoji, categoryName))}\n\n${t(lang, 'shop.empty')}`,
       {
         parse_mode: 'HTML',
         reply_markup: buildInlineKeyboard([buildBackButton('cat:list', lang)]),
@@ -176,35 +261,119 @@ export async function handleCategoryDetail(
     return
   }
 
+  const buttons: InlineKeyboardButton[][] = await Promise.all(
+    result.results.map(async (product) => {
+      const name = await resolveProductName(db, product, lang)
+      return [
+        {
+          text: t(lang, 'shop.item_label', {
+            emoji: product.emoji ?? product.category_emoji ?? '',
+            name,
+            price: formatMoneyFor(product.price, ctx),
+            stock: product.stock,
+          }),
+          callback_data: `prod:${product.id}`,
+        },
+      ]
+    })
+  )
+  buttons.push(buildBackButton('cat:list', lang))
+
+  const text = [
+    `<b>${escapeHtml(withEmoji(category.emoji, categoryName))}</b>`,
+    '',
+    t(lang, 'shop.list_header', { page: 1, total: 1 }),
+  ].join('\n')
+
+  await editOrSendMessage(botToken, chatId, messageId, text, {
+    parse_mode: 'HTML',
+    reply_markup: buildInlineKeyboard(buttons),
+  })
+}
+
+// --- 3. Product Detail ---
+
+/**
+ * Hiển thị chi tiết Product + grid số lượng 1-10 (5×2).
+ * Callback: `prod:{id}`
+ */
+export async function handleProductDetail(
+  db: D1Database,
+  botToken: string,
+  chatId: number,
+  messageId: number | undefined,
+  productId: number,
+  userId: number,
+  lang: Lang,
+  ctx: CurrencyContext
+): Promise<void> {
+  const product = await loadVisibleProduct(db, productId)
+
+  if (!product) {
+    await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.not_found'), {
+      reply_markup: buildInlineKeyboard([buildBackButton('cat:list', lang)]),
+    })
+    return
+  }
+
+  const [defaultLang, translations] = await Promise.all([
+    loadDisplayLang(db),
+    loadProductTranslations(db, product.id),
+  ])
+  const productName = resolveDisplayText(
+    translations,
+    'name',
+    product.name,
+    lang,
+    defaultLang,
+    buildDisplayPlaceholder(product.id)
+  )
+  const productDescription = resolveOptionalDisplayText(translations, 'description', product.description, lang, defaultLang)
+  const displayEmoji = product.emoji ?? product.category_emoji
+
+  if (product.stock === 0) {
+    await editOrSendMessage(
+      botToken,
+      chatId,
+      messageId,
+      `<b>${escapeHtml(withEmoji(displayEmoji, productName))}</b>\n\n${t(lang, 'shop.out_of_stock')}`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: buildInlineKeyboard([buildBackButton(`cat:${product.product_type_id}`, lang)]),
+      }
+    )
+    return
+  }
+
   // Set session for free-text quantity input
-  setSession(userId, 'purchase', 'quantity', { categoryId })
+  setSession(userId, 'purchase', 'quantity', { productId })
 
   // Build info text
-  const description = category.description ? `📝 ${category.description}\n` : ''
+  const description = productDescription ? `${escapeHtml(productDescription)}\n` : ''
   const text = [
-    `${category.emoji} <b>${category.name}</b>`,
+    `<b>${escapeHtml(withEmoji(displayEmoji, productName))}</b>`,
     '',
     description,
-    t(lang, 'shop.detail_price', { price: formatMoneyFor(category.price, ctx) }),
-    t(lang, 'shop.detail_stock', { stock }),
+    t(lang, 'shop.detail_price', { price: formatMoneyFor(product.price, ctx) }),
+    t(lang, 'shop.detail_stock', { stock: product.stock }),
     '',
     t(lang, 'shop.detail_choose_qty'),
-    t(lang, 'shop.detail_qty_hint', { max: Math.min(MAX_QTY, stock) }),
+    t(lang, 'shop.detail_qty_hint', { max: Math.min(MAX_QTY, product.stock) }),
   ].join('\n')
 
   // Build qty grid 5×2 (rows of 5)
-  const maxGrid = Math.min(10, stock)
+  const maxGrid = Math.min(10, product.stock)
   const qtyButtons: InlineKeyboardButton[][] = []
   for (let i = 1; i <= maxGrid; i += 5) {
     const row: InlineKeyboardButton[] = []
     for (let j = i; j < i + 5 && j <= maxGrid; j++) {
-      row.push({ text: String(j), callback_data: `qty:${categoryId}:${j}` })
+      row.push({ text: String(j), callback_data: `qty:${product.id}:${j}` })
     }
     qtyButtons.push(row)
   }
 
   // Back button
-  qtyButtons.push(buildBackButton('cat:list', lang))
+  qtyButtons.push(buildBackButton(`cat:${product.product_type_id}`, lang))
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
     parse_mode: 'HTML',
@@ -216,14 +385,14 @@ export async function handleCategoryDetail(
 
 /**
  * Hiển thị xác nhận: tổng tiền + nút xác nhận mua.
- * Callback: `qty:{catId}:{qty}`
+ * Callback: `qty:{productId}:{qty}`
  */
 export async function handleQuantitySelect(
   db: D1Database,
   botToken: string,
   chatId: number,
   messageId: number | undefined,
-  categoryId: number,
+  productId: number,
   quantity: number,
   userId: number,
   lang: Lang,
@@ -234,55 +403,46 @@ export async function handleQuantitySelect(
     await editOrSendMessage(
       botToken,
       chatId,
-      messageId,
-      t(lang, 'shop.qty_invalid', { max: MAX_QTY }),
-      {
-        reply_markup: buildInlineKeyboard([buildBackButton(`cat:${categoryId}`, lang)]),
-      }
-    )
+        messageId,
+        t(lang, 'shop.qty_invalid', { max: MAX_QTY }),
+        {
+          reply_markup: buildInlineKeyboard([buildBackButton(`prod:${productId}`, lang)]),
+        }
+      )
     return
   }
 
-  // Query category price + available stock
-  const category = await db
-    .prepare('SELECT * FROM product_types WHERE id = ?')
-    .bind(categoryId)
-    .first<DbProductType>()
+  // Query product price + available stock
+  const product = await loadVisibleProduct(db, productId)
 
-  if (!category) {
+  if (!product) {
     await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.type_not_found'), {
       reply_markup: buildInlineKeyboard([buildBackButton('cat:list', lang)]),
     })
     return
   }
 
-  const stockResult = await db
-    .prepare(
-      `SELECT COUNT(*) as stock FROM products WHERE type_id = ? AND status = 'available'`
-    )
-    .bind(categoryId)
-    .first<{ stock: number }>()
-
-  const stock = stockResult?.stock ?? 0
+  const productName = await resolveProductName(db, product, lang)
+  const displayEmoji = product.emoji ?? product.category_emoji
 
   // Check stock >= quantity
-  if (stock < quantity) {
+  if (product.stock < quantity) {
     const buttons: InlineKeyboardButton[][] = []
-    if (stock > 0) {
+    if (product.stock > 0) {
       buttons.push([
         {
-          text: t(lang, 'shop.buy_remaining', { stock }),
-          callback_data: `qty:${categoryId}:${stock}`,
+          text: t(lang, 'shop.buy_remaining', { stock: product.stock }),
+          callback_data: `qty:${product.id}:${product.stock}`,
         },
       ])
     }
-    buttons.push(buildBackButton(`cat:${categoryId}`, lang))
+    buttons.push(buildBackButton(`prod:${product.id}`, lang))
 
     await editOrSendMessage(
       botToken,
       chatId,
       messageId,
-      t(lang, 'shop.stock_short', { stock, qty: quantity }),
+      t(lang, 'shop.stock_short', { stock: product.stock, qty: quantity }),
       {
         parse_mode: 'HTML',
         reply_markup: buildInlineKeyboard(buttons),
@@ -292,21 +452,21 @@ export async function handleQuantitySelect(
   }
 
   // Show confirmation
-  const totalAmount = category.price * quantity
+  const totalAmount = product.price * quantity
   const text = [
     t(lang, 'shop.confirm_title'),
     '',
-    `${category.emoji} ${category.name}`,
+    escapeHtml(withEmoji(displayEmoji, productName)),
     t(lang, 'shop.confirm_qty', { qty: quantity }),
-    t(lang, 'shop.confirm_unit', { price: formatMoneyFor(category.price, ctx) }),
+    t(lang, 'shop.confirm_unit', { price: formatMoneyFor(product.price, ctx) }),
     t(lang, 'shop.confirm_total', { total: formatMoneyFor(totalAmount, ctx) }),
     '',
     t(lang, 'shop.confirm_hint'),
   ].join('\n')
 
   const buttons = [
-    [{ text: t(lang, 'shop.confirm_btn'), callback_data: `buy:${categoryId}:${quantity}` }],
-    buildBackButton(`cat:${categoryId}`, lang),
+    [{ text: t(lang, 'shop.confirm_btn'), callback_data: `buy:${product.id}:${quantity}` }],
+    buildBackButton(`prod:${product.id}`, lang),
   ]
 
   await editOrSendMessage(botToken, chatId, messageId, text, {
@@ -319,14 +479,14 @@ export async function handleQuantitySelect(
 
 /**
  * Thực hiện mua hàng: gọi TransactionService.executePurchase → gửi product contents.
- * Callback: `buy:{catId}:{qty}`
+ * Callback: `buy:{productId}:{qty}`
  */
 export async function handlePurchaseConfirm(
   db: D1Database,
   botToken: string,
   chatId: number,
   messageId: number | undefined,
-  categoryId: number,
+  productId: number,
   quantity: number,
   userId: number,
   lang: Lang,
@@ -365,31 +525,30 @@ export async function handlePurchaseConfirm(
     return
   }
 
-  // Query category for unitPrice
-  const category = await db
-    .prepare('SELECT * FROM product_types WHERE id = ?')
-    .bind(categoryId)
-    .first<DbProductType>()
+  // Query product for unitPrice
+  const product = await loadVisibleProduct(db, productId)
 
-  if (!category) {
+  if (!product) {
     await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.type_not_found'), {
       reply_markup: buildInlineKeyboard([buildBackButton('cat:list', lang)]),
     })
     return
   }
 
-  const totalAmount = category.price * quantity
+  const productName = await resolveProductName(db, product, lang)
+  const displayEmoji = product.emoji ?? product.category_emoji
+  const totalAmount = product.price * quantity
 
   // Execute purchase
   const result = await transactionService.executePurchase(
     db,
     user.id,
-    categoryId,
+    product.id,
     quantity,
-    category.price
+    product.price
   )
 
-  if (!result.success) {
+  if (result.success === false) {
     if (result.error === 'insufficient_balance') {
       const shortfall = totalAmount - user.balance
       const text = [
@@ -402,7 +561,7 @@ export async function handlePurchaseConfirm(
 
       const buttons = [
         [{ text: t(lang, 'menu.deposit'), callback_data: 'dep:menu' }],
-        buildBackButton(`cat:${categoryId}`, lang),
+        buildBackButton(`prod:${product.id}`, lang),
       ]
 
       await editOrSendMessage(botToken, chatId, messageId, text, {
@@ -416,9 +575,9 @@ export async function handlePurchaseConfirm(
       // Check actual remaining stock
       const stockResult = await db
         .prepare(
-          `SELECT COUNT(*) as stock FROM products WHERE type_id = ? AND status = 'available'`
+          `SELECT COUNT(*) as stock FROM product_items WHERE product_id = ? AND status = 'available'`
         )
-        .bind(categoryId)
+        .bind(product.id)
         .first<{ stock: number }>()
 
       const remaining = stockResult?.stock ?? 0
@@ -428,11 +587,11 @@ export async function handlePurchaseConfirm(
         buttons.push([
           {
             text: t(lang, 'shop.buy_remaining', { stock: remaining }),
-            callback_data: `qty:${categoryId}:${remaining}`,
+            callback_data: `qty:${product.id}:${remaining}`,
           },
         ])
       }
-      buttons.push(buildBackButton(`cat:${categoryId}`, lang))
+      buttons.push(buildBackButton(`prod:${product.id}`, lang))
 
       await editOrSendMessage(
         botToken,
@@ -455,24 +614,26 @@ export async function handlePurchaseConfirm(
   }
 
   // --- Success: send product contents ---
-  const products = result.products ?? []
-  const balanceAfter = user.balance - totalAmount
+  const productItems = result.productItems ?? []
+  const balanceAfter = result.balanceAfter ?? user.balance - totalAmount
 
-  // Render tin nhắn thành công theo template đa ngôn ngữ của category (R16.5)
-  const templatesByLang = await loadProductTypeTemplates(db, category.id)
+  // Render tin nhắn thành công theo template đa ngôn ngữ của Product (R16.5)
+  const templatesByLang = await loadProductTemplates(db, product.id)
   const successLang = await resolveLang(db, user)
+  const defaultLang = await loadDisplayLang(db)
   const successCtx = await buildCurrencyContext(db, { lang: successLang, region: user.region })
   const contentText = renderSuccessMessage(
     templatesByLang,
     {
-      emoji: category.emoji,
-      name: category.name,
+      emoji: displayEmoji ?? '',
+      name: productName,
       quantity,
       totalAmount,
       balanceAfter,
-      contents: products.map((p) => p.content),
+      contents: productItems.map((p) => p.content),
     },
-    successCtx
+    successCtx,
+    defaultLang
   )
 
   const successButtons = [
@@ -500,7 +661,7 @@ export async function handlePurchaseTextInput(
   chatId: number,
   userId: number,
   text: string,
-  categoryId: number,
+  productId: number,
   lang: Lang,
   ctx: CurrencyContext
 ): Promise<void> {
@@ -513,5 +674,5 @@ export async function handlePurchaseTextInput(
   }
 
   // Delegate to quantity select handler (confirmation screen)
-  await handleQuantitySelect(db, botToken, chatId, undefined, categoryId, qty, userId, lang, ctx)
+  await handleQuantitySelect(db, botToken, chatId, undefined, productId, qty, userId, lang, ctx)
 }

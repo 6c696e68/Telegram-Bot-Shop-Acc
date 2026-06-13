@@ -28,24 +28,42 @@ export interface DbProductTypeTemplate {
   updated_at: string
 }
 
+/** Danh mục (tầng 1) — KHÔNG có giá. Giá thuộc về `DbProduct`. */
 export interface DbProductType {
   id: number
   name: string
   description: string | null
-  price: number
-  emoji: string
+  content: string | null
+  emoji: string | null
   /** Ảnh minh hoạ: data URL (base64) hoặc URL HTTPS; null = chưa có (Mini App fallback emoji). */
   image_data: string | null
   sort_order: number
   is_visible: number // 0 | 1
-  success_template: string | null
   created_at: string
   updated_at: string
 }
 
+/** Sản phẩm có giá (tầng 2) — thuộc một danh mục `product_types`. */
 export interface DbProduct {
   id: number
-  type_id: number
+  product_type_id: number // FK -> product_types(id)
+  name: string
+  description: string | null
+  content: string | null
+  price: number // VNĐ (INTEGER), 1 <= price <= 999999999
+  emoji: string | null
+  /** Ảnh minh hoạ: data URL (base64) hoặc URL HTTPS; null = chưa có (Mini App fallback emoji). */
+  image_data: string | null
+  sort_order: number
+  is_visible: number // 0 | 1
+  created_at: string
+  updated_at: string
+}
+
+/** Kho tài khoản (tầng 3) — đổi tên từ `DbProduct` cũ; thuộc một `products`. */
+export interface DbProductItem {
+  id: number
+  product_id: number // FK -> products(id)
   content: string
   status: 'available' | 'sold' | 'reserved'
   buyer_id: number | null
@@ -54,10 +72,32 @@ export interface DbProduct {
   sold_at: string | null
 }
 
+/** Bản dịch theo thực thể cho `products` (UNIQUE(product_id, lang)). */
+export interface DbProductTranslation {
+  id: number
+  product_id: number // FK -> products(id)
+  lang: string // mã locale
+  name: string | null
+  description: string | null
+  content: string | null
+  updated_at: string
+}
+
+/** Bản dịch theo thực thể cho `product_types` (UNIQUE(product_type_id, lang)). */
+export interface DbProductTypeTranslation {
+  id: number
+  product_type_id: number // FK -> product_types(id)
+  lang: string // mã locale
+  name: string | null
+  description: string | null
+  content: string | null
+  updated_at: string
+}
+
 export interface DbOrder {
   id: number
   user_id: number
-  product_type_id: number
+  product_id: number // FK -> products(id)
   quantity: number
   total_amount: number
   transaction_id: number | null
@@ -68,7 +108,7 @@ export interface DbOrder {
 export interface DbOrderItem {
   id: number
   order_id: number
-  product_id: number
+  product_item_id: number // FK -> product_items(id)
   created_at: string
 }
 

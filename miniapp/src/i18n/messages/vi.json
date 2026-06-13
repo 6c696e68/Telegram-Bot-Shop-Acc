@@ -44,10 +44,14 @@
     "search_placeholder": "Tìm kiếm tài khoản...",
     "featured": "Tài khoản nổi bật",
     "all_categories": "Tất cả",
+    "category_filter": "Bộ lọc danh mục",
+    "category_empty_title": "Danh mục chưa có sản phẩm",
+    "category_empty_desc": "Vui lòng chọn danh mục khác hoặc quay lại sau.",
     "search_empty_title": "Không tìm thấy",
     "search_empty_desc": "Không có sản phẩm nào khớp với tìm kiếm của bạn.",
     "empty_title": "Chưa có sản phẩm",
     "empty_desc": "Hiện chưa có loại sản phẩm nào để mua.",
+    "category_load_error": "Không tải được danh mục. Vui lòng thử lại.",
     "load_error": "Không tải được danh sách sản phẩm. Vui lòng thử lại."
   },
   "product": {

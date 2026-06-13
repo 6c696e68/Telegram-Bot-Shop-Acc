@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import fc from 'fast-check'
 import { app } from '../src/index'
+import { cleanThreeTierTables, resetThreeTierSchema } from './helpers/three-tier-schema'
 
 /**
  * Property-based tests cho SePay Webhook route.
@@ -13,104 +14,8 @@ import { app } from '../src/index'
 
 const SEPAY_API_KEY = 'test-sepay-api-key-12345'
 
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id),
-    quantity INTEGER NOT NULL CHECK(quantity > 0),
-    total_amount INTEGER NOT NULL,
-    transaction_id INTEGER,
-    status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed','refunded')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    type TEXT NOT NULL CHECK(type IN ('deposit','purchase','refund','adjustment')),
-    amount INTEGER NOT NULL,
-    balance_before INTEGER NOT NULL,
-    balance_after INTEGER NOT NULL,
-    reference_type TEXT,
-    reference_id INTEGER,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'success' CHECK(status IN ('success','failed','pending')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER REFERENCES users(id),
-    order_id INTEGER REFERENCES orders(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-  `CREATE TABLE IF NOT EXISTS order_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL REFERENCES orders(id),
-    product_id INTEGER NOT NULL REFERENCES products(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS deposits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    provider TEXT NOT NULL DEFAULT 'sepay',
-    amount INTEGER NOT NULL CHECK(amount > 0),
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
-    correlation_ref TEXT,
-    provider_txn_id TEXT,
-    metadata TEXT,
-    completed_at TEXT,
-    expired_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS system_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    description TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_by INTEGER
-  )`,
-]
-
-async function applySchema(db: D1Database) {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await db.prepare(stmt).run()
-  }
-}
-
 async function cleanTables(db: D1Database) {
-  await db.prepare('DELETE FROM order_items').run()
-  await db.prepare('DELETE FROM products').run()
-  await db.prepare('DELETE FROM orders').run()
-  await db.prepare('DELETE FROM transactions').run()
-  await db.prepare('DELETE FROM deposits').run()
-  await db.prepare('DELETE FROM users').run()
-  await db.prepare('DELETE FROM product_types').run()
+  await cleanThreeTierTables(db)
 }
 
 async function seedUser(db: D1Database, balance: number): Promise<{ id: number; telegramId: number }> {
@@ -155,7 +60,7 @@ function buildSepayPayload(options: {
     transactionDate: '2024-07-02 11:08:33',
     accountNumber: '1017588888',
     subAccount: null,
-    code: `SEVN${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+    code: `SEVN${options.id}`,
     content: options.content,
     transferType: 'in' as const,
     description: 'Transfer',
@@ -221,7 +126,7 @@ describe('Property 3: Deposit webhook idempotence', () => {
   let mockFetch: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
-    await applySchema(env.DB)
+    await resetThreeTierSchema(env.DB)
     await cleanTables(env.DB)
 
     // Mock global fetch to prevent real Telegram API calls
@@ -260,8 +165,6 @@ describe('Property 3: Deposit webhook idempotence', () => {
             transferAmount,
             content: `${transferCode} chuyen tien nap`,
           })
-
-          const bindings = getEnvBindings()
 
           // First call: should process the deposit
           const res1 = await sendWebhook(payload)
@@ -309,8 +212,6 @@ describe('Property 3: Deposit webhook idempotence', () => {
 
           const { id: userId } = await seedUser(env.DB, initialBalance)
           await seedDeposit(env.DB, userId, transferCode, transferAmount)
-
-          const bindings = getEnvBindings()
 
           const payload = buildSepayPayload({
             id: sepayId,
@@ -365,8 +266,6 @@ describe('Property 3: Deposit webhook idempotence', () => {
 
           const { id: userId } = await seedUser(env.DB, 0)
           await seedDeposit(env.DB, userId, transferCode, transferAmount)
-
-          const bindings = getEnvBindings()
 
           const payload = buildSepayPayload({
             id: sepayId,

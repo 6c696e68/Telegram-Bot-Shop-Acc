@@ -14,6 +14,12 @@ import { editOrSendMessage, buildInlineKeyboard, buildBackButton } from '../tele
 import { escapeHtml } from '../../utils/telegram-template'
 import { formatMoneyFor, formatDateTime, type CurrencyContext } from '../../utils/format'
 import { t, type Lang, type MessageKey } from '../i18n'
+import {
+  buildDisplayPlaceholder,
+  loadDisplayLang,
+  loadProductTranslations,
+  resolveDisplayText,
+} from '../../services/i18n-catalog'
 
 interface OrderRow {
   id: number
@@ -21,8 +27,9 @@ interface OrderRow {
   total_amount: number
   status: 'completed' | 'refunded'
   created_at: string
+  product_id: number
   name: string
-  emoji: string
+  emoji: string | null
 }
 
 /**
@@ -40,13 +47,17 @@ export async function handleHistory(
   ctx: CurrencyContext
 ): Promise<void> {
   const { results } = await db
-    .prepare(
-      `SELECT o.id, o.quantity, o.total_amount, o.status, o.created_at, pt.name, pt.emoji
-       FROM orders o
-       JOIN product_types pt ON pt.id = o.product_type_id
-       JOIN users u ON u.id = o.user_id
-       WHERE u.telegram_id = ?
-       ORDER BY o.created_at DESC
+	   .prepare(
+	      `SELECT o.id, o.quantity, o.total_amount, o.status, o.created_at,
+	              p.id AS product_id,
+	              p.name,
+	              COALESCE(p.emoji, pt.emoji) AS emoji
+	       FROM orders o
+	       JOIN products p ON p.id = o.product_id
+	       JOIN product_types pt ON pt.id = p.product_type_id
+	       JOIN users u ON u.id = o.user_id
+	       WHERE u.telegram_id = ?
+	       ORDER BY o.created_at DESC
        LIMIT 10`
     )
     .bind(userId)
@@ -61,17 +72,31 @@ export async function handleHistory(
   }
 
   // Mỗi đơn = một nút bấm (1 nút/hàng) mở chi tiết đơn.
-  const buttons: InlineKeyboardButton[][] = results.map((order) => [
-    {
-      text: t(lang, 'history.item_button', {
-        emoji: order.emoji,
-        name: order.name,
-        qty: order.quantity,
-        total: formatMoneyFor(order.total_amount, ctx),
-      }),
-      callback_data: `hist:${order.id}`,
-    },
-  ])
+  const defaultLang = await loadDisplayLang(db)
+  const buttons: InlineKeyboardButton[][] = await Promise.all(
+    results.map(async (order) => {
+      const translations = await loadProductTranslations(db, order.product_id)
+      const name = resolveDisplayText(
+        translations,
+        'name',
+        order.name,
+        lang,
+        defaultLang,
+        buildDisplayPlaceholder(order.product_id)
+      )
+      return [
+        {
+          text: t(lang, 'history.item_button', {
+            emoji: order.emoji ?? '',
+            name,
+            qty: order.quantity,
+            total: formatMoneyFor(order.total_amount, ctx),
+          }),
+          callback_data: `hist:${order.id}`,
+        },
+      ]
+    })
+  )
   buttons.push(buildBackButton('menu:main', lang))
 
   const text = `${t(lang, 'history.title')}\n\n${t(lang, 'history.tap_hint')}`
@@ -88,8 +113,9 @@ interface OrderDetailRow {
   total_amount: number
   status: 'completed' | 'refunded'
   created_at: string
+  product_id: number
   name: string
-  emoji: string
+  emoji: string | null
 }
 
 /** Nhãn trạng thái đơn theo lang (catalog `order.status.<status>`). */
@@ -114,12 +140,16 @@ export async function handleOrderDetail(
 ): Promise<void> {
   // Guard chủ sở hữu — JOIN users theo telegram_id, lọc đúng đơn của user.
   const order = await db
-    .prepare(
-      `SELECT o.id, o.quantity, o.total_amount, o.status, o.created_at, pt.name, pt.emoji
-       FROM orders o
-       JOIN product_types pt ON pt.id = o.product_type_id
-       JOIN users u ON u.id = o.user_id
-       WHERE o.id = ? AND u.telegram_id = ?`
+	   .prepare(
+	      `SELECT o.id, o.quantity, o.total_amount, o.status, o.created_at,
+	              p.id AS product_id,
+	              p.name,
+	              COALESCE(p.emoji, pt.emoji) AS emoji
+	       FROM orders o
+	       JOIN products p ON p.id = o.product_id
+	       JOIN product_types pt ON pt.id = p.product_type_id
+	       JOIN users u ON u.id = o.user_id
+	       WHERE o.id = ? AND u.telegram_id = ?`
     )
     .bind(orderId, userId)
     .first<OrderDetailRow>()
@@ -134,19 +164,30 @@ export async function handleOrderDetail(
 
   // Nội dung tài khoản thuộc đơn (chỉ truy vấn sau khi đã xác nhận đơn thuộc user — R15.3).
   const { results } = await db
-    .prepare(
-      `SELECT p.content
-       FROM order_items oi
-       JOIN products p ON p.id = oi.product_id
-       WHERE oi.order_id = ?`
+	   .prepare(
+	      `SELECT pi.content
+	       FROM order_items oi
+	       JOIN product_items pi ON pi.id = oi.product_item_id
+	       WHERE oi.order_id = ?`
     )
     .bind(order.id)
     .all<{ content: string }>()
 
+  const defaultLang = await loadDisplayLang(db)
+  const translations = await loadProductTranslations(db, order.product_id)
+  const productName = resolveDisplayText(
+    translations,
+    'name',
+    order.name,
+    lang,
+    defaultLang,
+    buildDisplayPlaceholder(order.product_id)
+  )
+
   const lines: string[] = [
     t(lang, 'order.detail_title', { id: order.id }),
     '',
-    `${order.emoji} ${escapeHtml(order.name)}`,
+    `${order.emoji ?? ''} ${escapeHtml(productName)}`.trim(),
     t(lang, 'order.detail_qty', { qty: order.quantity }),
     t(lang, 'order.detail_total', { total: formatMoneyFor(order.total_amount, ctx) }),
     t(lang, 'order.detail_status', { status: statusLabel(lang, order.status) }),

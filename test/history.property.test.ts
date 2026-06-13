@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import fc from 'fast-check'
+import {
+  cleanThreeTierTables,
+  resetThreeTierSchema,
+  seedCategory,
+  seedPricedProduct,
+} from './helpers/three-tier-schema'
 
 /**
  * Property-based tests cho Order History query.
@@ -9,52 +15,8 @@ import fc from 'fast-check'
  * Property 8: Order history sắp xếp đúng và giới hạn — max 10 items, sorted DESC by created_at
  */
 
-// Schema statements needed for this test
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id),
-    quantity INTEGER NOT NULL CHECK(quantity > 0),
-    total_amount INTEGER NOT NULL,
-    transaction_id INTEGER,
-    status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed','refunded')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-]
-
-async function applySchema(db: D1Database) {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await db.prepare(stmt).run()
-  }
-}
-
 async function cleanTables(db: D1Database) {
-  await db.prepare('DELETE FROM orders').run()
-  await db.prepare('DELETE FROM users').run()
-  await db.prepare('DELETE FROM product_types').run()
+  await cleanThreeTierTables(db)
 }
 
 async function seedUser(db: D1Database): Promise<number> {
@@ -72,14 +34,13 @@ async function seedUser(db: D1Database): Promise<number> {
   return user!.id
 }
 
-async function seedProductType(db: D1Database): Promise<number> {
-  await db
-    .prepare(
-      "INSERT INTO product_types (name, price, emoji, created_at, updated_at) VALUES ('Test Product', 50000, '🎮', datetime('now'), datetime('now'))"
-    )
-    .run()
-  const pt = await db.prepare('SELECT MAX(id) as id FROM product_types').first<{ id: number }>()
-  return pt!.id
+async function seedProduct(db: D1Database): Promise<number> {
+  const categoryId = await seedCategory(db, 'Test Category')
+  return seedPricedProduct(db, {
+    categoryId,
+    name: 'Test Product',
+    price: 50_000,
+  })
 }
 
 /**
@@ -89,7 +50,7 @@ async function seedProductType(db: D1Database): Promise<number> {
 async function seedOrders(
   db: D1Database,
   userId: number,
-  productTypeId: number,
+  productId: number,
   count: number
 ): Promise<string[]> {
   // Generate timestamps in order, then shuffle for insertion
@@ -107,9 +68,9 @@ async function seedOrders(
   for (const ts of shuffled) {
     await db
       .prepare(
-        'INSERT INTO orders (user_id, product_type_id, quantity, total_amount, status, created_at) VALUES (?, ?, 1, 50000, ?, ?)'
+        'INSERT INTO orders (user_id, product_id, quantity, total_amount, status, created_at) VALUES (?, ?, 1, 50000, ?, ?)'
       )
-      .bind(userId, productTypeId, 'completed', ts)
+      .bind(userId, productId, 'completed', ts)
       .run()
   }
 
@@ -121,12 +82,12 @@ interface OrderHistoryRow {
   total_amount: number
   created_at: string
   name: string
-  emoji: string
+  emoji: string | null
 }
 
 describe('Property 8: Order history sắp xếp đúng và giới hạn', () => {
   beforeEach(async () => {
-    await applySchema(env.DB)
+    await resetThreeTierSchema(env.DB)
     await cleanTables(env.DB)
   })
 
@@ -142,17 +103,17 @@ describe('Property 8: Order history sắp xếp đúng và giới hạn', () => 
           await cleanTables(env.DB)
 
           const userId = await seedUser(env.DB)
-          const productTypeId = await seedProductType(env.DB)
+          const productId = await seedProduct(env.DB)
 
-          await seedOrders(env.DB, userId, productTypeId, orderCount)
+          await seedOrders(env.DB, userId, productId, orderCount)
 
           // Execute the same query as handleHistory
           const { results } = await env.DB
             .prepare(
-              `SELECT o.quantity, o.total_amount, o.created_at, pt.name, pt.emoji
-               FROM orders o
-               JOIN product_types pt ON pt.id = o.product_type_id
-               WHERE o.user_id = ?
+              `SELECT o.quantity, o.total_amount, o.created_at, p.name, p.emoji
+	               FROM orders o
+	               JOIN products p ON p.id = o.product_id
+	               WHERE o.user_id = ?
                ORDER BY o.created_at DESC
                LIMIT 10`
             )
@@ -183,17 +144,17 @@ describe('Property 8: Order history sắp xếp đúng và giới hạn', () => 
           await cleanTables(env.DB)
 
           const userId = await seedUser(env.DB)
-          const productTypeId = await seedProductType(env.DB)
+          const productId = await seedProduct(env.DB)
 
-          await seedOrders(env.DB, userId, productTypeId, orderCount)
+          await seedOrders(env.DB, userId, productId, orderCount)
 
           // Execute the same query as handleHistory
           const { results } = await env.DB
             .prepare(
-              `SELECT o.quantity, o.total_amount, o.created_at, pt.name, pt.emoji
-               FROM orders o
-               JOIN product_types pt ON pt.id = o.product_type_id
-               WHERE o.user_id = ?
+              `SELECT o.quantity, o.total_amount, o.created_at, p.name, p.emoji
+	               FROM orders o
+	               JOIN products p ON p.id = o.product_id
+	               WHERE o.user_id = ?
                ORDER BY o.created_at DESC
                LIMIT 10`
             )

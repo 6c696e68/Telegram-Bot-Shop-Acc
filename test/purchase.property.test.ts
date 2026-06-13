@@ -1,106 +1,59 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import fc from 'fast-check'
+import {
+  cleanThreeTierTables,
+  resetThreeTierSchema,
+  seedCategory,
+  seedPricedProduct,
+  seedProductItems,
+} from './helpers/three-tier-schema'
 
 /**
  * Property-based tests cho purchase validation.
  * **Validates: Requirements 3.1, 3.5, 3.6**
  */
 
-// --- Schema ---
-
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER REFERENCES users(id),
-    order_id INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-]
-
-async function applySchema(db: D1Database) {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await db.prepare(stmt).run()
-  }
-}
-
 async function cleanTables(db: D1Database) {
-  await db.prepare('DELETE FROM products').run()
-  await db.prepare('DELETE FROM product_types').run()
-  await db.prepare('DELETE FROM users').run()
+  await cleanThreeTierTables(db)
 }
 
 // --- Helpers ---
 
 interface CategorySetup {
   name: string
-  price: number
   isVisible: boolean
-  stockCount: number // number of available products to seed
+  productVisible: boolean
+  stockCount: number // number of available product_items to seed
 }
 
-async function seedCategory(
+async function seedCategoryWithProduct(
   db: D1Database,
   setup: CategorySetup
 ): Promise<number> {
-  await db
-    .prepare(
-      "INSERT INTO product_types (name, price, is_visible, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))"
-    )
-    .bind(setup.name, setup.price, setup.isVisible ? 1 : 0)
-    .run()
-  const cat = await db.prepare('SELECT MAX(id) as id FROM product_types').first<{ id: number }>()
-  const categoryId = cat!.id
-
-  // Seed available products
-  for (let i = 0; i < setup.stockCount; i++) {
-    const content = `product_${categoryId}_${i}_${Math.random().toString(36).slice(2)}`
-    await db
-      .prepare(
-        "INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, 'available', datetime('now'))"
-      )
-      .bind(categoryId, content)
-      .run()
+  const categoryId = await seedCategory(db, setup.name, setup.isVisible)
+  if (setup.productVisible || setup.stockCount > 0) {
+    const productId = await seedPricedProduct(db, {
+      categoryId,
+      name: `${setup.name} Product`,
+      price: 10_000,
+      isVisible: setup.productVisible,
+    })
+    await seedProductItems(db, productId, setup.stockCount)
   }
-
   return categoryId
 }
 
 // The same SQL query used in handleCategoryList (src/bot/callbacks/purchase.ts)
 const CATEGORY_LIST_QUERY = `
-  SELECT pt.id, pt.name, pt.price, pt.emoji,
-         COUNT(p.id) as stock
+  SELECT pt.id, pt.name, pt.emoji,
+         COUNT(DISTINCT p.id) as product_count,
+         COUNT(CASE WHEN pi.status = 'available' THEN 1 END) as stock
   FROM product_types pt
-  INNER JOIN products p ON p.type_id = pt.id AND p.status = 'available'
+  LEFT JOIN products p ON p.product_type_id = pt.id AND p.is_visible = 1
+  LEFT JOIN product_items pi ON pi.product_id = p.id
   WHERE pt.is_visible = 1
   GROUP BY pt.id
-  HAVING stock > 0
   ORDER BY pt.sort_order ASC, pt.name ASC
 `
 
@@ -108,24 +61,24 @@ const CATEGORY_LIST_QUERY = `
 
 const arbCategorySetup: fc.Arbitrary<CategorySetup> = fc.record({
   name: fc.string({ minLength: 1, maxLength: 50 }).map((s) => s.replace(/\0/g, 'x')),
-  price: fc.integer({ min: 1000, max: 999_999_999 }),
   isVisible: fc.boolean(),
+  productVisible: fc.boolean(),
   stockCount: fc.integer({ min: 0, max: 10 }),
 })
 
 // --- Property 7 ---
 
-describe('Property 7: Category chỉ hiển thị khi có stock', () => {
+describe('Property 7: Category hiển thị theo is_visible và stock động', () => {
   /**
    * **Validates: Requirements 3.1**
-   * categories list chỉ gồm category có product available.
+   * categories list gồm mọi category hiển thị; stock đếm product_items available.
    */
   beforeEach(async () => {
-    await applySchema(env.DB)
+    await resetThreeTierSchema(env.DB)
     await cleanTables(env.DB)
   })
 
-  it('only categories with available stock > 0 and is_visible = 1 appear in results', async () => {
+  it('only visible categories appear; stock counts visible products available items', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(arbCategorySetup, { minLength: 1, maxLength: 8 }),
@@ -135,7 +88,7 @@ describe('Property 7: Category chỉ hiển thị khi có stock', () => {
           // Seed all categories
           const seededIds: number[] = []
           for (const cat of categories) {
-            const id = await seedCategory(env.DB, cat)
+            const id = await seedCategoryWithProduct(env.DB, cat)
             seededIds.push(id)
           }
 
@@ -143,24 +96,27 @@ describe('Property 7: Category chỉ hiển thị khi có stock', () => {
           const result = await env.DB.prepare(CATEGORY_LIST_QUERY).all<{
             id: number
             name: string
-            price: number
+            product_count: number
             stock: number
           }>()
 
           const returnedIds = new Set(result.results.map((r) => r.id))
 
-          // Verify: every returned category has stock > 0 AND is_visible = 1
+          // Verify: every returned category is visible.
           for (const row of result.results) {
-            expect(row.stock).toBeGreaterThan(0)
+            expect(returnedIds.has(row.id)).toBe(true)
           }
 
-          // Verify: no category with stock > 0 AND is_visible = 1 is missing
+          // Verify: no visible category is missing and hidden category is absent.
           for (let i = 0; i < categories.length; i++) {
             const cat = categories[i]
             const id = seededIds[i]
 
-            if (cat.isVisible && cat.stockCount > 0) {
+            if (cat.isVisible) {
               expect(returnedIds.has(id)).toBe(true)
+              const row = result.results.find((r) => r.id === id)!
+              expect(row.product_count).toBe(cat.productVisible ? 1 : 0)
+              expect(row.stock).toBe(cat.productVisible ? cat.stockCount : 0)
             } else {
               expect(returnedIds.has(id)).toBe(false)
             }
@@ -171,14 +127,14 @@ describe('Property 7: Category chỉ hiển thị khi có stock', () => {
     )
   })
 
-  it('categories with 0 stock are never included regardless of visibility', async () => {
+  it('visible categories with 0 stock are included with stock = 0', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(
           fc.record({
             name: fc.string({ minLength: 1, maxLength: 30 }).map((s) => s.replace(/\0/g, 'x')),
-            price: fc.integer({ min: 1000, max: 999_999_999 }),
             isVisible: fc.constant(true),
+            productVisible: fc.constant(true),
             stockCount: fc.constant(0),
           }),
           { minLength: 1, maxLength: 5 }
@@ -187,11 +143,12 @@ describe('Property 7: Category chỉ hiển thị khi có stock', () => {
           await cleanTables(env.DB)
 
           for (const cat of emptyCategories) {
-            await seedCategory(env.DB, cat)
+            await seedCategoryWithProduct(env.DB, cat)
           }
 
-          const result = await env.DB.prepare(CATEGORY_LIST_QUERY).all()
-          expect(result.results.length).toBe(0)
+          const result = await env.DB.prepare(CATEGORY_LIST_QUERY).all<{ stock: number }>()
+          expect(result.results.length).toBe(emptyCategories.length)
+          for (const row of result.results) expect(row.stock).toBe(0)
         }
       ),
       { numRuns: 50 }

@@ -67,29 +67,51 @@ export interface HomeDto {
 /** Phần tử danh sách `GET /api/app/product-types` (Req 5.1, 5.2). Bao gồm cả loại hết hàng. */
 export interface ProductTypeListItemDto {
   id: number
+  product_type_id: number
+  category_id: number
+  category_name: string
   name: string
-  emoji: string
+  emoji: string | null
   /** Ảnh minh hoạ (data URL/HTTPS) do admin upload; null → fallback emoji. */
   image_url: string | null
+  description: string | null
+  content: string | null
   price: number
   price_display: string
-  stock: number // COUNT(products.status='available')
+  stock: number // COUNT(product_items.status='available')
   in_stock: boolean // stock > 0
 }
 
 /** `GET /api/app/product-types/:id` — chi tiết loại sản phẩm (Req 5.3, 5.4). KHÔNG trả `success_template`. */
 export interface ProductTypeDetailDto {
   id: number
+  product_type_id: number
+  category_id: number
+  category_name: string
   name: string
-  emoji: string
+  emoji: string | null
   /** Ảnh minh hoạ (data URL/HTTPS) do admin upload; null → fallback emoji. */
   image_url: string | null
   description: string | null
+  content: string | null
   price: number
   price_display: string
-  stock: number // COUNT(products.status='available')
+  stock: number // COUNT(product_items.status='available')
   in_stock: boolean // stock > 0
   max_quantity: number // trần số lượng cho mỗi lần mua
+}
+
+/** Phần tử `GET /api/app/categories` — danh mục tầng 1. */
+export interface CategoryListItemDto {
+  id: number
+  name: string
+  emoji: string | null
+  image_url: string | null
+  description: string | null
+  content: string | null
+  product_count: number
+  stock: number
+  in_stock: boolean
 }
 
 /** `POST /api/app/purchase` — kết quả mua hàng thành công (Req 6.6, 6.7). */
@@ -129,7 +151,7 @@ export interface DepositStatusDto {
 export interface OrderListItemDto {
   id: number
   product_name: string
-  emoji: string
+  emoji: string | null
   quantity: number
   total_amount: number
   total_display: string

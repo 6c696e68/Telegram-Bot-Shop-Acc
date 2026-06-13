@@ -25,6 +25,7 @@ import { handleAdminCallbackRouted, handleAdminTextInputRouted, handleAdminPanel
 import {
   handleCategoryList,
   handleCategoryDetail,
+  handleProductDetail,
   handleQuantitySelect,
   handlePurchaseConfirm,
   handlePurchaseTextInput,
@@ -208,35 +209,43 @@ export async function handleCallbackQuery(
       return
     }
 
-    switch (action) {
-      case 'cat':
-        if (params[0] === 'list') {
-          await handleCategoryList(db, botToken, chatId, messageId, lang, locale.ctx)
-        } else {
-          const catId = parseInt(params[0], 10)
-          if (!isNaN(catId)) {
-            await handleCategoryDetail(db, botToken, chatId, messageId, catId, userId, lang, locale.ctx)
-          }
-        }
-        break
+	    switch (action) {
+	      case 'cat':
+	        if (params[0] === 'list') {
+	          await handleCategoryList(db, botToken, chatId, messageId, lang, locale.ctx)
+	        } else {
+	          const catId = parseInt(params[0], 10)
+	          if (!isNaN(catId)) {
+	            await handleCategoryDetail(db, botToken, chatId, messageId, catId, userId, lang, locale.ctx)
+	          }
+	        }
+	        break
 
-      case 'qty': {
-        const catId = parseInt(params[0], 10)
-        const qty = parseInt(params[1], 10)
-        if (!isNaN(catId) && !isNaN(qty)) {
-          await handleQuantitySelect(db, botToken, chatId, messageId, catId, qty, userId, lang, locale.ctx)
-        }
-        break
-      }
+	      case 'prod': {
+	        const productId = parseInt(params[0], 10)
+	        if (!isNaN(productId)) {
+	          await handleProductDetail(db, botToken, chatId, messageId, productId, userId, lang, locale.ctx)
+	        }
+	        break
+	      }
 
-      case 'buy': {
-        const catId = parseInt(params[0], 10)
-        const qty = parseInt(params[1], 10)
-        if (!isNaN(catId) && !isNaN(qty)) {
-          await handlePurchaseConfirm(db, botToken, chatId, messageId, catId, qty, userId, lang, locale.ctx)
-        }
-        break
-      }
+	      case 'qty': {
+	        const productId = parseInt(params[0], 10)
+	        const qty = parseInt(params[1], 10)
+	        if (!isNaN(productId) && !isNaN(qty)) {
+	          await handleQuantitySelect(db, botToken, chatId, messageId, productId, qty, userId, lang, locale.ctx)
+	        }
+	        break
+	      }
+
+	      case 'buy': {
+	        const productId = parseInt(params[0], 10)
+	        const qty = parseInt(params[1], 10)
+	        if (!isNaN(productId) && !isNaN(qty)) {
+	          await handlePurchaseConfirm(db, botToken, chatId, messageId, productId, qty, userId, lang, locale.ctx)
+	        }
+	        break
+	      }
 
       case 'dep':
         await handleDepositCallback(db, botToken, chatId, messageId, params, userId, env)
@@ -500,15 +509,15 @@ async function handlePurchaseSessionInput(
 ): Promise<void> {
   if (step === 'quantity') {
     const session = getSession(userId)
-    const categoryId = session?.data?.categoryId
-    if (!categoryId) {
+    const productId = session?.data?.productId
+    if (!productId) {
       clearSession(userId)
       await sendMessage(botToken, chatId, t(lang, 'common.session_expired'), {
         reply_markup: buildMainMenu(lang),
       })
       return
     }
-    await handlePurchaseTextInput(db, botToken, chatId, userId, text, categoryId, lang, ctx)
+    await handlePurchaseTextInput(db, botToken, chatId, userId, text, productId, lang, ctx)
   } else {
     clearSession(userId)
     await sendMessage(botToken, chatId, t(lang, 'common.session_expired'), {

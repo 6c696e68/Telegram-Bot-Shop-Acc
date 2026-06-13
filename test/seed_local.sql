@@ -1,12 +1,18 @@
-INSERT INTO product_types (name, description, price, emoji, sort_order, is_visible, success_template) VALUES
- ('Gmail New', 'Tai khoan Gmail moi tao', 15000, '📧', 1, 1, 'Cam on ban da mua [name] [emoji]\n[content]\nTong: [total] - So du: [balance]'),
- ('Facebook Clone', 'Acc Facebook clone co', 50000, '👤', 2, 1, NULL),
- ('Het hang demo', 'Loai khong con hang', 9000, '📦', 3, 1, NULL);
+INSERT INTO product_types (name, description, content, emoji, sort_order, is_visible) VALUES
+ ('Email', 'Tai khoan email', NULL, NULL, 1, 1),
+ ('Mang xa hoi', 'Tai khoan mang xa hoi', NULL, NULL, 2, 1),
+ ('Demo', 'Danh muc demo', NULL, NULL, 3, 1);
+INSERT INTO products (product_type_id, name, description, content, price, emoji, sort_order, is_visible) VALUES
+ (1, 'Gmail New', 'Tai khoan Gmail moi tao', NULL, 15000, NULL, 1, 1),
+ (2, 'Facebook Clone', 'Acc Facebook clone co', NULL, 50000, NULL, 2, 1),
+ (3, 'Het hang demo', 'San pham khong con hang', NULL, 9000, NULL, 3, 1);
+INSERT INTO product_type_templates (product_type_id, lang, success_template) VALUES
+ (1, 'vi', 'Cam on ban da mua [name] [emoji]\n[content]\nTong: [total] - So du: [balance]');
 INSERT INTO users (telegram_id, username, first_name, balance, is_active, region, language, language_locked, created_at, updated_at) VALUES
  (5551111, 'buyer_vn', 'Nguyen Van A', 250000, 1, 'vietnam', 'vi', 0, datetime('now'), datetime('now')),
  (5552222, 'buyer_intl', 'John Doe', 0, 1, 'international', 'en', 1, datetime('now'), datetime('now')),
  (5553333, 'newbie', 'Chua Onboarding', 0, 1, NULL, NULL, 0, datetime('now'), datetime('now'));
-INSERT INTO products (type_id, content, status) VALUES
+INSERT INTO product_items (product_id, content, status) VALUES
  (1, 'gmail1@example.com|pass1', 'available'),
  (1, 'gmail2@example.com|pass2', 'available'),
  (2, 'fb1|pass', 'available');

@@ -14,10 +14,14 @@ import { resolve } from 'node:path'
 const miniappIndexPath = resolve(process.cwd(), 'dist/miniapp/index.html')
 const miniappIndexHtml = existsSync(miniappIndexPath) ? readFileSync(miniappIndexPath, 'utf8') : ''
 const miniappIndexHtmlB64 = Buffer.from(miniappIndexHtml, 'utf8').toString('base64')
+const migration0015Path = resolve(process.cwd(), 'migrations/0015_product_three_tier_i18n.sql')
+const migration0015Sql = existsSync(migration0015Path) ? readFileSync(migration0015Path, 'utf8') : ''
+const migration0015SqlB64 = Buffer.from(migration0015Sql, 'utf8').toString('base64')
 
 export default defineWorkersConfig({
   define: {
     __MINIAPP_INDEX_HTML_B64__: JSON.stringify(miniappIndexHtmlB64),
+    __MIGRATION_0015_SQL_B64__: JSON.stringify(migration0015SqlB64),
   },
   test: {
     poolOptions: {

@@ -3,6 +3,11 @@ import { env } from 'cloudflare:test'
 import fc from 'fast-check'
 import { SignJWT } from 'jose'
 import { app } from '../src/index'
+import {
+  cleanThreeTierTables,
+  resetThreeTierSchema,
+  seedCategory,
+} from './helpers/three-tier-schema'
 
 /**
  * Property-based tests cho CMS API.
@@ -19,130 +24,8 @@ import { app } from '../src/index'
 
 const JWT_SECRET = 'test-jwt-secret'
 
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    success_template TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER REFERENCES users(id),
-    order_id INTEGER REFERENCES orders(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_content_type ON products(type_id, content)`,
-  `CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id),
-    quantity INTEGER NOT NULL CHECK(quantity > 0),
-    total_amount INTEGER NOT NULL,
-    transaction_id INTEGER,
-    status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed','refunded')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    type TEXT NOT NULL CHECK(type IN ('deposit','purchase','refund','adjustment')),
-    amount INTEGER NOT NULL,
-    balance_before INTEGER NOT NULL,
-    balance_after INTEGER NOT NULL,
-    reference_type TEXT,
-    reference_id INTEGER,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'success' CHECK(status IN ('success','failed','pending')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS deposits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    provider TEXT NOT NULL DEFAULT 'sepay',
-    amount INTEGER NOT NULL CHECK(amount > 0),
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','completed','expired','cancelled','awaiting_credit')),
-    correlation_ref TEXT,
-    provider_txn_id TEXT,
-    metadata TEXT,
-    completed_at TEXT,
-    expired_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS admin_users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    display_name TEXT,
-    last_login_at TEXT,
-    failed_login_count INTEGER DEFAULT 0,
-    locked_until TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS system_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    description TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_by INTEGER REFERENCES admin_users(id)
-  )`,
-  `CREATE TABLE IF NOT EXISTS audit_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    admin_id INTEGER NOT NULL REFERENCES admin_users(id),
-    action TEXT NOT NULL,
-    resource_type TEXT NOT NULL,
-    resource_id INTEGER,
-    old_value TEXT,
-    new_value TEXT,
-    ip_address TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS order_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL REFERENCES orders(id),
-    product_id INTEGER NOT NULL REFERENCES products(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-]
-
-async function applySchema(db: D1Database) {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await db.prepare(stmt).run()
-  }
-}
-
 async function cleanTables(db: D1Database) {
-  await db.prepare('DELETE FROM audit_logs').run()
-  await db.prepare('DELETE FROM order_items').run()
-  await db.prepare('DELETE FROM products').run()
-  await db.prepare('DELETE FROM orders').run()
-  await db.prepare('DELETE FROM transactions').run()
-  await db.prepare('DELETE FROM deposits').run()
-  await db.prepare('DELETE FROM users').run()
-  await db.prepare('DELETE FROM product_types').run()
-  await db.prepare('DELETE FROM system_config').run()
-  await db.prepare('DELETE FROM admin_users').run()
+  await cleanThreeTierTables(db)
 }
 
 async function seedAdminUser(db: D1Database): Promise<number> {
@@ -225,8 +108,8 @@ const arbValidName = fc
 // Valid descriptions (0-500 chars)
 const arbValidDescription = fc.string({ minLength: 0, maxLength: 500 })
 
-// Valid prices (integer 1000-999999999)
-const arbValidPrice = fc.integer({ min: 1000, max: 999_999_999 })
+// Valid prices (integer 1-999999999)
+const arbValidPrice = fc.integer({ min: 1, max: 999_999_999 })
 
 // Invalid names: empty or too long
 const arbInvalidName = fc.oneof(
@@ -237,7 +120,7 @@ const arbInvalidName = fc.oneof(
 
 // Invalid prices
 const arbInvalidPrice = fc.oneof(
-  fc.integer({ min: -1_000_000, max: 999 }),
+  fc.integer({ min: -1_000_000, max: 0 }),
   fc.integer({ min: 1_000_000_000, max: 2_000_000_000 })
 )
 
@@ -254,7 +137,7 @@ describe('Property 17: API response format chuẩn', () => {
   let token: string
 
   beforeEach(async () => {
-    await applySchema(env.DB)
+    await resetThreeTierSchema(env.DB)
     await cleanTables(env.DB)
     adminId = await seedAdminUser(env.DB)
     token = await generateJwt(adminId)
@@ -269,13 +152,11 @@ describe('Property 17: API response format chuẩn', () => {
       fc.asyncProperty(
         arbValidName,
         arbValidDescription,
-        arbValidPrice,
-        async (name, description, price) => {
+        async (name, description) => {
           // POST product-types (success case)
           const res = await apiRequest('POST', '/api/admin/product-types', token, {
             name,
             description,
-            price,
           })
 
           const json = await res.json() as { success: boolean; data: unknown; error: unknown }
@@ -317,13 +198,11 @@ describe('Property 17: API response format chuẩn', () => {
       fc.asyncProperty(
         arbInvalidName,
         arbValidDescription,
-        arbValidPrice,
-        async (invalidName, description, price) => {
+        async (invalidName, description) => {
           // POST product-types with invalid name (error case)
           const res = await apiRequest('POST', '/api/admin/product-types', token, {
             name: invalidName,
             description,
-            price,
           })
 
           const json = await res.json() as { success: boolean; data: unknown; error: unknown }
@@ -355,7 +234,9 @@ describe('Property 17: API response format chuẩn', () => {
         arbValidName,
         arbInvalidPrice,
         async (name, invalidPrice) => {
-          const res = await apiRequest('POST', '/api/admin/product-types', token, {
+          const categoryId = await seedCategory(env.DB, 'Products')
+          const res = await apiRequest('POST', '/api/admin/products', token, {
+            product_type_id: categoryId,
             name,
             price: invalidPrice,
           })
@@ -384,8 +265,7 @@ describe('Property 17: API response format chuẩn', () => {
     await fc.assert(
       fc.asyncProperty(
         arbValidName,
-        arbValidPrice,
-        async (name, price) => {
+        async (name) => {
           // Request without valid token
           const res = await app.request('/api/admin/product-types', {
             method: 'POST',
@@ -393,7 +273,7 @@ describe('Property 17: API response format chuẩn', () => {
               'Content-Type': 'application/json',
               Authorization: 'Bearer invalid-token-xyz',
             },
-            body: JSON.stringify({ name, price }),
+            body: JSON.stringify({ name }),
           }, getEnvBindings() as any)
 
           const json = await res.json() as { success: boolean; data: unknown; error: unknown }
@@ -444,7 +324,7 @@ describe('Property 19: Audit log cho mọi admin action', () => {
   let token: string
 
   beforeEach(async () => {
-    await applySchema(env.DB)
+    await resetThreeTierSchema(env.DB)
     await cleanTables(env.DB)
     adminId = await seedAdminUser(env.DB)
     token = await generateJwt(adminId)
@@ -459,15 +339,13 @@ describe('Property 19: Audit log cho mọi admin action', () => {
       fc.asyncProperty(
         arbValidName,
         arbValidDescription,
-        arbValidPrice,
-        async (name, description, price) => {
+        async (name, description) => {
           // Clean audit logs for this test iteration
           await env.DB.prepare('DELETE FROM audit_logs').run()
 
           const res = await apiRequest('POST', '/api/admin/product-types', token, {
             name,
             description,
-            price,
           })
 
           const json = await res.json() as { success: boolean; data: { id: number } | null }
@@ -511,10 +389,8 @@ describe('Property 19: Audit log cho mọi admin action', () => {
     await fc.assert(
       fc.asyncProperty(
         arbValidName,
-        arbValidPrice,
         arbValidName,
-        arbValidPrice,
-        async (origName, origPrice, newName, newPrice) => {
+        async (origName, newName) => {
           await env.DB.prepare('DELETE FROM audit_logs').run()
           await env.DB.prepare('DELETE FROM product_types').run()
 
@@ -522,9 +398,9 @@ describe('Property 19: Audit log cho mọi admin action', () => {
           const now = new Date().toISOString()
           await env.DB
             .prepare(
-              'INSERT INTO product_types (name, price, created_at, updated_at) VALUES (?, ?, ?, ?)'
+              'INSERT INTO product_types (name, created_at, updated_at) VALUES (?, ?, ?)'
             )
-            .bind(origName.trim() || 'OrigName', origPrice, now, now)
+            .bind(origName.trim() || 'OrigName', now, now)
             .run()
           const pt = await env.DB
             .prepare('SELECT id FROM product_types ORDER BY id DESC LIMIT 1')
@@ -533,7 +409,6 @@ describe('Property 19: Audit log cho mọi admin action', () => {
           // Update it via API
           const res = await apiRequest('PUT', `/api/admin/product-types/${pt!.id}`, token, {
             name: newName,
-            price: newPrice,
           })
 
           const json = await res.json() as { success: boolean }
@@ -576,9 +451,9 @@ describe('Property 19: Audit log cho mọi admin action', () => {
     await fc.assert(
       fc.asyncProperty(
         arbValidName,
-        arbValidPrice,
-        async (name, price) => {
+        async (name) => {
           await env.DB.prepare('DELETE FROM audit_logs').run()
+          await env.DB.prepare('DELETE FROM product_items').run()
           await env.DB.prepare('DELETE FROM products').run()
           await env.DB.prepare('DELETE FROM product_types').run()
 
@@ -586,9 +461,9 @@ describe('Property 19: Audit log cho mọi admin action', () => {
           const now = new Date().toISOString()
           await env.DB
             .prepare(
-              'INSERT INTO product_types (name, price, created_at, updated_at) VALUES (?, ?, ?, ?)'
+              'INSERT INTO product_types (name, created_at, updated_at) VALUES (?, ?, ?)'
             )
-            .bind(name.trim() || 'DeleteMe', price, now, now)
+            .bind(name.trim() || 'DeleteMe', now, now)
             .run()
           const pt = await env.DB
             .prepare('SELECT id FROM product_types ORDER BY id DESC LIMIT 1')

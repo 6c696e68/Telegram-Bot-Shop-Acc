@@ -82,7 +82,7 @@ async function confirm(): Promise<void> {
   try {
     const res = await ui.withLoading(
       post<PurchaseResultDto>('/purchase', {
-        productTypeId: detail.value.id,
+        productId: detail.value.id,
         quantity: quantity.value,
       })
     )

@@ -11,7 +11,7 @@
     "build:cms": "npm run --prefix cms build",
     "build:miniapp": "npm --prefix miniapp install && npm run --prefix miniapp build",
     "build:all": "npm run build:cms && npm run build:miniapp",
-    "test": "vitest run",
+    "test": "node scripts/vitest-sequential.mjs",
     "test:watch": "vitest",
     "check:no-gradient": "node test/check_no_gradient.mjs",
     "db:migrate:local": "wrangler d1 migrations apply telegram-shop-bot-db --local",

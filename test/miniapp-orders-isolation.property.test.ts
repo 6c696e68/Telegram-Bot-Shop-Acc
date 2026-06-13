@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import fc from 'fast-check'
 import { miniAppApi } from '../src/routes/miniapp-api'
+import {
+  cleanThreeTierTables,
+  resetThreeTierSchema,
+  seedCategory,
+  seedPricedProduct,
+} from './helpers/three-tier-schema'
 
 // Feature: telegram-mini-app, Property 16
 /**
@@ -12,12 +18,12 @@ import { miniAppApi } from '../src/routes/miniapp-api'
  *
  * - Req 11.1: `GET /orders` chỉ trả đơn của người mua hiện tại (lọc theo `telegram_id`),
  *   sắp xếp `created_at` giảm dần.
- * - Req 11.2/11.3: đơn mang đúng thông tin loại sản phẩm; chi tiết đơn trả `contents`.
+ * - Req 11.2/11.3: đơn mang đúng thông tin sản phẩm; chi tiết đơn trả `contents`.
  * - Req 15.3: `GET /orders/:id` của đơn người khác → 404 và TUYỆT ĐỐI không lộ
  *   `products.content` của người mua khác.
  *
  * Chiến lược: seed HAI người mua phân biệt (buyerA, buyerB), mỗi người có tập đơn riêng
- * (orders + order_items + products với content đã biết) trên cùng một product_type.
+ * (orders + order_items + product_items với content đã biết) trên cùng một Product.
  * `created_at` set tường minh tăng dần theo chỉ số đơn để khẳng định DESC ổn định (không flaky).
  *
  * Mount `miniAppApi` trực tiếp (đã gắn `miniAppApi.use('/*', miniAppAuth)`), ký initData
@@ -31,92 +37,8 @@ const BOT_TOKEN = 'test-bot-token'
 const BUYER_A = { telegramId: 100_001, username: 'buyerA', firstName: 'BuyerA' }
 const BUYER_B = { telegramId: 100_002, username: 'buyerB', firstName: 'BuyerB' }
 
-// Schema tối thiểu cho luồng đơn hàng (trích từ test/integration.test.ts / migration 0001).
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS system_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    description TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_by INTEGER
-  )`,
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id),
-    quantity INTEGER NOT NULL CHECK(quantity > 0),
-    total_amount INTEGER NOT NULL,
-    transaction_id INTEGER,
-    status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed','refunded')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    type TEXT NOT NULL CHECK(type IN ('deposit','purchase','refund','adjustment')),
-    amount INTEGER NOT NULL,
-    balance_before INTEGER NOT NULL,
-    balance_after INTEGER NOT NULL,
-    reference_type TEXT,
-    reference_id INTEGER,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'success' CHECK(status IN ('success','failed','pending')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER REFERENCES users(id),
-    order_id INTEGER REFERENCES orders(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_content_type ON products(type_id, content)`,
-  `CREATE TABLE IF NOT EXISTS order_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL REFERENCES orders(id),
-    product_id INTEGER NOT NULL REFERENCES products(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-]
-
-async function applySchema(db: D1Database) {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await db.prepare(stmt).run()
-  }
-}
-
 async function cleanTables(db: D1Database) {
-  await db.prepare('DELETE FROM order_items').run()
-  await db.prepare('DELETE FROM products').run()
-  await db.prepare('DELETE FROM orders').run()
-  await db.prepare('DELETE FROM transactions').run()
-  await db.prepare('DELETE FROM users').run()
-  await db.prepare('DELETE FROM product_types').run()
+  await cleanThreeTierTables(db)
 }
 
 function getEnvBindings() {
@@ -198,43 +120,43 @@ async function seedUser(
   return row!.id
 }
 
-async function seedProductType(db: D1Database): Promise<number> {
-  const pt = await db
-    .prepare(
-      "INSERT INTO product_types (name, price, emoji, created_at, updated_at) VALUES ('Netflix', 50000, '🎬', datetime('now'), datetime('now')) RETURNING id"
-    )
-    .first<{ id: number }>()
-  return pt!.id
+async function seedProduct(db: D1Database): Promise<number> {
+  const categoryId = await seedCategory(db, 'Streaming')
+  return seedPricedProduct(db, {
+    categoryId,
+    name: 'Netflix',
+    price: 50_000,
+  })
 }
 
-/** Seed một đơn (product + order + order_item) cho user, trả `{ orderId, content }`. */
+/** Seed một đơn (product_item + order + order_item) cho user, trả orderId. */
 async function seedOrder(
   db: D1Database,
   userId: number,
-  productTypeId: number,
+  productId: number,
   content: string,
   createdAt: string
 ): Promise<number> {
   const prod = await db
     .prepare(
-      "INSERT INTO products (type_id, content, status, buyer_id, created_at, sold_at) VALUES (?, ?, 'sold', ?, datetime('now'), datetime('now')) RETURNING id"
+      "INSERT INTO product_items (product_id, content, status, buyer_id, created_at, sold_at) VALUES (?, ?, 'sold', ?, datetime('now'), datetime('now')) RETURNING id"
     )
-    .bind(productTypeId, content, userId)
+    .bind(productId, content, userId)
     .first<{ id: number }>()
 
   const order = await db
     .prepare(
-      "INSERT INTO orders (user_id, product_type_id, quantity, total_amount, status, created_at) VALUES (?, ?, 1, 50000, 'completed', ?) RETURNING id"
+      "INSERT INTO orders (user_id, product_id, quantity, total_amount, status, created_at) VALUES (?, ?, 1, 50000, 'completed', ?) RETURNING id"
     )
-    .bind(userId, productTypeId, createdAt)
+    .bind(userId, productId, createdAt)
     .first<{ id: number }>()
 
   await db
-    .prepare("INSERT INTO order_items (order_id, product_id, created_at) VALUES (?, ?, datetime('now'))")
+    .prepare("INSERT INTO order_items (order_id, product_item_id, created_at) VALUES (?, ?, datetime('now'))")
     .bind(order!.id, prod!.id)
     .run()
 
-  await db.prepare('UPDATE products SET order_id = ? WHERE id = ?').bind(order!.id, prod!.id).run()
+  await db.prepare('UPDATE product_items SET order_id = ? WHERE id = ?').bind(order!.id, prod!.id).run()
 
   return order!.id
 }
@@ -258,7 +180,7 @@ interface OrderDetailResponse {
 }
 
 beforeEach(async () => {
-  await applySchema(env.DB)
+  await resetThreeTierSchema(env.DB)
   await cleanTables(env.DB)
 })
 
@@ -287,7 +209,7 @@ describe('Property 16: Cô lập dữ liệu theo người mua', () => {
 
           const userIdA = await seedUser(env.DB, BUYER_A)
           const userIdB = await seedUser(env.DB, BUYER_B)
-          const productTypeId = await seedProductType(env.DB)
+          const productId = await seedProduct(env.DB)
 
           const aOrderIds = new Set<number>()
           const bOrderIds = new Set<number>()
@@ -297,13 +219,13 @@ describe('Property 16: Cô lập dữ liệu theo người mua', () => {
             const isA = owners[i] === 'A'
             const userId = isA ? userIdA : userIdB
             const content = `acc-${owners[i]}-${i}:secret-${i}`
-            const orderId = await seedOrder(
-              env.DB,
-              userId,
-              productTypeId,
-              content,
-              createdAtForIndex(i)
-            )
+	            const orderId = await seedOrder(
+	              env.DB,
+	              userId,
+	              productId,
+	              content,
+	              createdAtForIndex(i)
+	            )
             contentByOrderId.set(orderId, content)
             ;(isA ? aOrderIds : bOrderIds).add(orderId)
           }

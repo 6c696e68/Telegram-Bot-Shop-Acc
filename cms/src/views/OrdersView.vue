@@ -13,14 +13,15 @@ const { rate, load: loadRate } = useExchangeRate()
 interface Order {
   id: number
   user_id: number
-  product_type_id: number
+  product_id: number
   quantity: number
   total_amount: number
   transaction_id: number | null
   status: string
   created_at: string
+  product_name: string
+  product_emoji: string | null
   product_type_name: string
-  product_type_emoji: string
   unit_price: number
   telegram_id: number
   username: string | null
@@ -34,7 +35,7 @@ interface OrderDetail extends Order {
 
 interface OrderItem {
   id: number
-  product_id: number
+  product_item_id: number
   created_at: string
   content: string
   product_status: string
@@ -54,22 +55,22 @@ const total = ref(0)
 
 // Filters
 const filterStatus = ref('')
-const filterCategoryId = ref('')
+const filterProductId = ref('')
 const filterDateFrom = ref('')
 const filterDateTo = ref('')
 
-// Categories for filter dropdown
-const categories = ref<{ id: number; name: string; emoji: string }[]>([])
+// Products for order filter dropdown. Orders reference products, not categories.
+const products = ref<{ id: number; name: string; product_type_name: string | null }[]>([])
 
 const totalPages = () => Math.ceil(total.value / limit.value) || 1
 
-async function loadCategories() {
-  const res = await api.get<any[]>('/product-types?limit=100')
+async function loadProducts() {
+  const res = await api.get<any[]>('/products?limit=100&sort=name&order=asc')
   if (res.success && res.data) {
-    categories.value = res.data.map((c: any) => ({
-      id: c.id,
-      name: c.name,
-      emoji: c.emoji || '',
+    products.value = res.data.map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      product_type_name: p.product_type_name ?? null,
     }))
   }
 }
@@ -84,7 +85,7 @@ async function loadOrders() {
     params.set('sort', 'created_at')
 
     if (filterStatus.value) params.set('status', filterStatus.value)
-    if (filterCategoryId.value) params.set('product_type_id', filterCategoryId.value)
+    if (filterProductId.value) params.set('product_id', filterProductId.value)
     if (filterDateFrom.value) params.set('from', filterDateFrom.value)
     if (filterDateTo.value) params.set('to', filterDateTo.value)
 
@@ -123,7 +124,7 @@ function applyFilters() {
 
 function clearFilters() {
   filterStatus.value = ''
-  filterCategoryId.value = ''
+  filterProductId.value = ''
   filterDateFrom.value = ''
   filterDateTo.value = ''
   page.value = 1
@@ -162,9 +163,13 @@ function statusLabel(status: string) {
   return status === 'completed' ? t('orders.status_completed') : t('orders.status_refunded')
 }
 
+function productOptionLabel(product: { name: string; product_type_name: string | null }): string {
+  return product.product_type_name ? `${product.name} - ${product.product_type_name}` : product.name
+}
+
 onMounted(() => {
   loadRate()
-  loadCategories()
+  loadProducts()
   loadOrders()
 })
 </script>
@@ -190,10 +195,10 @@ onMounted(() => {
       </div>
 
       <div class="field-wrap">
-        <select v-model="filterCategoryId" class="field">
-          <option value="">{{ $t('orders.filter_all_category') }}</option>
-          <option v-for="cat in categories" :key="cat.id" :value="String(cat.id)">
-            {{ cat.name }}
+        <select v-model="filterProductId" class="field">
+          <option value="">{{ $t('orders.filter_all_product') }}</option>
+          <option v-for="product in products" :key="product.id" :value="String(product.id)">
+            {{ productOptionLabel(product) }}
           </option>
         </select>
       </div>
@@ -255,7 +260,10 @@ onMounted(() => {
               <div class="ink">{{ order.first_name || order.username || '—' }}</div>
               <div class="muted">ID: {{ order.telegram_id }}</div>
             </td>
-            <td class="ink">{{ order.product_type_name }}</td>
+            <td>
+              <div class="ink">{{ order.product_name }}</div>
+              <div class="muted">{{ order.product_type_name }}</div>
+            </td>
             <td>{{ order.quantity }}</td>
             <td class="ink amount-cell">{{ formatMoney(order.total_amount, rate) }}</td>
             <td>
@@ -330,7 +338,7 @@ onMounted(() => {
             </div>
             <div class="info-item">
               <span class="label">{{ $t('orders.col_product') }}</span>
-              <span class="info-value">{{ selectedOrder.product_type_name }}</span>
+              <span class="info-value">{{ selectedOrder.product_name }}</span>
             </div>
             <div class="info-item">
               <span class="label">{{ $t('orders.col_unit_price') }}</span>

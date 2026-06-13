@@ -192,6 +192,7 @@
     "subtitle": "Tổng {count} đơn",
     "filter_all_status": "Tất cả trạng thái",
     "filter_all_category": "Tất cả loại",
+    "filter_all_product": "Tất cả sản phẩm",
     "status_completed": "Hoàn thành",
     "status_refunded": "Đã hoàn tiền",
     "empty": "Không có đơn hàng nào",

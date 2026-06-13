@@ -50,11 +50,12 @@ statsRoutes.get('/dashboard', async (c) => {
     // Total orders
     db.prepare(`SELECT COUNT(*) as count FROM orders`).first<{ count: number }>(),
 
-    // Products remaining per category
+    // Product items remaining per category
     db.prepare(
       `SELECT pt.id, pt.name, pt.emoji, COUNT(p.id) as available_count
        FROM product_types pt
-       LEFT JOIN products p ON p.type_id = pt.id AND p.status = 'available'
+       LEFT JOIN products pr ON pr.product_type_id = pt.id
+       LEFT JOIN product_items p ON p.product_id = pr.id AND p.status = 'available'
        GROUP BY pt.id
        ORDER BY pt.sort_order ASC, pt.name ASC`
     ).all<{ id: number; name: string; emoji: string; available_count: number }>(),
@@ -123,20 +124,20 @@ statsRoutes.get('/revenue', async (c) => {
 
 /**
  * GET /top-products
- * Top sản phẩm (categories) bán chạy nhất (by quantity sold, limit 10).
+   * Top sản phẩm bán chạy nhất (by quantity sold, limit 10).
  * Requirements: 11.11, 13.6
  */
 statsRoutes.get('/top-products', async (c) => {
   const db = c.env.DB
 
   const result = await db.prepare(
-    `SELECT pt.id, pt.name, pt.emoji, pt.price,
+    `SELECT p.id, p.name, p.emoji, p.price,
             SUM(o.quantity) as total_sold,
             SUM(o.total_amount) as total_revenue
      FROM orders o
-     JOIN product_types pt ON pt.id = o.product_type_id
+     JOIN products p ON p.id = o.product_id
      WHERE o.status = 'completed'
-     GROUP BY pt.id
+     GROUP BY p.id
      ORDER BY total_sold DESC
      LIMIT 10`
   ).all<{ id: number; name: string; emoji: string; price: number; total_sold: number; total_revenue: number }>()

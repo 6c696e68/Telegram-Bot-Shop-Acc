@@ -336,7 +336,7 @@ export async function handleDepositAmount(
     channel: 'bot',
   })
 
-  if (!result.success) {
+  if (result.success === false) {
     const err = result.error
     if (err.type === 'limit') {
       await sendMessage(botToken, chatId, err.message, { parse_mode: 'HTML' })
@@ -436,7 +436,7 @@ export async function handleCryptoDepositAmount(
     channel: 'bot',
   })
 
-  if (!result.success) {
+  if (result.success === false) {
     const err = result.error
     if (err.type === 'limit') {
       await sendMessage(botToken, chatId, err.message, { parse_mode: 'HTML' })
@@ -515,7 +515,7 @@ export async function handlePayOsDepositAmount(
     channel: 'bot',
   })
 
-  if (!result.success) {
+  if (result.success === false) {
     const err = result.error
     if (err.type === 'limit') {
       await sendMessage(botToken, chatId, err.message, { parse_mode: 'HTML' })

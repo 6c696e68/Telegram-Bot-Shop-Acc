@@ -19,10 +19,11 @@
 
 import { Hono } from 'hono'
 import type { Bindings } from '../types'
-import type { DbProductType, DbDeposit } from '../types/db'
+import type { DbDeposit } from '../types/db'
 import type { ApiResponse } from '../types/api'
 import type {
   MeDto,
+  CategoryListItemDto,
   ProductTypeListItemDto,
   ProductTypeDetailDto,
   PurchaseResultDto,
@@ -39,9 +40,16 @@ import { miniAppAuth, type MiniAppVariables } from '../middleware/miniapp-auth'
 import { formatMoney, formatMoneyFor, buildCurrencyContext } from '../utils/format'
 import { transactionService } from '../services/transaction'
 import { renderSuccessMessage } from '../utils/telegram-template'
-import { loadProductTypeTemplates } from '../services/product-template'
+import { loadProductTemplates } from '../services/product-template'
 import { resolveLang, setRegion, setLanguage } from '../services/user-locale'
-import { isSupportedLang, type Region } from '../i18n/locales'
+import { isSupportedLang, type Lang, type Region } from '../i18n/locales'
+import {
+  buildDisplayPlaceholder,
+  loadDisplayLang,
+  loadProductTranslations,
+  loadProductTypeTranslations,
+  resolveDisplayText,
+} from '../services/i18n-catalog'
 import { t } from '../bot/i18n'
 import { sendMessage, sendPhoto } from '../bot/telegram-api'
 import { consumeToken, PURCHASE_RULE } from '../bot/rate-limit'
@@ -75,32 +83,109 @@ interface HomeDto {
   shortcuts: readonly string[]
 }
 
-/** Một dòng kết quả query danh sách loại sản phẩm (Req 5.1, 5.2). */
-interface ProductTypeListRow {
+/** Một dòng query danh mục tầng 1. */
+interface CategoryListRow {
   id: number
   name: string
-  emoji: string
+  description: string | null
+  content: string | null
+  emoji: string | null
+  image_data: string | null
+  sort_order: number
+  product_count: number
+  stock: number
+}
+
+/** Một dòng kết quả query Product bán được (tầng 2), giữ DTO cũ để tương thích Mini App. */
+interface CatalogProductRow {
+  id: number
+  product_type_id: number
+  name: string
+  description: string | null
+  content: string | null
+  emoji: string | null
   image_data: string | null
   price: number
   sort_order: number
-  stock: number // COUNT(products.status='available') — LEFT JOIN nên có thể = 0
-}
-
-/** Một dòng kết quả query chi tiết loại sản phẩm (Req 5.3). */
-interface ProductTypeDetailRow {
-  id: number
-  name: string
-  emoji: string
-  image_data: string | null
-  description: string | null
-  price: number
-  stock: number // COUNT(products.status='available') — LEFT JOIN nên có thể = 0
+  category_name: string
+  category_description: string | null
+  category_content: string | null
+  category_emoji: string | null
+  stock: number // COUNT(product_items.status='available') — LEFT JOIN nên có thể = 0
 }
 
 const miniAppApi = new Hono<MiniAppEnv>()
 
 // Toàn bộ prefix yêu cầu initData hợp lệ (Req 1) — verify per-request, stateless.
 miniAppApi.use('/*', miniAppAuth)
+
+async function resolveCategoryDto(
+  db: D1Database,
+  row: CategoryListRow,
+  displayLang: Lang,
+  defaultLang: Lang
+): Promise<CategoryListItemDto> {
+  const translations = await loadProductTypeTranslations(db, row.id)
+  const placeholder = buildDisplayPlaceholder(row.id)
+
+  return {
+    id: row.id,
+    name: resolveDisplayText(translations, 'name', row.name, displayLang, defaultLang, placeholder),
+    emoji: row.emoji,
+    image_url: row.image_data ?? null,
+    description: resolveDisplayText(translations, 'description', row.description, displayLang, defaultLang, placeholder),
+    content: resolveDisplayText(translations, 'content', row.content, displayLang, defaultLang, placeholder),
+    product_count: row.product_count,
+    stock: row.stock,
+    in_stock: row.stock > 0,
+  }
+}
+
+async function resolveCatalogProductDto(
+  db: D1Database,
+  row: CatalogProductRow,
+  displayLang: Lang,
+  defaultLang: Lang,
+  priceDisplay: string
+): Promise<ProductTypeListItemDto> {
+  const [productTranslations, categoryTranslations] = await Promise.all([
+    loadProductTranslations(db, row.id),
+    loadProductTypeTranslations(db, row.product_type_id),
+  ])
+  const productPlaceholder = buildDisplayPlaceholder(row.id)
+  const categoryPlaceholder = buildDisplayPlaceholder(row.product_type_id)
+  const categoryName = resolveDisplayText(
+    categoryTranslations,
+    'name',
+    row.category_name,
+    displayLang,
+    defaultLang,
+    categoryPlaceholder
+  )
+
+  return {
+    id: row.id,
+    product_type_id: row.product_type_id,
+    category_id: row.product_type_id,
+    category_name: categoryName,
+    name: resolveDisplayText(productTranslations, 'name', row.name, displayLang, defaultLang, productPlaceholder),
+    emoji: row.emoji ?? row.category_emoji,
+    image_url: row.image_data ?? null,
+    description: resolveDisplayText(
+      productTranslations,
+      'description',
+      row.description,
+      displayLang,
+      defaultLang,
+      productPlaceholder
+    ),
+    content: resolveDisplayText(productTranslations, 'content', row.content, displayLang, defaultLang, productPlaceholder),
+    price: row.price,
+    price_display: priceDisplay,
+    stock: row.stock,
+    in_stock: row.stock > 0,
+  }
+}
 
 /**
  * GET /me — Thông tin tài khoản + số dư (Req 12).
@@ -292,39 +377,39 @@ miniAppApi.get('/deposit-methods', async (c) => {
 })
 
 /**
- * GET /product-types — Danh mục loại sản phẩm + tồn kho (Req 5.1, 5.2, 5.4).
+ * GET /product-types — alias tương thích: danh sách Product bán được + tồn kho.
  *
- * Trả các `product_types` đang hiển thị (`is_visible = 1`), kèm tồn kho `available`
- * đếm qua `LEFT JOIN products`, sắp xếp `sort_order ASC, name ASC`. KHÁC query của bot
- * (vốn `INNER JOIN ... HAVING stock > 0`): ở đây dùng `LEFT JOIN` + `COUNT(CASE ...)`
- * và KHÔNG lọc theo tồn kho nên BAO GỒM cả loại hết hàng (`stock = 0`), để frontend
- * hiển thị trạng thái hết hàng và vô hiệu hóa mua (Req 5.4). `in_stock = stock > 0`.
+ * Sau migration 0015, `product_types` là danh mục tầng 1, còn giá/tồn kho thuộc
+ * `products` và `product_items`. Endpoint cũ vẫn trả shape `ProductType*Dto` để
+ * Mini App hiện tại không vỡ route, nhưng `id` giờ là `products.id`.
  */
 miniAppApi.get('/product-types', async (c) => {
   const user = c.get('user')
   const lang = await resolveLang(c.env.DB, user)
+  const defaultLang = await loadDisplayLang(c.env.DB)
   const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
 
   const { results } = await c.env.DB.prepare(
-    `SELECT pt.id, pt.name, pt.emoji, pt.image_data, pt.price, pt.sort_order,
-            COUNT(CASE WHEN p.status = 'available' THEN 1 END) AS stock
-     FROM product_types pt
-     LEFT JOIN products p ON p.type_id = pt.id
-     WHERE pt.is_visible = 1
-     GROUP BY pt.id
-     ORDER BY pt.sort_order ASC, pt.name ASC`
-  ).all<ProductTypeListRow>()
+    `SELECT p.id, p.product_type_id, p.name, p.description, p.content, p.emoji,
+            p.image_data, p.price, p.sort_order,
+            pt.name AS category_name,
+            pt.description AS category_description,
+            pt.content AS category_content,
+            pt.emoji AS category_emoji,
+            COUNT(CASE WHEN pi.status = 'available' THEN 1 END) AS stock
+     FROM products p
+     JOIN product_types pt ON pt.id = p.product_type_id
+     LEFT JOIN product_items pi ON pi.product_id = p.id
+     WHERE p.is_visible = 1 AND pt.is_visible = 1
+     GROUP BY p.id
+     ORDER BY pt.sort_order ASC, p.sort_order ASC, p.name ASC`
+  ).all<CatalogProductRow>()
 
-  const data: ProductTypeListItemDto[] = results.map((row) => ({
-    id: row.id,
-    name: row.name,
-    emoji: row.emoji,
-    image_url: row.image_data ?? null,
-    price: row.price,
-    price_display: formatMoneyFor(row.price, ctx),
-    stock: row.stock,
-    in_stock: row.stock > 0,
-  }))
+  const data: ProductTypeListItemDto[] = await Promise.all(
+    results.map((row) =>
+      resolveCatalogProductDto(c.env.DB, row, lang, defaultLang, formatMoneyFor(row.price, ctx))
+    )
+  )
 
   const body: ApiResponse<ProductTypeListItemDto[]> = {
     success: true,
@@ -336,11 +421,76 @@ miniAppApi.get('/product-types', async (c) => {
 })
 
 /**
- * GET /product-types/:id — Chi tiết loại sản phẩm (Req 5.3, 5.4).
- *
- * Trả mô tả, giá, tồn kho `available` và `max_quantity` (trần mua mỗi lần). `:id` được
- * parse sang integer — không hợp lệ → 404. Query lọc `is_visible = 1` nên loại ẩn hoặc
- * không tồn tại đều trả 404 `not_found`. KHÔNG trả `success_template` (chỉ dùng server-side).
+ * GET /categories — danh sách Product_Type tầng 1.
+ */
+miniAppApi.get('/categories', async (c) => {
+  const user = c.get('user')
+  const lang = await resolveLang(c.env.DB, user)
+  const defaultLang = await loadDisplayLang(c.env.DB)
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT pt.id, pt.name, pt.description, pt.content, pt.emoji, pt.image_data, pt.sort_order,
+            COUNT(DISTINCT p.id) AS product_count,
+            COUNT(CASE WHEN pi.status = 'available' THEN 1 END) AS stock
+     FROM product_types pt
+     LEFT JOIN products p ON p.product_type_id = pt.id AND p.is_visible = 1
+     LEFT JOIN product_items pi ON pi.product_id = p.id
+     WHERE pt.is_visible = 1
+     GROUP BY pt.id
+     ORDER BY pt.sort_order ASC, pt.name ASC`
+  ).all<CategoryListRow>()
+
+  const data = await Promise.all(
+    results.map((row) => resolveCategoryDto(c.env.DB, row, lang, defaultLang))
+  )
+  const body: ApiResponse<CategoryListItemDto[]> = { success: true, data, error: null }
+  return c.json(body)
+})
+
+/**
+ * GET /categories/:id/products — Product trong một danh mục.
+ */
+miniAppApi.get('/categories/:id/products', async (c) => {
+  const user = c.get('user')
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) {
+    const notFound: ApiResponse<null> = { success: false, data: null, error: 'not_found' }
+    return c.json(notFound, 404)
+  }
+
+  const lang = await resolveLang(c.env.DB, user)
+  const defaultLang = await loadDisplayLang(c.env.DB)
+  const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT p.id, p.product_type_id, p.name, p.description, p.content, p.emoji,
+            p.image_data, p.price, p.sort_order,
+            pt.name AS category_name,
+            pt.description AS category_description,
+            pt.content AS category_content,
+            pt.emoji AS category_emoji,
+            COUNT(CASE WHEN pi.status = 'available' THEN 1 END) AS stock
+     FROM products p
+     JOIN product_types pt ON pt.id = p.product_type_id
+     LEFT JOIN product_items pi ON pi.product_id = p.id
+     WHERE p.product_type_id = ? AND p.is_visible = 1 AND pt.is_visible = 1
+     GROUP BY p.id
+     ORDER BY p.sort_order ASC, p.name ASC`
+  )
+    .bind(id)
+    .all<CatalogProductRow>()
+
+  const data: ProductTypeListItemDto[] = await Promise.all(
+    results.map((row) =>
+      resolveCatalogProductDto(c.env.DB, row, lang, defaultLang, formatMoneyFor(row.price, ctx))
+    )
+  )
+  const body: ApiResponse<ProductTypeListItemDto[]> = { success: true, data, error: null }
+  return c.json(body)
+})
+
+/**
+ * GET /product-types/:id — alias tương thích: chi tiết Product bán được.
  */
 miniAppApi.get('/product-types/:id', async (c) => {
   const user = c.get('user')
@@ -351,15 +501,21 @@ miniAppApi.get('/product-types/:id', async (c) => {
   }
 
   const row = await c.env.DB.prepare(
-    `SELECT pt.id, pt.name, pt.emoji, pt.image_data, pt.description, pt.price,
-            COUNT(CASE WHEN p.status = 'available' THEN 1 END) AS stock
-     FROM product_types pt
-     LEFT JOIN products p ON p.type_id = pt.id
-     WHERE pt.id = ? AND pt.is_visible = 1
-     GROUP BY pt.id`
+    `SELECT p.id, p.product_type_id, p.name, p.description, p.content, p.emoji,
+            p.image_data, p.price, p.sort_order,
+            pt.name AS category_name,
+            pt.description AS category_description,
+            pt.content AS category_content,
+            pt.emoji AS category_emoji,
+            COUNT(CASE WHEN pi.status = 'available' THEN 1 END) AS stock
+     FROM products p
+     JOIN product_types pt ON pt.id = p.product_type_id
+     LEFT JOIN product_items pi ON pi.product_id = p.id
+     WHERE p.id = ? AND p.is_visible = 1 AND pt.is_visible = 1
+     GROUP BY p.id`
   )
     .bind(id)
-    .first<ProductTypeDetailRow>()
+    .first<CatalogProductRow>()
 
   if (!row) {
     const notFound: ApiResponse<null> = { success: false, data: null, error: 'not_found' }
@@ -367,18 +523,18 @@ miniAppApi.get('/product-types/:id', async (c) => {
   }
 
   const lang = await resolveLang(c.env.DB, user)
+  const defaultLang = await loadDisplayLang(c.env.DB)
   const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
+  const productDto = await resolveCatalogProductDto(
+    c.env.DB,
+    row,
+    lang,
+    defaultLang,
+    formatMoneyFor(row.price, ctx)
+  )
 
   const data: ProductTypeDetailDto = {
-    id: row.id,
-    name: row.name,
-    emoji: row.emoji,
-    image_url: row.image_data ?? null,
-    description: row.description,
-    price: row.price,
-    price_display: formatMoneyFor(row.price, ctx),
-    stock: row.stock,
-    in_stock: row.stock > 0,
+    ...productDto,
     max_quantity: MAX_PURCHASE_QUANTITY,
   }
 
@@ -395,15 +551,15 @@ miniAppApi.get('/product-types/:id', async (c) => {
  * POST /purchase — Mua hàng atomic (Req 6, 7, 15.3, 16.2, 16.3).
  *
  * Controller mỏng: KHÔNG viết lại logic atomic — chỉ điều phối validate → rate-limit →
- * load `product_type` → `transactionService.executePurchase` (reuse) → đồng bộ tin nhắn bot
+ * load Product bán được → `transactionService.executePurchase` (reuse) → đồng bộ tin nhắn bot
  * sau commit. Tổng tiền tính SERVER-SIDE (`price × quantity`), KHÔNG tin client (Req 6.1, 16.3).
  *
- * Request body: `{ productTypeId: number, quantity: number }` (đọc qua `c.req.json()`).
+ * Request body: `{ productId: number, quantity: number }`. `productTypeId` vẫn nhận như alias legacy.
  *
  * Luồng mã lỗi:
  *  - JSON hỏng / `quantity` không phải integer trong `[1, MAX_PURCHASE_QUANTITY]` → 400 `validation_error` (Req 6.1)
  *  - double-tap vượt `PURCHASE_RULE` (reuse rate-limit của bot) → 429 `rate_limited`
- *  - `product_type` không tồn tại hoặc `is_visible = 0` → 404 `not_found` (Req 5.4)
+ *  - Product không tồn tại hoặc bị ẩn → 404 `not_found` (Req 5.4)
  *  - lỗi service: `insufficient_balance`/`insufficient_stock` → 409, `db_error` → 500 (Req 6.3, 6.4)
  *
  * Sau commit (Req 7): dựng HTML qua `renderSuccessMessage` rồi `sendMessage` fire-and-forget qua
@@ -414,7 +570,7 @@ miniAppApi.post('/purchase', async (c) => {
   const user = c.get('user')
 
   // Đọc body — guard JSON hỏng → coi là input không hợp lệ (Req 6.1).
-  let payload: { productTypeId?: unknown; quantity?: unknown }
+  let payload: { productId?: unknown; productTypeId?: unknown; quantity?: unknown }
   try {
     payload = await c.req.json()
   } catch {
@@ -422,7 +578,7 @@ miniAppApi.post('/purchase', async (c) => {
     return c.json(bad, 400)
   }
 
-  const productTypeId = Number(payload.productTypeId)
+  const productId = Number(payload.productId ?? payload.productTypeId)
   const quantity = Number(payload.quantity)
 
   // Validate quantity: integer trong [1, MAX_PURCHASE_QUANTITY] (Req 6.1).
@@ -431,8 +587,8 @@ miniAppApi.post('/purchase', async (c) => {
     return c.json(bad, 400)
   }
 
-  // productTypeId không hợp lệ → 404 (đồng bộ ngữ nghĩa với GET /product-types/:id).
-  if (!Number.isInteger(productTypeId) || productTypeId <= 0) {
+  // productId không hợp lệ → 404 (đồng bộ ngữ nghĩa với GET /product-types/:id).
+  if (!Number.isInteger(productId) || productId <= 0) {
     const notFound: ApiResponse<null> = { success: false, data: null, error: 'not_found' }
     return c.json(notFound, 404)
   }
@@ -444,22 +600,35 @@ miniAppApi.post('/purchase', async (c) => {
     return c.json(limited, 429)
   }
 
-  // Lấy product_type đang hiển thị — ẩn/không tồn tại → 404 (Req 5.4).
-  const pt = await c.env.DB.prepare('SELECT * FROM product_types WHERE id = ? AND is_visible = 1')
-    .bind(productTypeId)
-    .first<DbProductType>()
-  if (!pt) {
+  // Lấy Product đang hiển thị kèm danh mục cha — ẩn/không tồn tại → 404 (Req 5.4).
+  const product = await c.env.DB.prepare(
+    `SELECT p.id, p.product_type_id, p.name, p.description, p.content, p.emoji,
+            p.image_data, p.price, p.sort_order,
+            pt.name AS category_name,
+            pt.description AS category_description,
+            pt.content AS category_content,
+            pt.emoji AS category_emoji,
+            COUNT(CASE WHEN pi.status = 'available' THEN 1 END) AS stock
+     FROM products p
+     JOIN product_types pt ON pt.id = p.product_type_id
+     LEFT JOIN product_items pi ON pi.product_id = p.id
+     WHERE p.id = ? AND p.is_visible = 1 AND pt.is_visible = 1
+     GROUP BY p.id`
+  )
+    .bind(productId)
+    .first<CatalogProductRow>()
+  if (!product) {
     const notFound: ApiResponse<null> = { success: false, data: null, error: 'not_found' }
     return c.json(notFound, 404)
   }
 
   // Tổng tiền tính server-side (Req 6.1, 16.3) — KHÔNG tin client.
-  const totalAmount = pt.price * quantity
+  const totalAmount = product.price * quantity
 
-  // Giao dịch atomic (Req 6.2..6.5, 16.2) — reuse nguyên service, truyền pt.price làm unitPrice.
-  const result = await transactionService.executePurchase(c.env.DB, user.id, pt.id, quantity, pt.price)
+  // Giao dịch atomic (Req 6.2..6.5, 16.2) — reuse nguyên service, truyền product.price làm unitPrice.
+  const result = await transactionService.executePurchase(c.env.DB, user.id, product.id, quantity, product.price)
 
-  if (!result.success) {
+  if (result.success === false) {
     const statusByError = {
       insufficient_balance: 409,
       insufficient_stock: 409,
@@ -470,27 +639,37 @@ miniAppApi.post('/purchase', async (c) => {
     return c.json(fail, statusByError[errorCode])
   }
 
-  const products = result.products ?? []
-  const contents = products.map((p) => p.content)
-  // executePurchase đã guard `WHERE balance >= total` nên balanceAfter phản ánh đúng số dư đã commit.
-  const balanceAfter = user.balance - totalAmount
+  const productItems = result.productItems ?? []
+  const contents = productItems.map((p) => p.content)
+  // executePurchase trả số dư sau commit từ UPDATE ... RETURNING để tránh lệch khi cùng user mua đồng thời.
+  const balanceAfter = result.balanceAfter ?? user.balance - totalAmount
 
   // Đồng bộ bot SAU commit (Req 7) — fire-and-forget, lỗi gửi tin KHÔNG rollback (Req 7.5).
   // renderSuccessMessage tự escape giá trị động (content/name) (Req 7.4, 15.1).
-  const templatesByLang = await loadProductTypeTemplates(c.env.DB, pt.id)
   const lang = await resolveLang(c.env.DB, user)
+  const defaultLang = await loadDisplayLang(c.env.DB)
   const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
+  const templatesByLang = await loadProductTemplates(c.env.DB, product.id)
+  const displayName = resolveDisplayText(
+    await loadProductTranslations(c.env.DB, product.id),
+    'name',
+    product.name,
+    lang,
+    defaultLang,
+    buildDisplayPlaceholder(product.id)
+  )
   const html = renderSuccessMessage(
     templatesByLang,
     {
-      emoji: pt.emoji,
-      name: pt.name,
+      emoji: product.emoji ?? product.category_emoji ?? '',
+      name: displayName,
       quantity,
       totalAmount,
       balanceAfter,
       contents,
     },
-    ctx
+    ctx,
+    defaultLang
   )
   const notify = sendMessage(await resolveBotToken(c.env.DB, c.env), user.telegram_id, html, { parse_mode: 'HTML' }).catch(
     (err) => console.error('[MiniApp] notify purchase failed:', err)
@@ -592,7 +771,7 @@ miniAppApi.post('/deposits', async (c) => {
     channel: 'miniapp',
   })
 
-  if (!result.success) {
+  if (result.success === false) {
     const err = result.error
     if (err.type === 'policy') {
       // Vi phạm luật nạp dùng chung → 429 kèm message theo lang (Req 8.3).
@@ -874,8 +1053,9 @@ interface OrderRow {
   total_amount: number
   status: 'completed' | 'refunded'
   created_at: string
-  product_name: string // pt.name AS product_name
-  emoji: string
+  product_id: number
+  product_name: string
+  emoji: string | null
 }
 
 /**
@@ -883,7 +1063,7 @@ interface OrderRow {
  *
  * Cô lập dữ liệu theo người mua: query `WHERE o.user_id = ?` với `user.id` lấy từ
  * `c.get('user')` (đã JOIN/lọc qua `telegram_id`), KHÔNG nhận `user_id` từ client.
- * `JOIN product_types` để lấy `name`/`emoji`, `ORDER BY o.created_at DESC` (mới nhất
+   * `JOIN products` để lấy `name`/`emoji`, `ORDER BY o.created_at DESC` (mới nhất
  * trước). Phân trang `LIMIT/OFFSET` theo query `page`/`limit`; `meta` mang `total`
  * (đếm cùng điều kiện WHERE), `page`, `limit`. Khi người mua chưa có đơn → trả mảng
  * rỗng `[]` (Req 11.4), `meta.total = 0`.
@@ -907,9 +1087,12 @@ miniAppApi.get('/orders', async (c) => {
   // Trang đơn hàng — sắp xếp mới nhất trước (Req 11.1, 11.2).
   const { results } = await c.env.DB.prepare(
     `SELECT o.id, o.quantity, o.total_amount, o.status, o.created_at,
-            pt.name AS product_name, pt.emoji
+            p.id AS product_id,
+            p.name AS product_name,
+            COALESCE(p.emoji, pt.emoji) AS emoji
      FROM orders o
-     JOIN product_types pt ON pt.id = o.product_type_id
+     JOIN products p ON p.id = o.product_id
+     JOIN product_types pt ON pt.id = p.product_type_id
      WHERE o.user_id = ?
      ORDER BY o.created_at DESC
      LIMIT ? OFFSET ?`
@@ -918,16 +1101,29 @@ miniAppApi.get('/orders', async (c) => {
     .all<OrderRow>()
 
   // Mảng rỗng khi chưa có đơn (Req 11.4).
-  const data: OrderListItemDto[] = results.map((row) => ({
-    id: row.id,
-    product_name: row.product_name,
-    emoji: row.emoji,
-    quantity: row.quantity,
-    total_amount: row.total_amount,
-    total_display: formatMoneyFor(row.total_amount, ctx),
-    status: row.status,
-    created_at: row.created_at,
-  }))
+  const defaultLang = await loadDisplayLang(c.env.DB)
+  const data: OrderListItemDto[] = await Promise.all(
+    results.map(async (row) => {
+      const translations = await loadProductTranslations(c.env.DB, row.product_id)
+      return {
+        id: row.id,
+        product_name: resolveDisplayText(
+          translations,
+          'name',
+          row.product_name,
+          lang,
+          defaultLang,
+          buildDisplayPlaceholder(row.product_id)
+        ),
+        emoji: row.emoji,
+        quantity: row.quantity,
+        total_amount: row.total_amount,
+        total_display: formatMoneyFor(row.total_amount, ctx),
+        status: row.status,
+        created_at: row.created_at,
+      }
+    })
+  )
 
   const body: ApiResponse<OrderListItemDto[]> = {
     success: true,
@@ -945,7 +1141,7 @@ miniAppApi.get('/orders', async (c) => {
  * Guard chủ sở hữu: SELECT `WHERE o.id = ? AND o.user_id = ?` (`user.id` từ
  * `c.get('user')`). Đơn không tồn tại HOẶC không thuộc người mua hiện tại đều trả
  * 404 `not_found` — KHÔNG phân biệt hai trường hợp để tránh dò ID (Req 15.3, chống IDOR).
- * CHỈ khi đơn thuộc người mua mới truy vấn và trả `contents` (`products.content`) — bảo
+   * CHỈ khi đơn thuộc người mua mới truy vấn và trả `contents` (`product_items.content`) — bảo
  * đảm KHÔNG lộ nội dung đơn của người khác (Req 15.3).
  *
  * `:id` parse sang integer — không hợp lệ → 404.
@@ -962,9 +1158,12 @@ miniAppApi.get('/orders/:id', async (c) => {
   // Guard chủ sở hữu — chỉ lấy đơn thuộc user.id (Req 15.3). Rỗng → 404 (không phân biệt).
   const order = await c.env.DB.prepare(
     `SELECT o.id, o.quantity, o.total_amount, o.status, o.created_at,
-            pt.name AS product_name, pt.emoji
+            p.id AS product_id,
+            p.name AS product_name,
+            COALESCE(p.emoji, pt.emoji) AS emoji
      FROM orders o
-     JOIN product_types pt ON pt.id = o.product_type_id
+     JOIN products p ON p.id = o.product_id
+     JOIN product_types pt ON pt.id = p.product_type_id
      WHERE o.id = ? AND o.user_id = ?`
   )
     .bind(id, user.id)
@@ -977,20 +1176,29 @@ miniAppApi.get('/orders/:id', async (c) => {
 
   // Chỉ truy vấn nội dung khi đã xác nhận đơn thuộc người mua (Req 15.3).
   const { results } = await c.env.DB.prepare(
-    `SELECT p.content
+    `SELECT pi.content
      FROM order_items oi
-     JOIN products p ON p.id = oi.product_id
+     JOIN product_items pi ON pi.id = oi.product_item_id
      WHERE oi.order_id = ?`
   )
     .bind(order.id)
     .all<{ content: string }>()
 
   const lang = await resolveLang(c.env.DB, user)
+  const defaultLang = await loadDisplayLang(c.env.DB)
   const ctx = await buildCurrencyContext(c.env.DB, { lang, region: user.region })
+  const productTranslations = await loadProductTranslations(c.env.DB, order.product_id)
 
   const data: OrderDetailDto = {
     id: order.id,
-    product_name: order.product_name,
+    product_name: resolveDisplayText(
+      productTranslations,
+      'name',
+      order.product_name,
+      lang,
+      defaultLang,
+      buildDisplayPlaceholder(order.product_id)
+    ),
     emoji: order.emoji,
     quantity: order.quantity,
     total_amount: order.total_amount,

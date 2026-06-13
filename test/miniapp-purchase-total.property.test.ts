@@ -5,6 +5,13 @@ import { miniAppApi } from '../src/routes/miniapp-api'
 import { _resetRateLimiter } from '../src/bot/rate-limit'
 import type { ApiResponse } from '../src/types/api'
 import type { PurchaseResultDto } from '../src/types/miniapp'
+import {
+  cleanThreeTierTables,
+  resetThreeTierSchema,
+  seedCategory,
+  seedPricedProduct,
+  seedProductItems,
+} from './helpers/three-tier-schema'
 
 // Feature: telegram-mini-app, Property 7
 /**
@@ -33,100 +40,8 @@ const BOT_TOKEN = 'test-bot-token'
 
 // --- Schema tối thiểu cho mua hàng (đồng bộ test/integration.test.ts) ---
 
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS system_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    description TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_by INTEGER
-  )`,
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    success_template TEXT,
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id),
-    quantity INTEGER NOT NULL CHECK(quantity > 0),
-    total_amount INTEGER NOT NULL,
-    transaction_id INTEGER,
-    status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed','refunded')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    type TEXT NOT NULL CHECK(type IN ('deposit','purchase','refund','adjustment')),
-    amount INTEGER NOT NULL,
-    balance_before INTEGER NOT NULL,
-    balance_after INTEGER NOT NULL,
-    reference_type TEXT,
-    reference_id INTEGER,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'success' CHECK(status IN ('success','failed','pending')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER REFERENCES users(id),
-    order_id INTEGER REFERENCES orders(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_content_type ON products(type_id, content)`,
-  `CREATE TABLE IF NOT EXISTS order_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL REFERENCES orders(id),
-    product_id INTEGER NOT NULL REFERENCES products(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_type_templates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id) ON DELETE CASCADE,
-    lang TEXT NOT NULL,
-    success_template TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(product_type_id, lang)
-  )`,
-]
-
-async function applySchema(): Promise<void> {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await env.DB.prepare(stmt).run()
-  }
-}
-
 async function cleanTables(): Promise<void> {
-  await env.DB.prepare('DELETE FROM order_items').run()
-  await env.DB.prepare('DELETE FROM products').run()
-  await env.DB.prepare('DELETE FROM orders').run()
-  await env.DB.prepare('DELETE FROM transactions').run()
-  await env.DB.prepare('DELETE FROM users').run()
-  await env.DB.prepare('DELETE FROM product_types').run()
+  await cleanThreeTierTables(env.DB)
 }
 
 function getEnvBindings() {
@@ -208,8 +123,7 @@ async function signBuyerInitData(telegramId: number): Promise<string> {
 // --- Setup ---
 
 beforeEach(async () => {
-  await applySchema()
-  await cleanTables()
+  await resetThreeTierSchema(env.DB)
   _resetRateLimiter()
 })
 
@@ -257,24 +171,14 @@ describe('Property 7: Tổng tiền bằng giá nhân số lượng', () => {
             .bind(telegramId, initialBalance, now, now, now)
             .run()
 
-          // Seed loại sản phẩm với giá `price`.
-          const pt = await env.DB.prepare(
-            `INSERT INTO product_types (name, description, price, emoji, is_visible, sort_order, created_at, updated_at)
-             VALUES ('Netflix', 'mô tả', ?, '🎬', 1, 0, ?, ?) RETURNING id`
-          )
-            .bind(price, now, now)
-            .first<{ id: number }>()
-          const productTypeId = pt!.id
-
-          // Seed đủ tồn kho (>= quantity) các products 'available'.
-          for (let i = 0; i < quantity; i++) {
-            await env.DB.prepare(
-              `INSERT INTO products (type_id, content, status, created_at)
-               VALUES (?, ?, 'available', ?)`
-            )
-              .bind(productTypeId, `acc_${i}`, now)
-              .run()
-          }
+          const categoryId = await seedCategory(env.DB, 'Streaming')
+          const productId = await seedPricedProduct(env.DB, {
+            categoryId,
+            name: 'Netflix',
+            description: 'mo ta',
+            price,
+          })
+          await seedProductItems(env.DB, productId, quantity)
 
           const raw = await signBuyerInitData(telegramId)
           const res = await miniAppApi.request(
@@ -285,7 +189,7 @@ describe('Property 7: Tổng tiền bằng giá nhân số lượng', () => {
                 'X-Telegram-Init-Data': raw,
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({ productTypeId, quantity }),
+              body: JSON.stringify({ productId, quantity }),
             },
             getEnvBindings() as any,
             getExecutionCtx() as any

@@ -2,59 +2,29 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import fc from 'fast-check'
 import { validateName, validateDescription, validatePrice } from '../src/bot/commands/admin'
+import {
+  cleanThreeTierTables,
+  resetThreeTierSchema,
+  seedCategory as seedCatalogCategory,
+  seedPricedProduct,
+} from './helpers/three-tier-schema'
 
 /**
  * Property-based tests cho Admin validation.
  * **Validates: Requirements 5.2, 5.3, 6.3, 6.5, 6.4**
  */
 
-// --- Schema for D1 tests ---
-
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER,
-    order_id INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_content_type ON products(type_id, content)`,
-]
-
-async function applySchema(db: D1Database) {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await db.prepare(stmt).run()
-  }
-}
-
 async function cleanTables(db: D1Database) {
-  await db.prepare('DELETE FROM products').run()
-  await db.prepare('DELETE FROM product_types').run()
+  await cleanThreeTierTables(db)
 }
 
-async function seedCategory(db: D1Database, price: number = 50000): Promise<number> {
-  await db
-    .prepare(
-      "INSERT INTO product_types (name, price, created_at, updated_at) VALUES ('Test Category', ?, datetime('now'), datetime('now'))"
-    )
-    .bind(price)
-    .run()
-  const cat = await db.prepare('SELECT MAX(id) as id FROM product_types').first<{ id: number }>()
-  return cat!.id
+async function seedProduct(db: D1Database, price = 50_000): Promise<number> {
+  const categoryId = await seedCatalogCategory(db, 'Test Category')
+  return seedPricedProduct(db, {
+    categoryId,
+    name: 'Test Product',
+    price,
+  })
 }
 
 // --- Property 10: Category validation với error message cụ thể ---
@@ -64,7 +34,7 @@ describe('Property 10: Category validation với error message cụ thể', () =
    * **Validates: Requirements 5.2, 5.3**
    * validateName: valid khi 1-100 chars non-empty, invalid khi empty hoặc > 100.
    * validateDescription: valid khi 0-500 chars, invalid khi > 500.
-   * validatePrice: valid khi 1000-999999999 integer string, invalid cho non-numbers, < 1000, > 999999999.
+   * validatePrice: valid khi 1-999999999 integer string, invalid cho non-numbers, < 1, > 999999999.
    */
 
   describe('validateName', () => {
@@ -145,10 +115,10 @@ describe('Property 10: Category validation với error message cụ thể', () =
   })
 
   describe('validatePrice', () => {
-    it('accepts integer strings in range 1000-999999999', () => {
+    it('accepts integer strings in range 1-999999999', () => {
       fc.assert(
         fc.property(
-          fc.integer({ min: 1000, max: 999_999_999 }),
+          fc.integer({ min: 1, max: 999_999_999 }),
           (price) => {
             const result = validatePrice(String(price))
             expect(result.valid).toBe(true)
@@ -174,15 +144,15 @@ describe('Property 10: Category validation với error message cụ thể', () =
       )
     })
 
-    it('rejects prices below 1000 with specific error', () => {
+    it('rejects prices below 1 with specific error', () => {
       fc.assert(
         fc.property(
-          fc.integer({ min: 1, max: 999 }),
+          fc.integer({ min: -10_000, max: 0 }),
           (price) => {
             const result = validatePrice(String(price))
             expect(result.valid).toBe(false)
             expect(result.error).toBeDefined()
-            expect(result.error).toContain('1,000')
+            expect(result.error).toContain('1')
           }
         ),
         { numRuns: 50 }
@@ -211,14 +181,14 @@ describe('Property 10: Category validation với error message cụ thể', () =
 describe('Property 11: Bulk product insert atomicity', () => {
   /**
    * **Validates: Requirements 6.3, 6.5**
-   * N unique contents tạo N products via D1 batch.
+   * N unique contents tạo N product_items via D1 batch.
    */
   beforeEach(async () => {
-    await applySchema(env.DB)
+    await resetThreeTierSchema(env.DB)
     await cleanTables(env.DB)
   })
 
-  it('N unique contents inserted via batch create exactly N products', async () => {
+  it('N unique contents inserted via batch create exactly N product_items', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(
@@ -228,22 +198,22 @@ describe('Property 11: Bulk product insert atomicity', () => {
         async (contents) => {
           await cleanTables(env.DB)
 
-          const categoryId = await seedCategory(env.DB)
+          const productId = await seedProduct(env.DB)
           const now = new Date().toISOString()
 
           // Batch insert (same logic as handleAddProduct)
           const stmts = contents.map((content: string) =>
             env.DB.prepare(
-              'INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, ?, ?)'
-            ).bind(categoryId, content, 'available', now)
+              'INSERT INTO product_items (product_id, content, status, created_at) VALUES (?, ?, ?, ?)'
+            ).bind(productId, content, 'available', now)
           )
 
           await env.DB.batch(stmts)
 
-          // Verify all N products created
+          // Verify all N product_items created
           const result = await env.DB
-            .prepare('SELECT COUNT(*) as cnt FROM products WHERE type_id = ?')
-            .bind(categoryId)
+            .prepare('SELECT COUNT(*) as cnt FROM product_items WHERE product_id = ?')
+            .bind(productId)
             .first<{ cnt: number }>()
 
           expect(result!.cnt).toBe(contents.length)
@@ -251,8 +221,8 @@ describe('Property 11: Bulk product insert atomicity', () => {
           // Verify each content exists
           for (const content of contents) {
             const product = await env.DB
-              .prepare('SELECT id FROM products WHERE type_id = ? AND content = ?')
-              .bind(categoryId, content)
+              .prepare('SELECT id FROM product_items WHERE product_id = ? AND content = ?')
+              .bind(productId, content)
               .first()
             expect(product).not.toBeNull()
           }
@@ -273,20 +243,20 @@ describe('Property 11: Bulk product insert atomicity', () => {
         async (existingContent, newContents) => {
           await cleanTables(env.DB)
 
-          const categoryId = await seedCategory(env.DB)
+          const productId = await seedProduct(env.DB)
           const now = new Date().toISOString()
 
           // Insert the existing product first
           await env.DB.prepare(
-            'INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, ?, ?)'
-          ).bind(categoryId, existingContent, 'available', now).run()
+            'INSERT INTO product_items (product_id, content, status, created_at) VALUES (?, ?, ?, ?)'
+          ).bind(productId, existingContent, 'available', now).run()
 
           // Build batch that includes the existing content (will cause UNIQUE violation)
           const contentsWithDup = [...newContents, existingContent]
           const stmts = contentsWithDup.map((content: string) =>
             env.DB.prepare(
-              'INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, ?, ?)'
-            ).bind(categoryId, content, 'available', now)
+              'INSERT INTO product_items (product_id, content, status, created_at) VALUES (?, ?, ?, ?)'
+            ).bind(productId, content, 'available', now)
           )
 
           // D1 batch should fail due to UNIQUE constraint
@@ -301,8 +271,8 @@ describe('Property 11: Bulk product insert atomicity', () => {
 
           // Verify atomicity: only the original product remains
           const result = await env.DB
-            .prepare('SELECT COUNT(*) as cnt FROM products WHERE type_id = ?')
-            .bind(categoryId)
+            .prepare('SELECT COUNT(*) as cnt FROM product_items WHERE product_id = ?')
+            .bind(productId)
             .first<{ cnt: number }>()
 
           expect(result!.cnt).toBe(1) // Only the pre-existing product
@@ -318,10 +288,10 @@ describe('Property 11: Bulk product insert atomicity', () => {
 describe('Property 12: Product content uniqueness per category', () => {
   /**
    * **Validates: Requirements 6.4**
-   * UNIQUE INDEX (type_id, content) prevents duplicate content within same category.
+ * UNIQUE INDEX (product_id, content) prevents duplicate content within same product.
    */
   beforeEach(async () => {
-    await applySchema(env.DB)
+    await resetThreeTierSchema(env.DB)
     await cleanTables(env.DB)
   })
 
@@ -332,20 +302,20 @@ describe('Property 12: Product content uniqueness per category', () => {
         async (content) => {
           await cleanTables(env.DB)
 
-          const categoryId = await seedCategory(env.DB)
+          const productId = await seedProduct(env.DB)
           const now = new Date().toISOString()
 
           // First insert succeeds
           await env.DB.prepare(
-            'INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, ?, ?)'
-          ).bind(categoryId, content, 'available', now).run()
+            'INSERT INTO product_items (product_id, content, status, created_at) VALUES (?, ?, ?, ?)'
+          ).bind(productId, content, 'available', now).run()
 
           // Second insert with same content + category should fail
           let insertFailed = false
           try {
             await env.DB.prepare(
-              'INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, ?, ?)'
-            ).bind(categoryId, content, 'available', now).run()
+              'INSERT INTO product_items (product_id, content, status, created_at) VALUES (?, ?, ?, ?)'
+            ).bind(productId, content, 'available', now).run()
           } catch (e) {
             insertFailed = true
           }
@@ -354,8 +324,8 @@ describe('Property 12: Product content uniqueness per category', () => {
 
           // Only 1 product exists
           const result = await env.DB
-            .prepare('SELECT COUNT(*) as cnt FROM products WHERE type_id = ? AND content = ?')
-            .bind(categoryId, content)
+            .prepare('SELECT COUNT(*) as cnt FROM product_items WHERE product_id = ? AND content = ?')
+            .bind(productId, content)
             .first<{ cnt: number }>()
           expect(result!.cnt).toBe(1)
         }
@@ -364,34 +334,34 @@ describe('Property 12: Product content uniqueness per category', () => {
     )
   })
 
-  it('allows same content in different categories', async () => {
+  it('allows same content in different products', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 200 }).filter(s => s.trim().length > 0),
         async (content) => {
           await cleanTables(env.DB)
 
-          const categoryId1 = await seedCategory(env.DB, 26000)
-          const categoryId2 = await seedCategory(env.DB, 60000)
+          const productId1 = await seedProduct(env.DB, 26_000)
+          const productId2 = await seedProduct(env.DB, 60_000)
           const now = new Date().toISOString()
 
-          // Insert same content in two different categories
+          // Insert same content in two different products
           await env.DB.prepare(
-            'INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, ?, ?)'
-          ).bind(categoryId1, content, 'available', now).run()
+            'INSERT INTO product_items (product_id, content, status, created_at) VALUES (?, ?, ?, ?)'
+          ).bind(productId1, content, 'available', now).run()
 
           await env.DB.prepare(
-            'INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, ?, ?)'
-          ).bind(categoryId2, content, 'available', now).run()
+            'INSERT INTO product_items (product_id, content, status, created_at) VALUES (?, ?, ?, ?)'
+          ).bind(productId2, content, 'available', now).run()
 
           // Both exist
           const count1 = await env.DB
-            .prepare('SELECT COUNT(*) as cnt FROM products WHERE type_id = ? AND content = ?')
-            .bind(categoryId1, content)
+            .prepare('SELECT COUNT(*) as cnt FROM product_items WHERE product_id = ? AND content = ?')
+            .bind(productId1, content)
             .first<{ cnt: number }>()
           const count2 = await env.DB
-            .prepare('SELECT COUNT(*) as cnt FROM products WHERE type_id = ? AND content = ?')
-            .bind(categoryId2, content)
+            .prepare('SELECT COUNT(*) as cnt FROM product_items WHERE product_id = ? AND content = ?')
+            .bind(productId2, content)
             .first<{ cnt: number }>()
 
           expect(count1!.cnt).toBe(1)

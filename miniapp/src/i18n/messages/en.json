@@ -44,10 +44,14 @@
     "search_placeholder": "Search accounts...",
     "featured": "Featured accounts",
     "all_categories": "All",
+    "category_filter": "Category filter",
+    "category_empty_title": "No products in this category",
+    "category_empty_desc": "Choose another category or check back later.",
     "search_empty_title": "No results",
     "search_empty_desc": "No products match your search.",
     "empty_title": "No products",
     "empty_desc": "There are no products available to buy yet.",
+    "category_load_error": "Could not load categories. Please try again.",
     "load_error": "Could not load the product list. Please try again."
   },
   "product": {

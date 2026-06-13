@@ -1,13 +1,12 @@
 <script setup lang="ts">
 /**
- * MarketView — "Market" (storefront), tab cấp 1 (Req 4, 5) — Obsidian Glass.
+ * MarketView - "Market" storefront, tab cấp 1.
  *
- *  - TopAppBar + ô tìm kiếm + lưới sản phẩm 2 cột (ProductCard).
+ *  - TopAppBar + bộ lọc danh mục + ô tìm kiếm + lưới sản phẩm 2 cột.
  *  - Banner ảnh (`GET /api/app/banners`) hiển thị dạng cuộn ngang nếu admin đã cấu hình.
- *  - `GET /api/app/product-types` (gồm cả loại hết hàng). Skeleton khi đang tải, EmptyState
- *    khi rỗng. Backend không có trường "category" nên không render chips danh mục.
+ *  - `GET /api/app/categories`, sau đó `GET /api/app/categories/:id/products`.
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ShoppingBag, Search, Wallet } from '@lucide/vue'
@@ -18,23 +17,35 @@ import { get, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/stores/user'
 import { openLink } from '@/telegram/sdk'
-import type { ProductTypeListItemDto, BannerDto } from '@/types'
+import type { ProductTypeListItemDto, CategoryListItemDto, BannerDto } from '@/types'
 
 const router = useRouter()
 const ui = useUiStore()
 const user = useUserStore()
 const { t } = useI18n()
 
+const categories = ref<CategoryListItemDto[]>([])
 const products = ref<ProductTypeListItemDto[]>([])
 const banners = ref<BannerDto[]>([])
-const loaded = ref(false)
+const categoriesLoaded = ref(false)
+const productsLoaded = ref(false)
+const selectedCategoryId = ref<number | null>(null)
 const query = ref('')
+let productLoadSeq = 0
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return products.value
-  return products.value.filter((p) => p.name.toLowerCase().includes(q))
+  return products.value.filter((p) =>
+    [p.name, p.description, p.content]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .some((value) => value.toLowerCase().includes(q))
+  )
 })
+
+const selectedCategory = computed(() =>
+  categories.value.find((category) => category.id === selectedCategoryId.value) ?? null
+)
 
 function openDetail(item: ProductTypeListItemDto): void {
   router.push({ name: 'product-detail', params: { id: String(item.id) } })
@@ -44,14 +55,46 @@ function openBanner(banner: BannerDto): void {
   if (banner.link_url) openLink(banner.link_url)
 }
 
-async function load(): Promise<void> {
+function selectCategory(categoryId: number): void {
+  selectedCategoryId.value = categoryId
+}
+
+async function loadCategories(): Promise<void> {
   try {
-    products.value = await get<ProductTypeListItemDto[]>('/product-types')
+    categories.value = await get<CategoryListItemDto[]>('/categories')
+    selectedCategoryId.value = categories.value[0]?.id ?? null
+    if (categories.value.length === 0) {
+      products.value = []
+      productsLoaded.value = true
+    }
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return
-    ui.toast(t('shop.load_error'), 'error')
+    products.value = []
+    productsLoaded.value = true
+    ui.toast(t('shop.category_load_error'), 'error')
   } finally {
-    loaded.value = true
+    categoriesLoaded.value = true
+  }
+}
+
+async function loadProducts(categoryId: number): Promise<void> {
+  const seq = ++productLoadSeq
+  productsLoaded.value = false
+  try {
+    const data = await get<ProductTypeListItemDto[]>(`/categories/${categoryId}/products`)
+    if (seq === productLoadSeq) {
+      products.value = data
+    }
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return
+    if (seq === productLoadSeq) {
+      products.value = []
+      ui.toast(t('shop.load_error'), 'error')
+    }
+  } finally {
+    if (seq === productLoadSeq) {
+      productsLoaded.value = true
+    }
   }
 }
 
@@ -64,8 +107,18 @@ async function loadBanners(): Promise<void> {
 }
 
 onMounted(() => {
-  void load()
+  void loadCategories()
   void loadBanners()
+})
+
+watch(selectedCategoryId, (categoryId) => {
+  query.value = ''
+  if (categoryId === null) {
+    products.value = []
+    productsLoaded.value = true
+    return
+  }
+  void loadProducts(categoryId)
 })
 </script>
 
@@ -93,6 +146,49 @@ onMounted(() => {
         <span class="text-[15px] font-semibold tabular-nums text-primary">
           {{ user.state.balanceDisplay || '—' }}
         </span>
+      </div>
+
+      <!-- Bộ lọc danh mục -->
+      <div v-if="!categoriesLoaded" class="flex gap-2 overflow-x-hidden py-3">
+        <div
+          v-for="n in 4"
+          :key="n"
+          class="h-10 w-28 shrink-0 animate-shimmer rounded-full bg-surface-container-high"
+        ></div>
+      </div>
+      <div v-else-if="categories.length" class="py-3">
+        <div
+          class="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 scrollbar-hide"
+          role="tablist"
+          :aria-label="$t('shop.category_filter')"
+        >
+          <button
+            v-for="category in categories"
+            :key="category.id"
+            type="button"
+            role="tab"
+            :aria-selected="selectedCategoryId === category.id"
+            class="flex h-10 shrink-0 snap-start items-center gap-2 rounded-full border px-3 text-[14px] font-medium transition-colors"
+            :class="
+              selectedCategoryId === category.id
+                ? 'border-primary bg-primary text-on-primary'
+                : 'border-outline-variant bg-surface-container-lowest text-on-surface'
+            "
+            @click="selectCategory(category.id)"
+          >
+            <span
+              v-if="category.image_url"
+              class="h-6 w-6 overflow-hidden rounded-full bg-surface-container"
+              aria-hidden="true"
+            >
+              <img :src="category.image_url" alt="" class="h-full w-full object-cover" />
+            </span>
+            <span v-else-if="category.emoji" class="text-[16px] leading-none" aria-hidden="true">
+              {{ category.emoji }}
+            </span>
+            <span class="max-w-[160px] truncate">{{ category.name }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- Ô tìm kiếm -->
@@ -130,12 +226,12 @@ onMounted(() => {
       <!-- Tiêu đề khu sản phẩm -->
       <div class="mb-4 mt-2 flex items-end justify-between">
         <h3 class="text-[20px] font-bold tracking-tight text-on-surface">
-          {{ $t('shop.featured') }}
+          {{ selectedCategory?.name || $t('shop.featured') }}
         </h3>
       </div>
 
       <!-- Skeleton khi đang tải lần đầu -->
-      <div v-if="!loaded" class="grid grid-cols-2 gap-3">
+      <div v-if="!categoriesLoaded || !productsLoaded" class="grid grid-cols-2 gap-3">
         <div
           v-for="n in 4"
           :key="n"
@@ -171,8 +267,20 @@ onMounted(() => {
       <EmptyState
         v-else
         :icon="ShoppingBag"
-        :title="query ? $t('shop.search_empty_title') : $t('shop.empty_title')"
-        :description="query ? $t('shop.search_empty_desc') : $t('shop.empty_desc')"
+        :title="
+          query
+            ? $t('shop.search_empty_title')
+            : categories.length
+              ? $t('shop.category_empty_title')
+              : $t('shop.empty_title')
+        "
+        :description="
+          query
+            ? $t('shop.search_empty_desc')
+            : categories.length
+              ? $t('shop.category_empty_desc')
+              : $t('shop.empty_desc')
+        "
       />
     </main>
   </div>

@@ -3,6 +3,12 @@ import { env } from 'cloudflare:test'
 import fc from 'fast-check'
 import { miniAppApi } from '../src/routes/miniapp-api'
 import { _resetRateLimiter } from '../src/bot/rate-limit'
+import {
+  cleanThreeTierTables,
+  resetThreeTierSchema,
+  seedCategory,
+  seedPricedProduct,
+} from './helpers/three-tier-schema'
 
 // Feature: telegram-mini-app, Property 12
 /**
@@ -15,7 +21,7 @@ import { _resetRateLimiter } from '../src/bot/rate-limit'
  * `c.executionCtx.waitUntil(sendMessage(...).catch(log))`. Vì vậy một lỗi khi gửi tin
  * (Telegram API down) KHÔNG được phép:
  *   - làm hỏng HTTP response (vẫn phải 200 + success), và
- *   - thay đổi trạng thái đã commit trong D1 (balance, orders, products, order_items, transactions).
+   *   - thay đổi trạng thái đã commit trong D1 (balance, orders, product_items, order_items, transactions).
  *
  * Chiến lược so sánh xác định: chạy CÙNG một kịch bản mua hàng hai lần trên cùng một
  * seed DB giống hệt nhau:
@@ -33,103 +39,9 @@ const BOT_TOKEN = 'test-bot-token'
 const USERNAME = 'buyer'
 const FIRST_NAME = 'Buyer'
 
-// Schema tối thiểu cho luồng mua hàng (trích từ migration 0001 / test/integration.test.ts),
-// product_types có thêm cột `success_template` để controller dựng tin nhắn bot đúng như runtime.
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS system_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    description TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_by INTEGER
-  )`,
-  `CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER UNIQUE NOT NULL,
-    username TEXT,
-    first_name TEXT,
-    balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
-    is_active INTEGER DEFAULT 1,
-    last_interaction_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    price INTEGER NOT NULL CHECK(price > 0),
-    emoji TEXT DEFAULT '📦',
-    sort_order INTEGER DEFAULT 0,
-    is_visible INTEGER DEFAULT 1,
-    success_template TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id),
-    quantity INTEGER NOT NULL CHECK(quantity > 0),
-    total_amount INTEGER NOT NULL,
-    transaction_id INTEGER,
-    status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed','refunded')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    type TEXT NOT NULL CHECK(type IN ('deposit','purchase','refund','adjustment')),
-    amount INTEGER NOT NULL,
-    balance_before INTEGER NOT NULL,
-    balance_after INTEGER NOT NULL,
-    reference_type TEXT,
-    reference_id INTEGER,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'success' CHECK(status IN ('success','failed','pending')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_id INTEGER NOT NULL REFERENCES product_types(id),
-    content TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold','reserved')),
-    buyer_id INTEGER REFERENCES users(id),
-    order_id INTEGER REFERENCES orders(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    sold_at TEXT
-  )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_content_type ON products(type_id, content)`,
-  `CREATE TABLE IF NOT EXISTS order_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL REFERENCES orders(id),
-    product_id INTEGER NOT NULL REFERENCES products(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`,
-  `CREATE TABLE IF NOT EXISTS product_type_templates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_type_id INTEGER NOT NULL REFERENCES product_types(id) ON DELETE CASCADE,
-    lang TEXT NOT NULL,
-    success_template TEXT,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(product_type_id, lang)
-  )`,
-]
-
-async function applySchema(db: D1Database) {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await db.prepare(stmt).run()
-  }
-}
-
 /** Dọn sạch mọi bảng liên quan luồng mua hàng (thứ tự tôn trọng FK). */
 async function cleanTables(db: D1Database) {
-  await db.prepare('DELETE FROM order_items').run()
-  await db.prepare('DELETE FROM products').run()
-  await db.prepare('DELETE FROM orders').run()
-  await db.prepare('DELETE FROM transactions').run()
-  await db.prepare('DELETE FROM users').run()
-  await db.prepare('DELETE FROM product_types').run()
+  await cleanThreeTierTables(db)
 }
 
 function getEnvBindings() {
@@ -205,9 +117,9 @@ interface Scenario {
 }
 
 /**
- * Seed DB về trạng thái giống hệt cho `telegramId`: 1 user (balance đủ), 1 product_type hiển thị,
- * và (quantity + extraStock) product `available` với content xác định. Trả về `productTypeId`.
- */
+   * Seed DB về trạng thái giống hệt cho `telegramId`: 1 user (balance đủ), 1 category,
+   * 1 product hiển thị và (quantity + extraStock) product_item available. Trả về `productId`.
+   */
 async function seed(db: D1Database, telegramId: number, s: Scenario): Promise<number> {
   await cleanTables(db)
 
@@ -220,29 +132,31 @@ async function seed(db: D1Database, telegramId: number, s: Scenario): Promise<nu
     .bind(telegramId, USERNAME, FIRST_NAME, balance)
     .run()
 
-  await db
-    .prepare(
-      `INSERT INTO product_types (name, description, price, emoji, sort_order, is_visible, success_template, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 0, 1, ?, datetime('now'), datetime('now'))`
-    )
-    .bind('Netflix', 'Tài khoản phim', s.price, '🎬', 'Cảm ơn [name] × [quantity] — còn [balance]')
+  const categoryId = await seedCategory(db, 'Streaming')
+  const productId = await seedPricedProduct(db, {
+    categoryId,
+    name: 'Netflix',
+    description: 'Tai khoan phim',
+    price: s.price,
+  })
+  await db.prepare(
+    `INSERT INTO product_type_templates (product_type_id, lang, success_template)
+     VALUES (?, 'vi', ?)`
+  )
+    .bind(productId, 'Cam on [name] x [quantity] - con [balance]')
     .run()
-  const pt = await db
-    .prepare("SELECT id FROM product_types WHERE name = 'Netflix'")
-    .first<{ id: number }>()
-  const productTypeId = pt!.id
 
   const totalStock = s.quantity + s.extraStock
   for (let i = 1; i <= totalStock; i++) {
-    await db
-      .prepare(
-        "INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, 'available', datetime('now'))"
-      )
-      .bind(productTypeId, `acc_${i}@mail.test:pw${i}`)
+    await db.prepare(
+      `INSERT INTO product_items (product_id, content, status, created_at)
+       VALUES (?, ?, 'available', datetime('now'))`
+    )
+      .bind(productId, `acc_${i}@mail.test:pw${i}`)
       .run()
   }
 
-  return productTypeId
+  return productId
 }
 
 /**
@@ -267,14 +181,14 @@ async function captureState(db: D1Database, telegramId: number) {
 
   const sold = (
     await db
-      .prepare("SELECT content, status FROM products WHERE buyer_id = ? ORDER BY content ASC")
+      .prepare("SELECT content, status FROM product_items WHERE buyer_id = ? ORDER BY content ASC")
       .bind(userId)
       .all<{ content: string; status: string }>()
   ).results
 
   const available = (
     await db
-      .prepare("SELECT content FROM products WHERE status = 'available' ORDER BY content ASC")
+      .prepare("SELECT content FROM product_items WHERE status = 'available' ORDER BY content ASC")
       .all<{ content: string }>()
   ).results.map((r) => r.content)
 
@@ -311,7 +225,7 @@ async function captureState(db: D1Database, telegramId: number) {
 }
 
 /** Gọi POST /purchase và await mọi waitUntil để notify (.catch) chạy xong. */
-async function doPurchase(telegramId: number, productTypeId: number, quantity: number) {
+async function doPurchase(telegramId: number, productId: number, quantity: number) {
   const raw = await freshInitData(telegramId)
   pendingWaits = []
   const res = await miniAppApi.request(
@@ -319,7 +233,7 @@ async function doPurchase(telegramId: number, productTypeId: number, quantity: n
     {
       method: 'POST',
       headers: { 'X-Telegram-Init-Data': raw, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productTypeId, quantity }),
+      body: JSON.stringify({ productId, quantity }),
     },
     getEnvBindings() as unknown as Record<string, unknown>,
     makeExecutionCtx() as unknown as ExecutionContext
@@ -354,7 +268,7 @@ async function runAndCompare(telegramId: number, s: Scenario) {
   // (A) notify THÀNH CÔNG → chụp trạng thái chuẩn.
   await seed(db, telegramId, s)
   const fetchOk = stubFetchOk()
-  const resA = await doPurchase(telegramId, await currentProductTypeId(db), s.quantity)
+  const resA = await doPurchase(telegramId, await currentProductId(db), s.quantity)
   expect(resA.status).toBe(200)
   const bodyA = (await resA.json()) as { success: boolean }
   expect(bodyA.success).toBe(true)
@@ -364,7 +278,7 @@ async function runAndCompare(telegramId: number, s: Scenario) {
   // (B) reset seed y hệt, notify LỖI → trạng thái DB phải giống hệt (A).
   await seed(db, telegramId, s)
   const fetchThrow = stubFetchThrow()
-  const resB = await doPurchase(telegramId, await currentProductTypeId(db), s.quantity)
+  const resB = await doPurchase(telegramId, await currentProductId(db), s.quantity)
   expect(resB.status).toBe(200) // Req 7.5: lỗi gửi tin KHÔNG ảnh hưởng response
   const bodyB = (await resB.json()) as { success: boolean }
   expect(bodyB.success).toBe(true)
@@ -375,10 +289,10 @@ async function runAndCompare(telegramId: number, s: Scenario) {
   expect(stateB).toEqual(stateA)
 }
 
-/** Lấy id product_type vừa seed (chỉ có đúng 1 loại trong DB). */
-async function currentProductTypeId(db: D1Database): Promise<number> {
-  const pt = await db.prepare("SELECT id FROM product_types WHERE name = 'Netflix'").first<{ id: number }>()
-  return pt!.id
+/** Lấy id product vừa seed (chỉ có đúng 1 product trong DB). */
+async function currentProductId(db: D1Database): Promise<number> {
+  const product = await db.prepare("SELECT id FROM products WHERE name = 'Netflix'").first<{ id: number }>()
+  return product!.id
 }
 
 // --- telegram_id duy nhất mỗi iteration (tránh rate-limit key tích luỹ qua nhiều lần chạy) ---
@@ -399,7 +313,7 @@ const arbScenario: fc.Arbitrary<Scenario> = fc.record({
 
 describe('Property 12: Lỗi gửi tin nhắn bot không rollback giao dịch mua hàng đã commit', () => {
   beforeEach(async () => {
-    await applySchema(env.DB)
+    await resetThreeTierSchema(env.DB)
     await cleanTables(env.DB)
     _resetRateLimiter()
   })
@@ -412,7 +326,7 @@ describe('Property 12: Lỗi gửi tin nhắn bot không rollback giao dịch mu
   /**
    * **Validates: Requirements 7.5**
    * Với mọi (price, quantity, stock, balance đủ): notify lỗi → response 200 + success và
-   * trạng thái DB (balance, orders, products, order_items, transactions) giống hệt notify OK.
+   * trạng thái DB (balance, orders, product_items, order_items, transactions) giống hệt notify OK.
    */
   it('notify failure leaves committed state identical to notify success (200 + success)', async () => {
     await fc.assert(

@@ -93,14 +93,15 @@ usersRoutes.get('/:id', async (c) => {
     'SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 20'
   ).bind(userId).all<DbTransaction>()
 
-  // Recent orders (limit 10) with category name
+  // Recent orders (limit 10) with product name
   const orders = await c.env.DB.prepare(
-    `SELECT o.*, pt.name as category_name 
+    `SELECT o.*, p.name as product_name, pt.name as category_name
      FROM orders o 
-     LEFT JOIN product_types pt ON o.product_type_id = pt.id 
+     LEFT JOIN products p ON o.product_id = p.id
+     LEFT JOIN product_types pt ON p.product_type_id = pt.id
      WHERE o.user_id = ? 
      ORDER BY o.created_at DESC LIMIT 10`
-  ).bind(userId).all<DbOrder & { category_name: string | null }>()
+  ).bind(userId).all<DbOrder & { product_name: string | null; category_name: string | null }>()
 
   return c.json({
     success: true,

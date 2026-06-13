@@ -506,9 +506,9 @@ Hệ quả: chuyển khoản đúng nội dung nhưng tới **sau 15 phút** (k�
 
 ## Template tin nhắn mua thành công
 
-Mỗi loại sản phẩm (`product_types`) có cột `success_template` cho phép tuỳ biến **phần thân** của tin nhắn giao hàng. Phần **header** (`✅ Mua hàng thành công` + tên × số lượng + `📋 Nội dung sản phẩm:`) luôn tự động hiển thị.
+Mỗi sản phẩm có giá (`products`) có template đa ngôn ngữ trong bảng `product_type_templates` (giữ tên cột `product_type_id` để tương thích, nhưng giá trị trỏ tới `products.id`) cho phép tuỳ biến **phần thân** của tin nhắn giao hàng. Phần **header** (`✅ Mua hàng thành công` + tên × số lượng + `📋 Nội dung sản phẩm:`) luôn tự động hiển thị.
 
-Soạn template trong CMS → **Danh mục** → Sửa → ô "Tin nhắn khi mua thành công" (có editor + live preview). Để trống = dùng mẫu mặc định.
+Soạn template trong CMS → **Sản phẩm** → Sửa → ô "Tin nhắn khi mua thành công" (có editor + live preview). Để trống = dùng mẫu mặc định.
 
 **Placeholder hỗ trợ:**
 
@@ -567,8 +567,9 @@ Mọi thắc mắc liên hệ @vippro
 │   │       ├── index.ts      # Mount sub-routers
 │   │       ├── auth.ts       # login / refresh / me
 │   │       ├── users.ts      # users + adjust-balance + ban/unban
-│   │       ├── product-types.ts # CRUD danh mục + success_template
-│   │       ├── products.ts   # list + import + delete
+│   │       ├── product-types.ts # CRUD danh mục + bản dịch
+│   │       ├── products.ts   # CRUD sản phẩm có giá + template + bản dịch
+│   │       ├── product-items.ts # kho tài khoản + import hàng loạt
 │   │       ├── orders.ts     # list + detail
 │   │       ├── transactions.ts # list + export CSV
 │   │       ├── deposits.ts   # list + manual approve
@@ -645,8 +646,10 @@ Xác thực stateless bằng `initData` của Telegram (HMAC-SHA256 + TTL 1 gi�
 |--------|------|--------|
 | GET | `/api/app/me` | Thông tin người mua hiện tại (định danh, số dư) |
 | GET | `/api/app/home` | Dữ liệu trang chủ (số dư + lối tắt nhanh) |
-| GET | `/api/app/product-types` | Danh sách danh mục (kèm tồn kho / `in_stock`) |
-| GET | `/api/app/product-types/:id` | Chi tiết danh mục |
+| GET | `/api/app/categories` | Danh sách danh mục làm bộ lọc |
+| GET | `/api/app/categories/:id/products` | Danh sách sản phẩm thuộc danh mục |
+| GET | `/api/app/product-types` | Alias tương thích: danh sách sản phẩm bán được |
+| GET | `/api/app/product-types/:id` | Alias tương thích: chi tiết sản phẩm |
 | POST | `/api/app/purchase` | Mua hàng (reuse `transactionService.executePurchase`) |
 | POST | `/api/app/deposits` | Tạo yêu cầu nạp + VietQR (áp `checkDepositPolicy`) |
 | GET | `/api/app/deposits/:id` | Poll trạng thái yêu cầu nạp (read-only) |
@@ -670,13 +673,20 @@ Xác thực stateless bằng `initData` của Telegram (HMAC-SHA256 + TTL 1 gi�
 | POST | `/api/admin/users/:id/adjust-balance` | Điều chỉnh số dư thủ công |
 | POST | `/api/admin/users/:id/ban` | Khoá tài khoản (chặn nhắn bot + Mini App) — một thao tác, không cần lý do |
 | POST | `/api/admin/users/:id/unban` | Mở khoá tài khoản |
-| GET | `/api/admin/product-types` | Danh sách loại sản phẩm (kèm tồn kho) |
-| POST | `/api/admin/product-types` | Tạo loại sản phẩm (+ success_template) |
-| PUT | `/api/admin/product-types/:id` | Sửa loại sản phẩm |
-| DELETE | `/api/admin/product-types/:id` | Xoá loại sản phẩm |
-| GET | `/api/admin/products` | Danh sách products |
-| POST | `/api/admin/products/import` | Import products hàng loạt |
-| DELETE | `/api/admin/products/:id` | Xoá product |
+| GET | `/api/admin/product-types` | Danh sách danh mục |
+| POST | `/api/admin/product-types` | Tạo danh mục |
+| PUT | `/api/admin/product-types/:id` | Sửa danh mục |
+| DELETE | `/api/admin/product-types/:id` | Xoá danh mục |
+| GET/PUT | `/api/admin/product-types/:id/translations` | Bản dịch danh mục |
+| GET | `/api/admin/products` | Danh sách sản phẩm có giá |
+| POST | `/api/admin/products` | Tạo sản phẩm có giá |
+| PUT | `/api/admin/products/:id` | Sửa sản phẩm |
+| DELETE | `/api/admin/products/:id` | Xoá sản phẩm |
+| GET/PUT | `/api/admin/products/:id/translations` | Bản dịch sản phẩm |
+| GET/PUT | `/api/admin/products/:id/templates` | Template mua thành công theo ngôn ngữ |
+| GET | `/api/admin/product-items` | Danh sách kho theo sản phẩm |
+| POST | `/api/admin/product-items/import` | Import kho hàng loạt |
+| DELETE | `/api/admin/product-items/:id` | Xoá item kho còn available |
 | GET | `/api/admin/orders` | Danh sách đơn hàng |
 | GET | `/api/admin/orders/:id` | Chi tiết đơn hàng |
 | GET | `/api/admin/transactions` | Sổ cái giao dịch |
@@ -697,10 +707,14 @@ Xác thực stateless bằng `initData` của Telegram (HMAC-SHA256 + TTL 1 gi�
 | Bảng | Mô tả |
 |------|--------|
 | `users` | Người dùng Telegram + số dư (CHECK balance >= 0); `is_active` = cờ khoá tài khoản (0 = bị khoá), kèm `banned_at` |
-| `product_types` | Danh mục sản phẩm (giá, emoji, hiển thị, `success_template`) |
-| `products` | Tài khoản số cụ thể (available / sold / reserved) |
-| `orders` | Đơn hàng |
-| `order_items` | Chi tiết đơn ↔ product |
+| `product_types` | Danh mục sản phẩm; không có giá |
+| `products` | Sản phẩm có giá, mô tả, ảnh; tham chiếu `product_types.id` qua `product_type_id` |
+| `product_items` | Tài khoản số cụ thể trong kho (available / sold / reserved), tham chiếu `products.id` qua `product_id` |
+| `product_type_translations` | Bản dịch name / description / content của danh mục theo `lang` |
+| `product_translations` | Bản dịch name / description / content của sản phẩm theo `lang` |
+| `product_type_templates` | Template mua thành công theo `lang`, keyed theo `products.id` trong cột `product_type_id` |
+| `orders` | Đơn hàng, tham chiếu sản phẩm qua `product_id` |
+| `order_items` | Chi tiết đơn, tham chiếu kho đã bán qua `product_item_id` |
 | `transactions` | Sổ cái tài chính (deposit / purchase / refund / adjustment) |
 | `deposits` | Yêu cầu nạp qua SePay (transfer_code, status, sepay_transaction_id) |
 | `admin_users` | Tài khoản admin CMS (bcrypt hash, lockout) |

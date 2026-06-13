@@ -6,6 +6,7 @@ import { authRoutes } from './auth'
 import { usersRoutes } from './users'
 import { productTypesRoutes } from './product-types'
 import { productRoutes } from './products'
+import { productItemRoutes } from './product-items'
 import { orderRoutes } from './orders'
 import { transactionRoutes } from './transactions'
 import { configRoutes } from './config'
@@ -29,6 +30,7 @@ adminApi.route('/auth', authRoutes)
 adminApi.route('/users', usersRoutes)
 adminApi.route('/product-types', productTypesRoutes)
 adminApi.route('/products', productRoutes)
+adminApi.route('/product-items', productItemRoutes)
 adminApi.route('/orders', orderRoutes)
 adminApi.route('/transactions', transactionRoutes)
 adminApi.route('/config', configRoutes)

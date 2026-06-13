@@ -46,7 +46,7 @@ export function validatePrice(input: string, lang: Lang = 'vi'): ValidationResul
   if (isNaN(price) || !Number.isInteger(price)) {
     return { valid: false, error: t(lang, 'admin.err.price_not_integer') }
   }
-  if (price < 1000) return { valid: false, error: t(lang, 'admin.err.price_too_low') }
+  if (price < 1) return { valid: false, error: t(lang, 'admin.err.price_too_low') }
   if (price > 999999999) return { valid: false, error: t(lang, 'admin.err.price_too_high') }
   return { valid: true }
 }
@@ -89,7 +89,7 @@ export async function handleAdminPanel(
 // --- 2. Add Type Flow ---
 
 /**
- * Multi-step flow thêm loại sản phẩm: tên → mô tả → giá → tạo.
+ * Multi-step flow thêm danh mục: tên → mô tả → tạo.
  */
 export async function handleAddTypeFlow(
   db: D1Database,
@@ -138,43 +138,20 @@ export async function handleAddTypeFlow(
         return
       }
 
-      setSession(userId, 'admin_add_type', 'price', {
-        ...session?.data,
-        description: description.trim(),
-      })
-      await sendMessage(botToken, chatId, t(lang, 'admin.addtype.prompt_price'), {
-        parse_mode: 'HTML',
-      })
-      break
-    }
-
-    case 'price': {
-      const session = getSession(userId)
-      const input = data?.input ?? ''
-      const validation = validatePrice(input, lang)
-      if (!validation.valid) {
-        await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.addtype.retry_price')}`, {
-          parse_mode: 'HTML',
-        })
-        return
-      }
-
-      const price = parsePrice(input)
       const name = session?.data?.name ?? ''
-      const description = session?.data?.description ?? ''
+      const finalDescription = description.trim()
 
       // Insert vào DB
       const now = new Date().toISOString()
       await db.prepare(
-        'INSERT INTO product_types (name, description, price, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
-      ).bind(name, description || null, price, now, now).run()
+        'INSERT INTO product_types (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)'
+      ).bind(name, finalDescription || null, now, now).run()
 
       clearSession(userId)
 
       const confirmText = t(lang, 'admin.addtype.created', {
         name,
-        description: description || t(lang, 'admin.value.none'),
-        price: formatMoney(price, lang),
+        description: finalDescription || t(lang, 'admin.value.none'),
       })
 
       const keyboard = buildInlineKeyboard([
@@ -220,12 +197,15 @@ export async function handleListTypes(
     return
   }
 
-  // Get categories with stock info
+  // Get categories with product + stock info
   const categories = await db.prepare(`
     SELECT pt.*,
-      (SELECT COUNT(*) FROM products WHERE type_id = pt.id AND status = 'available') as stock_available,
-      (SELECT COUNT(*) FROM products WHERE type_id = pt.id) as stock_total
+      COUNT(DISTINCT p.id) as stock_total,
+      COUNT(CASE WHEN pi.status = 'available' THEN 1 END) as stock_available
     FROM product_types pt
+    LEFT JOIN products p ON p.product_type_id = pt.id
+    LEFT JOIN product_items pi ON pi.product_id = p.id
+    GROUP BY pt.id
     ORDER BY pt.sort_order ASC, pt.id ASC
     LIMIT ? OFFSET ?
   `).bind(PAGE_SIZE, offset).all()
@@ -239,9 +219,8 @@ export async function handleListTypes(
   for (const cat of categories.results) {
     const c = cat as any
     text += t(lang, 'admin.listtypes.item', {
-      emoji: c.emoji || '📦',
+      emoji: c.emoji || '',
       name: c.name,
-      price: formatMoney(c.price, lang),
       available: c.stock_available,
       total: c.stock_total,
     })
@@ -298,12 +277,11 @@ export async function handleEditType(
       }
 
       const c = category as any
-      setSession(userId, 'admin_edit_type', 'name', { typeId, name: c.name, description: c.description ?? '', price: c.price })
+      setSession(userId, 'admin_edit_type', 'name', { typeId, name: c.name, description: c.description ?? '' })
 
       const text = t(lang, 'admin.edittype.start', {
         name: c.name,
         description: c.description || t(lang, 'admin.value.none'),
-        price: formatMoney(c.price, lang),
       })
 
       await sendMessage(botToken, chatId, text, { parse_mode: 'HTML' })
@@ -351,42 +329,18 @@ export async function handleEditType(
         session.data.description = input.trim()
       }
 
-      setSession(userId, 'admin_edit_type', 'price', session.data)
-      await sendMessage(botToken, chatId, t(lang, 'admin.edittype.prompt_price'), {
-        parse_mode: 'HTML',
-      })
-      break
-    }
-
-    case 'price': {
-      const session = getSession(userId)
-      if (!session) return
-
-      const input = value?.trim() ?? ''
-      if (input !== '.') {
-        const validation = validatePrice(input, lang)
-        if (!validation.valid) {
-          await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.edittype.retry_price')}`, {
-            parse_mode: 'HTML',
-          })
-          return
-        }
-        session.data.price = parsePrice(input)
-      }
-
       // Update DB
-      const { typeId: id, name, description, price } = session.data
+      const { typeId: id, name, description } = session.data
       const now = new Date().toISOString()
       await db.prepare(
-        'UPDATE product_types SET name = ?, description = ?, price = ?, updated_at = ? WHERE id = ?'
-      ).bind(name, description || null, price, now, id).run()
+        'UPDATE product_types SET name = ?, description = ?, updated_at = ? WHERE id = ?'
+      ).bind(name, description || null, now, id).run()
 
       clearSession(userId)
 
       const confirmText = t(lang, 'admin.edittype.updated', {
         name,
         description: description || t(lang, 'admin.value.none'),
-        price: formatMoney(price, lang),
       })
 
       const keyboard = buildInlineKeyboard([
@@ -426,13 +380,13 @@ export async function handleDeleteType(
 
   const c = category as any
   const availableCount = await db.prepare(
-    "SELECT COUNT(*) as count FROM products WHERE type_id = ? AND status = 'available'"
+    'SELECT COUNT(*) as count FROM products WHERE product_type_id = ?'
   ).bind(typeId).first<{ count: number }>()
 
-  const available = availableCount?.count ?? 0
+  const childCount = availableCount?.count ?? 0
 
-  if (available > 0) {
-    const text = t(lang, 'admin.deltype.has_products', { name: c.name, count: available })
+  if (childCount > 0) {
+    const text = t(lang, 'admin.deltype.has_products', { name: c.name, count: childCount })
     const keyboard = buildInlineKeyboard([
       [{ text: t(lang, 'admin.btn.list_types'), callback_data: 'adm:listtypes' }],
     ])
@@ -445,7 +399,6 @@ export async function handleDeleteType(
 
   const text = t(lang, 'admin.deltype.confirm', {
     name: c.name,
-    price: formatMoney(c.price, lang),
   })
 
   const keyboard = buildInlineKeyboard([
@@ -474,7 +427,7 @@ export async function handleDeleteTypeConfirm(
 ): Promise<void> {
   // Double-check available products
   const availableCount = await db.prepare(
-    "SELECT COUNT(*) as count FROM products WHERE type_id = ? AND status = 'available'"
+    'SELECT COUNT(*) as count FROM products WHERE product_type_id = ?'
   ).bind(typeId).first<{ count: number }>()
 
   if ((availableCount?.count ?? 0) > 0) {
@@ -503,7 +456,7 @@ export async function handleDeleteTypeConfirm(
 // --- 6. Add Product Flow ---
 
 /**
- * Multi-step flow thêm sản phẩm: chọn category → nhập content (bulk).
+ * Multi-step flow thêm sản phẩm: chọn danh mục → tên Product → giá → nhập kho Product_Item.
  */
 export async function handleAddProduct(
   db: D1Database,
@@ -518,7 +471,7 @@ export async function handleAddProduct(
     case 'start': {
       // Hiển thị danh sách categories để chọn
       const categories = await db.prepare(
-        'SELECT id, name, emoji, price FROM product_types ORDER BY sort_order ASC, id ASC'
+        'SELECT id, name, emoji FROM product_types ORDER BY sort_order ASC, id ASC'
       ).all()
 
       if (!categories.results.length) {
@@ -532,14 +485,13 @@ export async function handleAddProduct(
         return
       }
 
-      const buttons = categories.results.map((cat: any) => [
-        {
-          text: t(lang, 'admin.addproduct.type_btn', {
-            emoji: cat.emoji || '📦',
-            name: cat.name,
-            price: formatMoney(cat.price, lang),
-          }),
-          callback_data: `adm:addprod:${cat.id}`,
+	      const buttons = categories.results.map((cat: any) => [
+	        {
+	          text: t(lang, 'admin.addproduct.type_btn', {
+	            emoji: cat.emoji || '',
+	            name: cat.name,
+	          }),
+	          callback_data: `adm:addprod:${cat.id}`,
         },
       ])
       buttons.push([{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }])
@@ -562,11 +514,52 @@ export async function handleAddProduct(
         return
       }
 
-      const c = category as any
-      setSession(userId, 'admin_add_product', 'content', { categoryId, categoryName: c.name })
+	      const c = category as any
+	      setSession(userId, 'admin_add_product', 'name', { categoryId, categoryName: c.name })
 
-      const text = t(lang, 'admin.addproduct.prompt_content', { name: c.name, max: MAX_BULK_PRODUCTS })
-      await sendMessage(botToken, chatId, text, { parse_mode: 'HTML' })
+	      const text = t(lang, 'admin.addproduct.prompt_name', { name: c.name })
+	      await sendMessage(botToken, chatId, text, { parse_mode: 'HTML' })
+	      break
+	    }
+
+    case 'name': {
+      const session = getSession(userId)
+      if (!session) return
+
+      const name = data?.input?.trim() ?? ''
+      const validation = validateName(name, lang)
+      if (!validation.valid) {
+        await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.addproduct.retry_name')}`, {
+          parse_mode: 'HTML',
+        })
+        return
+      }
+
+      setSession(userId, 'admin_add_product', 'price', { ...session.data, productName: name })
+      await sendMessage(botToken, chatId, t(lang, 'admin.addproduct.prompt_price'), {
+        parse_mode: 'HTML',
+      })
+      break
+    }
+
+    case 'price': {
+      const session = getSession(userId)
+      if (!session) return
+
+      const input = data?.input ?? ''
+      const validation = validatePrice(input, lang)
+      if (!validation.valid) {
+        await sendMessage(botToken, chatId, `${validation.error}\n\n${t(lang, 'admin.addproduct.retry_price')}`, {
+          parse_mode: 'HTML',
+        })
+        return
+      }
+
+      setSession(userId, 'admin_add_product', 'content', { ...session.data, price: parsePrice(input) })
+      await sendMessage(botToken, chatId, t(lang, 'admin.addproduct.prompt_content', {
+        name: session.data.productName,
+        max: MAX_BULK_PRODUCTS,
+      }), { parse_mode: 'HTML' })
       break
     }
 
@@ -575,8 +568,10 @@ export async function handleAddProduct(
       if (!session) return
 
       const input = data?.input ?? ''
-      const categoryId = session.data.categoryId
-      const categoryName = session.data.categoryName
+	      const categoryId = session.data.categoryId
+	      const categoryName = session.data.categoryName
+	      const productName = session.data.productName
+	      const price = session.data.price
 
       // Parse lines
       const lines = input
@@ -620,52 +615,46 @@ export async function handleAddProduct(
         return
       }
 
-      // Check duplicates in DB per category
-      const existingDups: string[] = []
-      for (const content of lines) {
-        const exists = await db.prepare(
-          'SELECT id FROM products WHERE type_id = ? AND content = ?'
-        ).bind(categoryId, content).first()
-        if (exists) {
-          existingDups.push(content)
-        }
-      }
+	      // Create Product then batch insert Product_Item stock.
+	      const now = new Date().toISOString()
+	      const created = await db.prepare(
+	        `INSERT INTO products
+	           (product_type_id, name, description, content, price, emoji, image_data, sort_order, is_visible, created_at, updated_at)
+	         VALUES (?, ?, NULL, NULL, ?, NULL, NULL, 0, 1, ?, ?)
+	         RETURNING id`
+	      ).bind(categoryId, productName, price, now, now).first<{ id: number }>()
 
-      if (existingDups.length > 0) {
-        const items = existingDups.slice(0, 5).map(d => `• ${d.substring(0, 50)}...`).join('\n')
-        const more = existingDups.length > 5 ? t(lang, 'admin.addproduct.dup_more', { count: existingDups.length - 5 }) : ''
-        await sendMessage(
-          botToken,
-          chatId,
-          t(lang, 'admin.addproduct.err_dup_db', { name: categoryName, items, more }),
-          { parse_mode: 'HTML' }
-        )
-        return
-      }
+	      if (!created) {
+	        await sendMessage(botToken, chatId, t(lang, 'shop.tx_error'), { parse_mode: 'HTML' })
+	        return
+	      }
 
-      // Batch insert
-      const now = new Date().toISOString()
-      const stmts = lines.map((content: string) =>
-        db.prepare(
-          'INSERT INTO products (type_id, content, status, created_at) VALUES (?, ?, ?, ?)'
-        ).bind(categoryId, content, 'available', now)
-      )
+	      const stmts = lines.map((content: string) =>
+	        db.prepare(
+	          "INSERT INTO product_items (product_id, content, status, created_at) VALUES (?, ?, 'available', ?)"
+	        ).bind(created.id, content, now)
+	      )
 
-      await db.batch(stmts)
+	      try {
+	        await db.batch(stmts)
+	      } catch (err) {
+	        await db.prepare('DELETE FROM products WHERE id = ?').bind(created.id).run().catch(() => {})
+	        throw err
+	      }
 
       clearSession(userId)
 
-      const keyboard = buildInlineKeyboard([
-        [{ text: t(lang, 'admin.btn.add_more'), callback_data: `adm:addprod:${categoryId}` }],
-        [{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }],
-      ])
+	      const keyboard = buildInlineKeyboard([
+	        [{ text: t(lang, 'admin.btn.add_more'), callback_data: `adm:addprod:${categoryId}` }],
+	        [{ text: t(lang, 'admin.btn.panel'), callback_data: 'adm:panel' }],
+	      ])
 
       await sendMessage(
-        botToken,
-        chatId,
-        t(lang, 'admin.addproduct.success', { count: lines.length, name: categoryName }),
-        { parse_mode: 'HTML', reply_markup: keyboard }
-      )
+	        botToken,
+	        chatId,
+	        t(lang, 'admin.addproduct.success', { count: lines.length, name: productName || categoryName }),
+	        { parse_mode: 'HTML', reply_markup: keyboard }
+	      )
       break
     }
   }
@@ -695,16 +684,17 @@ export async function handleStats(
 
   // Products per category
   const categoryStats = await db.prepare(`
-    SELECT 
+    SELECT
       pt.name,
       pt.emoji,
-      COALESCE(SUM(CASE WHEN p.status = 'sold' THEN 1 ELSE 0 END), 0) as sold,
-      COALESCE(SUM(CASE WHEN p.status = 'available' THEN 1 ELSE 0 END), 0) as available
+      COALESCE(SUM(CASE WHEN pi.status = 'sold' THEN 1 ELSE 0 END), 0) as sold,
+      COALESCE(SUM(CASE WHEN pi.status = 'available' THEN 1 ELSE 0 END), 0) as available
     FROM product_types pt
-    LEFT JOIN products p ON p.type_id = pt.id
-    GROUP BY pt.id
-    ORDER BY pt.sort_order ASC, pt.id ASC
-  `).all()
+	    LEFT JOIN products p ON p.product_type_id = pt.id
+	    LEFT JOIN product_items pi ON pi.product_id = p.id
+	    GROUP BY pt.id
+	    ORDER BY pt.sort_order ASC, pt.id ASC
+	  `).all()
 
   let text = t(lang, 'admin.stats.title')
   text += t(lang, 'admin.stats.total_users', { count: totalUsers })
@@ -714,9 +704,9 @@ export async function handleStats(
     text += t(lang, 'admin.stats.by_type_header')
     for (const stat of categoryStats.results) {
       const s = stat as any
-      text += t(lang, 'admin.stats.by_type_item', {
-        emoji: s.emoji || '📦',
-        name: s.name,
+	      text += t(lang, 'admin.stats.by_type_item', {
+	        emoji: s.emoji || '',
+	        name: s.name,
         sold: s.sold,
         available: s.available,
       })
