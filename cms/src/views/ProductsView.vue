@@ -386,7 +386,7 @@ onMounted(async () => {
     <div class="page-head">
       <div>
         <h1 class="page-title">Sản phẩm</h1>
-        <p class="page-subtitle">Quản lý Product có giá, template bán hàng, bản dịch và kho Product_Item.</p>
+        <p class="page-subtitle">Quản lý sản phẩm có giá, template bán hàng, bản dịch và kho.</p>
       </div>
       <button class="btn btn-primary" type="button" @click="openCreate">
         <Icon name="plus" :size="16" />
@@ -641,6 +641,37 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* ---- Page layout ---- */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.page-subtitle {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+/* ---- Filters ---- */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.field-wrap {
+  min-width: 180px;
+}
+
+/* ---- Notices ---- */
 .notice {
   margin-bottom: 14px;
   border-radius: 10px;
@@ -655,11 +686,29 @@ onMounted(async () => {
   background: var(--green-bg);
   color: var(--green-fg);
 }
+
+/* ---- Table helpers ---- */
 .text-right {
   text-align: right;
 }
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+.ink {
+  color: var(--ink);
+}
+.muted {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.faint {
+  color: var(--faint);
+}
+.nowrap {
+  white-space: nowrap;
+}
+.overflow-hidden {
+  overflow: hidden;
 }
 .emoji-box {
   display: inline-flex;
@@ -668,9 +717,98 @@ onMounted(async () => {
 .danger {
   color: var(--red-fg);
 }
-.wide {
+
+/* ---- State blocks ---- */
+.state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.state-empty {
+  color: var(--faint);
+}
+
+/* ---- Pagination ---- */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1rem;
+}
+.page-info {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.page-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ---- Modal ---- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.4);
+}
+.modal-panel {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 1.5rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+.modal-panel.wide {
   width: min(960px, calc(100vw - 32px));
 }
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+.modal-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.icon-btn:hover {
+  background: var(--surface-alt);
+  color: var(--ink);
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Form ---- */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -697,9 +835,11 @@ onMounted(async () => {
   gap: 8px;
   padding-top: 28px;
 }
+
+/* ---- Translation tabs ---- */
 .translation-box {
   margin-top: 18px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
   padding-top: 16px;
 }
 .tabs {
@@ -708,16 +848,20 @@ onMounted(async () => {
   margin-bottom: 14px;
 }
 .tab-btn {
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 7px 12px;
   background: var(--surface);
   color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
 }
 .tab-btn.active {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ---- Stock modal ---- */
 .stock-layout {
   display: grid;
   grid-template-columns: 0.9fr 1.1fr;
@@ -738,6 +882,7 @@ onMounted(async () => {
 .compact td {
   padding: 8px 10px;
 }
+
 @media (max-width: 860px) {
   .form-grid,
   .stock-layout {
