@@ -55,8 +55,8 @@ export interface PayosDepositCreatedDto {
   status: 'pending'
 }
 
-/** Phần tử danh sách `GET /api/app/product-types` (Req 5.1, 5.2). Bao gồm cả loại hết hàng. */
-export interface ProductTypeListItemDto {
+/** Phần tử danh sách sản phẩm có giá (tầng 2) — `GET /api/app/categories/:id/products` hoặc alias `/product-types`. */
+export interface ProductListItemDto {
   id: number
   product_type_id: number
   category_id: number
@@ -73,8 +73,8 @@ export interface ProductTypeListItemDto {
   in_stock: boolean // stock > 0
 }
 
-/** `GET /api/app/product-types/:id` — chi tiết loại sản phẩm (Req 5.3, 5.4). KHÔNG trả `success_template`. */
-export interface ProductTypeDetailDto {
+/** Chi tiết sản phẩm có giá (tầng 2) — `GET /api/app/product-types/:id`. KHÔNG trả `success_template`. */
+export interface ProductDetailDto {
   id: number
   product_type_id: number
   category_id: number

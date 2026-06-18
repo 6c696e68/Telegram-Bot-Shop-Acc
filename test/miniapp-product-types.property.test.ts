@@ -5,7 +5,7 @@ import { miniAppApi } from '../src/routes/miniapp-api'
 import { formatMoneyFor, buildCurrencyContext } from '../src/utils/format'
 import { resolveLang } from '../src/services/user-locale'
 import type { ApiResponse } from '../src/types/api'
-import type { ProductTypeListItemDto } from '../src/types/miniapp'
+import type { ProductListItemDto } from '../src/types/miniapp'
 import {
   cleanThreeTierTables,
   resetThreeTierSchema,
@@ -226,7 +226,7 @@ describe('Property 6: Danh mục lọc theo hiển thị, sắp xếp và đếm
         const res = await getProductTypes()
         expect(res.status).toBe(200)
 
-        const body = (await res.json()) as ApiResponse<ProductTypeListItemDto[]>
+        const body = (await res.json()) as ApiResponse<ProductListItemDto[]>
         expect(body.success).toBe(true)
         expect(body.error).toBeNull()
 

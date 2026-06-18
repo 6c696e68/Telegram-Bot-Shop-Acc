@@ -24,8 +24,8 @@ import type { ApiResponse } from '../types/api'
 import type {
   MeDto,
   CategoryListItemDto,
-  ProductTypeListItemDto,
-  ProductTypeDetailDto,
+  ProductListItemDto,
+  ProductDetailDto,
   PurchaseResultDto,
   DepositCreatedDto,
   CryptoDepositCreatedDto,
@@ -147,7 +147,7 @@ async function resolveCatalogProductDto(
   displayLang: Lang,
   defaultLang: Lang,
   priceDisplay: string
-): Promise<ProductTypeListItemDto> {
+): Promise<ProductListItemDto> {
   const [productTranslations, categoryTranslations] = await Promise.all([
     loadProductTranslations(db, row.id),
     loadProductTypeTranslations(db, row.product_type_id),
@@ -405,13 +405,13 @@ miniAppApi.get('/product-types', async (c) => {
      ORDER BY pt.sort_order ASC, p.sort_order ASC, p.name ASC`
   ).all<CatalogProductRow>()
 
-  const data: ProductTypeListItemDto[] = await Promise.all(
+  const data: ProductListItemDto[] = await Promise.all(
     results.map((row) =>
       resolveCatalogProductDto(c.env.DB, row, lang, defaultLang, formatMoneyFor(row.price, ctx))
     )
   )
 
-  const body: ApiResponse<ProductTypeListItemDto[]> = {
+  const body: ApiResponse<ProductListItemDto[]> = {
     success: true,
     data,
     error: null,
@@ -480,12 +480,12 @@ miniAppApi.get('/categories/:id/products', async (c) => {
     .bind(id)
     .all<CatalogProductRow>()
 
-  const data: ProductTypeListItemDto[] = await Promise.all(
+  const data: ProductListItemDto[] = await Promise.all(
     results.map((row) =>
       resolveCatalogProductDto(c.env.DB, row, lang, defaultLang, formatMoneyFor(row.price, ctx))
     )
   )
-  const body: ApiResponse<ProductTypeListItemDto[]> = { success: true, data, error: null }
+  const body: ApiResponse<ProductListItemDto[]> = { success: true, data, error: null }
   return c.json(body)
 })
 
@@ -533,12 +533,12 @@ miniAppApi.get('/product-types/:id', async (c) => {
     formatMoneyFor(row.price, ctx)
   )
 
-  const data: ProductTypeDetailDto = {
+  const data: ProductDetailDto = {
     ...productDto,
     max_quantity: MAX_PURCHASE_QUANTITY,
   }
 
-  const body: ApiResponse<ProductTypeDetailDto> = {
+  const body: ApiResponse<ProductDetailDto> = {
     success: true,
     data,
     error: null,

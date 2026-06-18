@@ -14,3 +14,4 @@ video/
 stitch_telegram_miniapp_account_shop/
 .tmp_mig_check/
 **/_verify.db
+**/_verify_legacy_seed.sql

@@ -560,9 +560,11 @@ Mọi thắc mắc liên hệ @vippro
 │   ├── routes/
 │   │   ├── telegram.ts       # POST /webhook/telegram
 │   │   ├── sepay.ts          # POST /webhook/sepay
+│   │   ├── cryptopay.ts      # POST /webhook/cryptopay (HMAC verify)
+│   │   ├── payos.ts          # POST /webhook/payos (HMAC verify)
 │   │   ├── static.ts         # GET /cms/* (CMS Vue SPA assets)
 │   │   ├── miniapp-static.ts # GET /app/* (Mini App Vue SPA assets, history fallback)
-│   │   ├── miniapp-api.ts     # GET/POST /api/app/* (Mini App business API)
+│   │   ├── miniapp-api.ts    # GET/POST /api/app/* (Mini App business API)
 │   │   └── admin/            # CMS REST API (/api/admin/*)
 │   │       ├── index.ts      # Mount sub-routers
 │   │       ├── auth.ts       # login / refresh / me
@@ -574,20 +576,38 @@ Mọi thắc mắc liên hệ @vippro
 │   │       ├── transactions.ts # list + export CSV
 │   │       ├── deposits.ts   # list + manual approve
 │   │       ├── stats.ts      # dashboard / revenue / top-*
+│   │       ├── banners.ts    # CRUD banner Mini App
+│   │       ├── payos.ts      # admin PayOS management
 │   │       └── config.ts     # system config
 │   ├── services/
-│   │   ├── transaction.ts    # Atomic purchase/deposit (D1 batch)
+│   │   ├── payments/         # Payment provider registry (OCP)
+│   │   │   ├── types.ts      # PaymentProvider interface + DTO
+│   │   │   ├── registry.ts   # registerProvider / getProvider / methodsForRegion
+│   │   │   ├── register.ts   # ensureProvidersRegistered (idempotent)
+│   │   │   ├── sepay-provider.ts
+│   │   │   ├── cryptopay-provider.ts
+│   │   │   └── payos-provider.ts
+│   │   ├── transaction.ts    # Atomic purchase 4-phase (D1 batch, concurrency guard)
+│   │   ├── catalog-service.ts # Tồn kho động, danh sách sản phẩm/danh mục
+│   │   ├── i18n-catalog.ts   # Fallback hiển thị đa ngôn ngữ (resolveDisplayText)
 │   │   ├── deposit-policy.ts # Luật nạp dùng chung: cooldown + trần pending + TTL
 │   │   ├── deposit-limits.ts # Hạn mức nạp (min/max) đọc từ system_config (DB-first)
 │   │   ├── deposit-expiry.ts # Cron: expire pending deposits
+│   │   ├── credit-awaiting.ts # Cron: cộng tiền deposit awaiting_credit (CryptoBot)
+│   │   ├── deposit-service.ts # completeDeposit dùng chung mọi provider
 │   │   ├── bank-config.ts    # Thông tin ngân hàng nhận tiền (DB-first, fallback env)
 │   │   ├── sepay-config.ts   # SePay API key (DB-first, fallback env)
+│   │   ├── cryptopay-config.ts # Crypto Pay token (env)
+│   │   ├── payos-config.ts   # PayOS client ID / API key / checksum key
 │   │   ├── telegram-config.ts # bot_token / secret_token / admin_ids (DB-first, fallback env)
+│   │   ├── product-template.ts # Load success_template theo product + lang
+│   │   ├── user-locale.ts    # Resolve ngôn ngữ hiển thị user
 │   │   └── user-ban.ts       # Khoá/mở khoá + kiểm tra trạng thái ban
 │   ├── middleware/
 │   │   ├── jwt-auth.ts       # JWT verify cho CMS
 │   │   ├── telegram-auth.ts  # Verify Telegram secret token (webhook)
 │   │   ├── sepay-auth.ts     # Verify SePay API Key
+│   │   ├── cryptopay-auth.ts # Verify Crypto Pay HMAC signature
 │   │   ├── miniapp-auth.ts   # Verify Telegram initData (HMAC + TTL) cho Mini App
 │   │   └── audit.ts          # Audit log thao tác admin
 │   └── utils/
@@ -716,12 +736,13 @@ Xác thực stateless bằng `initData` của Telegram (HMAC-SHA256 + TTL 1 gi�
 | `orders` | Đơn hàng, tham chiếu sản phẩm qua `product_id` |
 | `order_items` | Chi tiết đơn, tham chiếu kho đã bán qua `product_item_id` |
 | `transactions` | Sổ cái tài chính (deposit / purchase / refund / adjustment) |
-| `deposits` | Yêu cầu nạp qua SePay (transfer_code, status, sepay_transaction_id) |
+| `deposits` | Yeu cau nap tien da provider (sepay/cryptobot/payos); `correlation_ref` doi soat noi bo, `provider_txn_id` chong trung idempotent, `metadata` JSON dac thu provider |
+| `banners` | Banner anh Mini App storefront (image_data, link_url, sort_order, is_active) |
 | `admin_users` | Tài khoản admin CMS (bcrypt hash, lockout) |
 | `system_config` | Cấu hình key-value (shop_name, min/max_deposit, và các key cấu hình runtime: `bank_*`, `sepay_api_key`, `bot_token`, `telegram_secret_token`, `admin_ids`) |
 | `audit_logs` | Nhật ký thao tác admin |
 
-Config mặc định (`0001_initial_schema.sql`): `shop_name`, `min_deposit` (20.000đ), `max_deposit` (100.000.000đ), `maintenance_mode`. Migration `0005`/`0006` thêm các key cấu hình runtime (`sepay_api_key`, `bot_token`, `telegram_secret_token`, `admin_ids`) — seed rỗng, để trống nghĩa là fallback về env Worker (xem [mục 4.3](#43-cấu-hình-runtime-qua-cms-db-first-fallback-env)).
+Config mặc định (`0001_initial_schema.sql`): `shop_name`, `min_deposit` (20.000d), `max_deposit` (100.000.000d), `maintenance_mode`. Migration `0005`/`0006` thêm key cấu hình runtime (`sepay_api_key`, `bot_token`, `telegram_secret_token`, `admin_ids`); `0008` thêm `exchange_rate_usdt_vnd`, `crypto_min_usdt`, `default_language`; `0009` thêm `payment_cryptobot_enabled`; `0014` them `payment_payos_enabled` — seed rỗng/0, để trống nghĩa là fallback về env Worker hoặc provider tắt (xem [mục 4.3](#43-cấu-hình-runtime-qua-cms-db-first-fallback-env)).
 
 ---
 
@@ -738,6 +759,7 @@ Config mặc định (`0001_initial_schema.sql`): `shop_name`, `min_deposit` (20
 | `BANK_NAME` | Secret | Tên ngân hàng nhận tiền |
 | `BANK_ACCOUNT` | Secret | Số tài khoản ngân hàng |
 | `BANK_OWNER` | Secret | Chủ tài khoản |
+| `CRYPTO_PAY_API_TOKEN` | Secret | Token Crypto Pay API (@CryptoBot) cho nạp USDT |
 
 > Từ `BOT_TOKEN` trở xuống (trừ `JWT_SECRET`) đều có thể **ghi đè runtime qua CMS** (`system_config`), env chỉ là fallback — xem [mục 4.3](#43-cấu-hình-runtime-qua-cms-db-first-fallback-env). `DB` và `JWT_SECRET` bắt buộc cấu hình ở Worker.
 

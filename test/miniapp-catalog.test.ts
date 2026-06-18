@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { miniAppApi } from '../src/routes/miniapp-api'
 import type { ApiResponse } from '../src/types/api'
-import type { CategoryListItemDto, ProductTypeListItemDto } from '../src/types/miniapp'
+import type { CategoryListItemDto, ProductListItemDto } from '../src/types/miniapp'
 import {
   resetThreeTierSchema,
   seedCategory,
@@ -74,11 +74,11 @@ describe('Mini App catalog DTO', () => {
     expect(categories.data!.map((category) => category.id)).toEqual([emptyCategoryId, categoryId])
     expect(categories.data!.find((category) => category.id === emptyCategoryId)?.product_count).toBe(0)
 
-    const emptyProducts = await apiGet<ProductTypeListItemDto[]>(`/categories/${emptyCategoryId}/products`)
+    const emptyProducts = await apiGet<ProductListItemDto[]>(`/categories/${emptyCategoryId}/products`)
     expect(emptyProducts.success).toBe(true)
     expect(emptyProducts.data).toEqual([])
 
-    const products = await apiGet<ProductTypeListItemDto[]>(`/categories/${categoryId}/products`)
+    const products = await apiGet<ProductListItemDto[]>(`/categories/${categoryId}/products`)
     expect(products.success).toBe(true)
     expect(products.data).toHaveLength(1)
     expect(products.data![0]).toMatchObject({

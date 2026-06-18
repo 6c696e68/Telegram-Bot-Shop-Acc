@@ -23,7 +23,7 @@ import { useUserStore } from '@/stores/user'
 import { showBackButton, type Cleanup } from '@/telegram/sdk'
 import { formatMoneyFor } from '@/utils/format'
 import { tileGradient } from '@/utils/avatar'
-import type { ProductTypeDetailDto, PurchaseResultDto } from '@/types'
+import type { ProductDetailDto, PurchaseResultDto } from '@/types'
 
 const props = defineProps<{ id: string }>()
 
@@ -32,7 +32,7 @@ const ui = useUiStore()
 const user = useUserStore()
 const { t } = useI18n()
 
-const detail = ref<ProductTypeDetailDto | null>(null)
+const detail = ref<ProductDetailDto | null>(null)
 const result = ref<PurchaseResultDto | null>(null)
 const submitting = ref(false)
 const imgError = ref(false)
@@ -105,7 +105,7 @@ async function confirm(): Promise<void> {
 
 async function load(): Promise<void> {
   try {
-    detail.value = await ui.withLoading(get<ProductTypeDetailDto>(`/product-types/${props.id}`))
+    detail.value = await ui.withLoading(get<ProductDetailDto>(`/product-types/${props.id}`))
   } catch (err) {
     if (err instanceof ApiError) {
       if (err.status === 401) return

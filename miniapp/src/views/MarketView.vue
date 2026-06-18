@@ -17,7 +17,7 @@ import { get, ApiError } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/stores/user'
 import { openLink } from '@/telegram/sdk'
-import type { ProductTypeListItemDto, CategoryListItemDto, BannerDto } from '@/types'
+import type { ProductListItemDto, CategoryListItemDto, BannerDto } from '@/types'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -25,7 +25,7 @@ const user = useUserStore()
 const { t } = useI18n()
 
 const categories = ref<CategoryListItemDto[]>([])
-const products = ref<ProductTypeListItemDto[]>([])
+const products = ref<ProductListItemDto[]>([])
 const banners = ref<BannerDto[]>([])
 const categoriesLoaded = ref(false)
 const productsLoaded = ref(false)
@@ -47,7 +47,7 @@ const selectedCategory = computed(() =>
   categories.value.find((category) => category.id === selectedCategoryId.value) ?? null
 )
 
-function openDetail(item: ProductTypeListItemDto): void {
+function openDetail(item: ProductListItemDto): void {
   router.push({ name: 'product-detail', params: { id: String(item.id) } })
 }
 
@@ -81,7 +81,7 @@ async function loadProducts(categoryId: number): Promise<void> {
   const seq = ++productLoadSeq
   productsLoaded.value = false
   try {
-    const data = await get<ProductTypeListItemDto[]>(`/categories/${categoryId}/products`)
+    const data = await get<ProductListItemDto[]>(`/categories/${categoryId}/products`)
     if (seq === productLoadSeq) {
       products.value = data
     }

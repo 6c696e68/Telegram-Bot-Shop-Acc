@@ -4,7 +4,7 @@ import { miniAppApi } from '../src/routes/miniapp-api'
 import { formatMoneyFor, buildCurrencyContext } from '../src/utils/format'
 import { resolveLang } from '../src/services/user-locale'
 import type { ApiResponse } from '../src/types/api'
-import type { ProductTypeDetailDto } from '../src/types/miniapp'
+import type { ProductDetailDto } from '../src/types/miniapp'
 import {
   resetThreeTierSchema,
   seedCategory,
@@ -203,7 +203,7 @@ describe('GET /api/app/product-types/:id — chi tiết loại sản phẩm (Req
     const res = await getDetail(visibleId)
 
     expect(res.status).toBe(200)
-    const body = (await res.json()) as ApiResponse<ProductTypeDetailDto>
+    const body = (await res.json()) as ApiResponse<ProductDetailDto>
     expect(body.success).toBe(true)
     expect(body.error).toBeNull()
 

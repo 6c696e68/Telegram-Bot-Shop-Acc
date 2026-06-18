@@ -20,7 +20,7 @@ import { useUserStore } from '@/stores/user'
 import { showBackButton, type Cleanup } from '@/telegram/sdk'
 import { formatMoneyFor } from '@/utils/format'
 import { tileGradient, tileTint } from '@/utils/avatar'
-import type { ProductTypeDetailDto } from '@/types'
+import type { ProductDetailDto } from '@/types'
 
 const props = defineProps<{ id: string }>()
 
@@ -29,7 +29,7 @@ const ui = useUiStore()
 const user = useUserStore()
 const { t } = useI18n()
 
-const detail = ref<ProductTypeDetailDto | null>(null)
+const detail = ref<ProductDetailDto | null>(null)
 const quantity = ref(1)
 const imgError = ref(false)
 
@@ -58,7 +58,7 @@ function goCheckout(): void {
 
 async function load(): Promise<void> {
   try {
-    detail.value = await ui.withLoading(get<ProductTypeDetailDto>(`/product-types/${props.id}`))
+    detail.value = await ui.withLoading(get<ProductDetailDto>(`/product-types/${props.id}`))
     quantity.value = 1
   } catch (err) {
     if (err instanceof ApiError) {
