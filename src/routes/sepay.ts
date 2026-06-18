@@ -26,18 +26,22 @@ const TRANSFER_CODE_REGEX = /NAP[A-Z0-9]{4,17}/i
 /**
  * Trích mã chuyển khoản nội bộ từ payload SePay.
  *
- * Ưu tiên trường `code` (mã SePay tự nhận diện — đáng tin hơn vì không bị nội dung
- * ngân hàng chèn ký tự lạ); nếu `code` rỗng/không khớp định dạng "NAP..." thì fallback
- * dò trong `content`. Trả mã đã upper-case hoặc `null` nếu không tìm thấy.
+ * SePay có thể truncate field `code` (giới hạn ký tự nội bộ), trong khi `content`
+ * (nội dung CK gốc) giữ nguyên mã đầy đủ. Chiến lược: match cả hai, ưu tiên kết
+ * quả DÀI HƠN (đầy đủ hơn). Trả mã đã upper-case hoặc `null` nếu không tìm thấy.
  */
 function extractTransferCode(payload: SepayWebhookPayload): string | null {
   const fromCode = payload.code?.match(TRANSFER_CODE_REGEX)
-  if (fromCode) return fromCode[0].toUpperCase()
-
   const fromContent = payload.content.match(TRANSFER_CODE_REGEX)
-  if (fromContent) return fromContent[0].toUpperCase()
 
-  return null
+  const codeMatch = fromCode ? fromCode[0].toUpperCase() : null
+  const contentMatch = fromContent ? fromContent[0].toUpperCase() : null
+
+  // Ưu tiên chuỗi dài hơn (content thường đầy đủ, code có thể bị SePay truncate).
+  if (codeMatch && contentMatch) {
+    return contentMatch.length >= codeMatch.length ? contentMatch : codeMatch
+  }
+  return contentMatch ?? codeMatch
 }
 
 const sepayWebhook = new Hono<AppEnv>()
