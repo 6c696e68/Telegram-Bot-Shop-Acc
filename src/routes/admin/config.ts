@@ -25,8 +25,6 @@ const configRoutes = new Hono<ConfigEnv>()
  * (rỗng = giữ nguyên — vì GET luôn mask thành rỗng, lưu form sẽ không vô tình xoá secret).
  */
 const SECRET_CONFIG_KEYS = new Set([
-  'bot_token',
-  'telegram_secret_token',
   'sepay_api_key',
   'payos_api_key',
   'payos_checksum_key',
@@ -68,6 +66,8 @@ configRoutes.get('/', async (c) => {
     admin_ids: c.env.ADMIN_IDS,
     crypto_pay_api_token: c.env.CRYPTO_PAY_API_TOKEN,
     payos_client_id: c.env.PAYOS_CLIENT_ID,
+    bot_token: c.env.BOT_TOKEN,
+    telegram_secret_token: c.env.TELEGRAM_SECRET_TOKEN,
   }
   for (const [key, envValue] of Object.entries(envFallback)) {
     const current = configs[key]
@@ -78,8 +78,6 @@ configRoutes.get('/', async (c) => {
 
   // Secret coi như "đã đặt" nếu có ở DB hoặc env (không lộ giá trị, chỉ cờ boolean).
   const secretEnv: Record<string, string | undefined> = {
-    bot_token: c.env.BOT_TOKEN,
-    telegram_secret_token: c.env.TELEGRAM_SECRET_TOKEN,
     sepay_api_key: c.env.SEPAY_API_KEY,
     payos_api_key: c.env.PAYOS_API_KEY,
     payos_checksum_key: c.env.PAYOS_CHECKSUM_KEY,
@@ -194,6 +192,43 @@ configRoutes.put('/', async (c) => {
     data: { updated: updatedCount },
     error: null,
   })
+})
+
+/**
+ * POST /config/set-telegram-webhook
+ * Gọi Telegram API setWebhook dùng bot_token + telegram_secret_token hiện tại (DB-first, fallback env).
+ * URL webhook = origin hiện tại + /webhook/telegram.
+ * Trả kết quả Telegram API (ok/description).
+ */
+configRoutes.post('/set-telegram-webhook', async (c) => {
+  const { resolveBotToken, resolveTelegramSecretToken } = await import('../../services/telegram-config')
+  const botToken = await resolveBotToken(c.env.DB, c.env)
+  const secretToken = await resolveTelegramSecretToken(c.env.DB, c.env)
+
+  if (!botToken) {
+    return c.json({ success: false, data: null, error: 'bot_token_missing' }, 400)
+  }
+
+  // Derive webhook URL from the Worker's own URL (same origin).
+  const workerUrl = new URL(c.req.url)
+  const webhookUrl = `${workerUrl.origin}/webhook/telegram`
+
+  // Call Telegram setWebhook
+  const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: webhookUrl,
+      ...(secretToken ? { secret_token: secretToken } : {}),
+    }),
+  })
+  const tgBody = await tgRes.json() as { ok: boolean; description?: string }
+
+  if (!tgBody.ok) {
+    return c.json({ success: false, data: null, error: tgBody.description || 'telegram_api_error' }, 502)
+  }
+
+  return c.json({ success: true, data: { webhook_url: webhookUrl }, error: null })
 })
 
 export { configRoutes }

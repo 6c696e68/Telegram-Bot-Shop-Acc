@@ -52,6 +52,30 @@ const showCryptoToken = ref(false)
 const showPayosApiKey = ref(false)
 const showPayosChecksumKey = ref(false)
 
+// --- Đăng ký webhook Telegram ---
+const tgWebhookRegistering = ref(false)
+const tgWebhookSuccess = ref('')
+const tgWebhookError = ref('')
+
+async function setTelegramWebhook() {
+  tgWebhookRegistering.value = true
+  tgWebhookSuccess.value = ''
+  tgWebhookError.value = ''
+  try {
+    const res = await api.post<{ webhook_url: string }>('/config/set-telegram-webhook')
+    if (res.success && res.data) {
+      tgWebhookSuccess.value = `Webhook set: ${res.data.webhook_url}`
+      setTimeout(() => { tgWebhookSuccess.value = '' }, 5000)
+    } else {
+      tgWebhookError.value = res.error || 'Lỗi đặt webhook'
+    }
+  } catch {
+    tgWebhookError.value = 'Lỗi đặt webhook'
+  } finally {
+    tgWebhookRegistering.value = false
+  }
+}
+
 // --- Đăng ký webhook PayOS (R24.2, R24.3) ---
 const payosRegistering = ref(false)
 const payosRegisterSuccess = ref('')
@@ -433,7 +457,7 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
                 :type="showBotToken ? 'text' : 'password'"
                 class="field"
                 placeholder="123456:ABC-DEF..."
-                autocomplete="off"
+                autocomplete="new-password"
                 spellcheck="false"
               />
               <button type="button" class="key-toggle" :title="showBotToken ? $t('config.hide') : $t('config.show')" @click="showBotToken = !showBotToken">
@@ -450,7 +474,7 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
                 :type="showTgSecret ? 'text' : 'password'"
                 class="field"
                 :placeholder="$t('config.ph_tg_secret')"
-                autocomplete="off"
+                autocomplete="new-password"
                 spellcheck="false"
               />
               <button type="button" class="key-toggle" :title="showTgSecret ? $t('config.hide') : $t('config.show')" @click="showTgSecret = !showTgSecret">
@@ -463,6 +487,22 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
             <label class="label">{{ $t('config.admin_ids') }}</label>
             <input v-model="form.admin_ids" class="field" placeholder="123456789,987654321" />
             <p class="hint">{{ $t('config.admin_ids_hint') }}</p>
+          </div>
+          <div class="flex flex-col gap-2" style="padding-top: 0.5rem; border-top: 1px solid var(--border)">
+            <div>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                :disabled="tgWebhookRegistering"
+                @click="setTelegramWebhook"
+              >
+                <Icon name="link" :size="16" />
+                {{ tgWebhookRegistering ? 'Dang cap nhat...' : 'Cap nhat Webhook Telegram' }}
+              </button>
+              <p class="hint">Goi Telegram setWebhook voi bot_token va secret_token hien tai.</p>
+            </div>
+            <p v-if="tgWebhookSuccess" class="hint" style="color: var(--green-fg)">{{ tgWebhookSuccess }}</p>
+            <p v-if="tgWebhookError" class="hint" style="color: var(--red-fg)">{{ tgWebhookError }}</p>
           </div>
         </section>
 
@@ -485,7 +525,7 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
                 :type="showSepayKey ? 'text' : 'password'"
                 class="field"
                 :placeholder="$t('config.ph_sepay_key')"
-                autocomplete="off"
+                autocomplete="new-password"
                 spellcheck="false"
               />
               <button
@@ -521,7 +561,7 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
                 :type="showCryptoToken ? 'text' : 'password'"
                 class="field"
                 :placeholder="$t('config.ph_crypto_token')"
-                autocomplete="off"
+                autocomplete="new-password"
                 spellcheck="false"
               />
               <button
@@ -578,7 +618,7 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
               v-model="form.payos_client_id"
               class="field"
               :placeholder="$t('config.payos.client_id_ph')"
-              autocomplete="off"
+              autocomplete="new-password"
               spellcheck="false"
             />
           </div>
@@ -590,7 +630,7 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
                 :type="showPayosApiKey ? 'text' : 'password'"
                 class="field"
                 :placeholder="$t('config.payos.api_key_ph')"
-                autocomplete="off"
+                autocomplete="new-password"
                 spellcheck="false"
               />
               <button
@@ -611,7 +651,7 @@ onUnmounted(() => { if (revenueChart) { revenueChart.destroy(); revenueChart = n
                 :type="showPayosChecksumKey ? 'text' : 'password'"
                 class="field"
                 :placeholder="$t('config.payos.checksum_key_ph')"
-                autocomplete="off"
+                autocomplete="new-password"
                 spellcheck="false"
               />
               <button
