@@ -11,11 +11,12 @@ import { haptic } from '@/telegram/sdk'
 import { useUiStore } from '@/stores/ui'
 import { useI18n } from 'vue-i18n'
 
-defineProps<{ contents: string[] }>()
+const props = defineProps<{ contents: string[] }>()
 
 const ui = useUiStore()
 const { t } = useI18n()
 const copiedIdx = ref<number | null>(null)
+const copiedAll = ref(false)
 
 async function copy(idx: number, value: string): Promise<void> {
   try {
@@ -30,14 +31,38 @@ async function copy(idx: number, value: string): Promise<void> {
     haptic('error')
   }
 }
+
+/** Sao chép toàn bộ tài khoản trong đơn, mỗi dòng một account. */
+async function copyAll(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(props.contents.join('\n'))
+    haptic('success')
+    ui.toast(t('order.copied_all'), 'success')
+    copiedAll.value = true
+    setTimeout(() => {
+      copiedAll.value = false
+    }, 1500)
+  } catch {
+    haptic('error')
+  }
+}
 </script>
 
 <template>
   <div class="overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-low">
-    <div class="border-b border-outline-variant/20 bg-surface-container-high/50 px-3 py-2">
+    <div class="flex items-center justify-between gap-2 border-b border-outline-variant/20 bg-surface-container-high/50 px-3 py-2">
       <span class="text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
         {{ $t('order.credentials') }}
       </span>
+      <button
+        v-if="contents.length > 1"
+        type="button"
+        class="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-semibold text-primary transition-colors hover:bg-surface-container"
+        @click="copyAll"
+      >
+        <component :is="copiedAll ? Check : Copy" :size="15" :stroke-width="2" aria-hidden="true" />
+        {{ copiedAll ? $t('order.copied_all') : $t('order.copy_all') }}
+      </button>
     </div>
     <div class="space-y-1 p-2">
       <button

@@ -10,7 +10,7 @@
  */
 
 import type { InlineKeyboardButton } from '../../types/telegram'
-import { editOrSendMessage, buildInlineKeyboard, buildBackButton } from '../telegram-api'
+import { editOrSendMessage, sendChunkedMessage, buildInlineKeyboard, buildBackButton } from '../telegram-api'
 import { escapeHtml } from '../../utils/telegram-template'
 import { formatMoneyFor, formatDateTime, type CurrencyContext } from '../../utils/format'
 import { t, type Lang, type MessageKey } from '../i18n'
@@ -205,7 +205,8 @@ export async function handleOrderDetail(
     lines.push(contentList)
   }
 
-  await editOrSendMessage(botToken, chatId, messageId, lines.join('\n'), {
+  // Danh sách content có thể vượt 4096 ký tự với đơn lớn → chia nhỏ tin nhắn (chunk).
+  await sendChunkedMessage(botToken, chatId, messageId, lines.join('\n'), {
     parse_mode: 'HTML',
     reply_markup: buildInlineKeyboard([buildBackButton('hist', lang)]),
   })

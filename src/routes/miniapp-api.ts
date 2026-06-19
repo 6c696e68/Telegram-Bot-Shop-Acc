@@ -51,7 +51,7 @@ import {
   resolveDisplayText,
 } from '../services/i18n-catalog'
 import { t } from '../bot/i18n'
-import { sendMessage, sendPhoto } from '../bot/telegram-api'
+import { sendMessage, sendPhoto, sendChunkedMessage } from '../bot/telegram-api'
 import { consumeToken, PURCHASE_RULE } from '../bot/rate-limit'
 import { depositPolicyMessage } from '../services/deposit-policy'
 import { resolveBotToken } from '../services/telegram-config'
@@ -70,9 +70,9 @@ type MiniAppEnv = {
 const HOME_SHORTCUTS = ['shop', 'deposit', 'history', 'account'] as const
 
 /**
- * Trần số lượng cho mỗi lần mua (Req 5.3 — `max_quantity`).
- * Giữ đồng bộ với cap `MAX_QTY = 50` của flow mua hàng trong bot
- * (`src/bot/callbacks/purchase.ts`) để Mini App và bot hành xử nhất quán.
+ * Trần CỨNG số lượng cho mỗi lần mua (chặn trên tuyệt đối). Trần thực tế hiển thị cho
+ * client là `min(products.max_per_order, MAX_PURCHASE_QUANTITY)`. Giữ = 50 đồng bộ với
+ * `MAX_QTY` của bot để Mini App và bot hành xử nhất quán.
  */
 const MAX_PURCHASE_QUANTITY = 50
 
@@ -107,6 +107,7 @@ interface CatalogProductRow {
   image_data: string | null
   price: number
   sort_order: number
+  max_per_order: number
   category_name: string
   category_description: string | null
   category_content: string | null
@@ -502,7 +503,7 @@ miniAppApi.get('/product-types/:id', async (c) => {
 
   const row = await c.env.DB.prepare(
     `SELECT p.id, p.product_type_id, p.name, p.description, p.content, p.emoji,
-            p.image_data, p.price, p.sort_order,
+            p.image_data, p.price, p.sort_order, p.max_per_order,
             pt.name AS category_name,
             pt.description AS category_description,
             pt.content AS category_content,
@@ -535,7 +536,7 @@ miniAppApi.get('/product-types/:id', async (c) => {
 
   const data: ProductDetailDto = {
     ...productDto,
-    max_quantity: MAX_PURCHASE_QUANTITY,
+    max_quantity: Math.min(row.max_per_order, MAX_PURCHASE_QUANTITY),
   }
 
   const body: ApiResponse<ProductDetailDto> = {
@@ -603,7 +604,7 @@ miniAppApi.post('/purchase', async (c) => {
   // Lấy Product đang hiển thị kèm danh mục cha — ẩn/không tồn tại → 404 (Req 5.4).
   const product = await c.env.DB.prepare(
     `SELECT p.id, p.product_type_id, p.name, p.description, p.content, p.emoji,
-            p.image_data, p.price, p.sort_order,
+            p.image_data, p.price, p.sort_order, p.max_per_order,
             pt.name AS category_name,
             pt.description AS category_description,
             pt.content AS category_content,
@@ -620,6 +621,13 @@ miniAppApi.post('/purchase', async (c) => {
   if (!product) {
     const notFound: ApiResponse<null> = { success: false, data: null, error: 'not_found' }
     return c.json(notFound, 404)
+  }
+
+  // Trần số lượng/đơn theo cấu hình sản phẩm (kẹp dưới trần cứng) — vượt → 400 (Req 6.1).
+  const maxPerOrder = Math.min(product.max_per_order, MAX_PURCHASE_QUANTITY)
+  if (quantity > maxPerOrder) {
+    const bad: ApiResponse<null> = { success: false, data: null, error: 'validation_error' }
+    return c.json(bad, 400)
   }
 
   // Tổng tiền tính server-side (Req 6.1, 16.3) — KHÔNG tin client.
@@ -671,9 +679,13 @@ miniAppApi.post('/purchase', async (c) => {
     ctx,
     defaultLang
   )
-  const notify = sendMessage(await resolveBotToken(c.env.DB, c.env), user.telegram_id, html, { parse_mode: 'HTML' }).catch(
-    (err) => console.error('[MiniApp] notify purchase failed:', err)
-  )
+  const notify = sendChunkedMessage(
+    await resolveBotToken(c.env.DB, c.env),
+    user.telegram_id,
+    undefined,
+    html,
+    { parse_mode: 'HTML' }
+  ).catch((err) => console.error('[MiniApp] notify purchase failed:', err))
   c.executionCtx?.waitUntil?.(notify)
 
   // Trả nội dung tài khoản + số dư mới cho app (Req 6.6, 6.7).

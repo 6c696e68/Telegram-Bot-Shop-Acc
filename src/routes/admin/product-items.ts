@@ -37,6 +37,24 @@ function normalizeContents(contents: unknown): string[] {
   return result
 }
 
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+/**
+ * D1 giới hạn 100 bound parameters cho mỗi câu lệnh (kể cả từng statement trong batch).
+ * - Truy vấn check trùng dùng `IN (...)`: mỗi chunk gồm 1 param product_id + contents → giữ <= 99 content.
+ * - Insert nhiều dòng: mỗi dòng 3 param (product_id, content, created_at) → tối đa 33 dòng/statement.
+ */
+const DUP_CHECK_CHUNK = 90
+const INSERT_ROW_CHUNK = 30
+// Số statement insert tối đa cho mỗi lần batch() để tránh chạm giới hạn query/invocation và 30s.
+const INSERT_BATCH_STMTS = 20
+
 productItemRoutes.get('/', async (c) => {
   const page = Math.max(1, Number(c.req.query('page')) || 1)
   const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 20))
@@ -120,13 +138,17 @@ productItemRoutes.post('/import', async (c) => {
     return c.json({ success: false, data: null, error: 'product_not_found' }, 404)
   }
 
-  const placeholders = contents.map(() => '?').join(', ')
-  const { results: existing } = await c.env.DB.prepare(
-    `SELECT content FROM product_items WHERE product_id = ? AND content IN (${placeholders})`
-  )
-    .bind(productId, ...contents)
-    .all<{ content: string }>()
-  const duplicateSet = new Set((existing ?? []).map((r) => r.content))
+  // Check trùng theo từng chunk để không vượt giới hạn 100 bound parameters của D1.
+  const duplicateSet = new Set<string>()
+  for (const part of chunk(contents, DUP_CHECK_CHUNK)) {
+    const placeholders = part.map(() => '?').join(', ')
+    const { results: existing } = await c.env.DB.prepare(
+      `SELECT content FROM product_items WHERE product_id = ? AND content IN (${placeholders})`
+    )
+      .bind(productId, ...part)
+      .all<{ content: string }>()
+    for (const row of existing ?? []) duplicateSet.add(row.content)
+  }
   const toInsert = contents.filter((content) => !duplicateSet.has(content))
   const duplicates = contents.filter((content) => duplicateSet.has(content))
 
@@ -134,16 +156,24 @@ productItemRoutes.post('/import', async (c) => {
   const errors: string[] = []
   if (toInsert.length > 0) {
     const now = new Date().toISOString()
-    const stmts = toInsert.map((content) =>
-      c.env.DB.prepare(
-        "INSERT INTO product_items (product_id, content, status, created_at) VALUES (?, ?, 'available', ?)"
-      ).bind(productId, content, now)
-    )
-    try {
-      const results = await c.env.DB.batch(stmts)
-      imported = results.filter((r) => (r.meta.changes ?? 0) > 0).length
-    } catch (err) {
-      errors.push(err instanceof Error ? err.message : 'db_error')
+    // Gom thành câu INSERT nhiều dòng (mỗi dòng 3 param) rồi chia batch để tránh
+    // chạm giới hạn query/invocation và thời lượng 30s của D1.
+    const rowChunks = chunk(toInsert, INSERT_ROW_CHUNK)
+    const stmts = rowChunks.map((rows) => {
+      const valuePlaceholders = rows.map(() => "(?, ?, 'available', ?)").join(', ')
+      const binds: unknown[] = []
+      for (const content of rows) binds.push(productId, content, now)
+      return c.env.DB.prepare(
+        `INSERT INTO product_items (product_id, content, status, created_at) VALUES ${valuePlaceholders}`
+      ).bind(...binds)
+    })
+    for (const batchPart of chunk(stmts, INSERT_BATCH_STMTS)) {
+      try {
+        const results = await c.env.DB.batch(batchPart)
+        for (const r of results) imported += r.meta.changes ?? 0
+      } catch (err) {
+        errors.push(err instanceof Error ? err.message : 'db_error')
+      }
     }
   }
 

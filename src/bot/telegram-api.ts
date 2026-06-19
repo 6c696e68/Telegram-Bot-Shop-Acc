@@ -161,6 +161,95 @@ export async function editOrSendMessage(
   return sendMessage(botToken, chatId, text, options)
 }
 
+/**
+ * Giới hạn an toàn cho 1 tin nhắn Telegram. Telegram cứng ở 4096 ký tự; chừa biên
+ * cho thẻ HTML/escape để không bị `message is too long`.
+ */
+export const TELEGRAM_MESSAGE_LIMIT = 3900
+
+/**
+ * Chia text dài thành nhiều phần `<= limit`, ưu tiên cắt theo ranh giới DÒNG để không
+ * vỡ giữa một dòng nội dung (vd `1. <code>...</code>`). Dòng đơn lẻ dài hơn `limit`
+ * (hiếm — content khổng lồ) sẽ bị cắt cứng theo ký tự.
+ */
+export function splitTelegramMessage(text: string, limit = TELEGRAM_MESSAGE_LIMIT): string[] {
+  if (text.length <= limit) return [text]
+
+  const chunks: string[] = []
+  let current = ''
+  const flush = (): void => {
+    if (current.length > 0) {
+      chunks.push(current)
+      current = ''
+    }
+  }
+
+  for (const line of text.split('\n')) {
+    if (line.length > limit) {
+      // Dòng quá dài: đẩy phần đang gom rồi cắt cứng dòng này thành các mảnh <= limit.
+      flush()
+      for (let i = 0; i < line.length; i += limit) {
+        chunks.push(line.slice(i, i + limit))
+      }
+      continue
+    }
+    const candidate = current.length > 0 ? `${current}\n${line}` : line
+    if (candidate.length > limit) {
+      flush()
+      current = line
+    } else {
+      current = candidate
+    }
+  }
+  flush()
+  return chunks
+}
+
+/**
+ * Gửi nội dung có thể vượt 4096 ký tự (vd giao 50 tài khoản): chia nhỏ theo dòng rồi
+ * gửi nối tiếp.
+ *  - Chunk đầu: edit tin cũ nếu có `messageId`, fallback gửi mới (`editOrSendMessage`).
+ *  - `reply_markup` (bàn phím) CHỈ gắn vào chunk CUỐI để nút luôn nằm dưới toàn bộ nội dung.
+ *  - Kiểm tra `.ok` từng chunk và log khi thất bại để không nuốt lỗi âm thầm.
+ *
+ * Trả về `true` nếu tất cả chunk gửi thành công.
+ */
+export async function sendChunkedMessage(
+  botToken: string,
+  chatId: number,
+  messageId: number | undefined,
+  text: string,
+  options?: SendMessageOptions & EditMessageOptions
+): Promise<boolean> {
+  const chunks = splitTelegramMessage(text)
+  let allOk = true
+
+  for (let i = 0; i < chunks.length; i++) {
+    const isLast = i === chunks.length - 1
+    const chunkOptions: SendMessageOptions & EditMessageOptions = {
+      parse_mode: options?.parse_mode,
+      disable_web_page_preview: options?.disable_web_page_preview,
+      reply_markup: isLast ? options?.reply_markup : undefined,
+    }
+
+    const res =
+      i === 0
+        ? await editOrSendMessage(botToken, chatId, messageId, chunks[i], chunkOptions)
+        : await sendMessage(botToken, chatId, chunks[i], chunkOptions)
+
+    if (!res.ok) {
+      allOk = false
+      console.error(
+        `[telegram] sendChunkedMessage chunk ${i + 1}/${chunks.length} failed:`,
+        res.error_code,
+        res.description
+      )
+    }
+  }
+
+  return allOk
+}
+
 // --- Keyboard builders ---
 
 /**

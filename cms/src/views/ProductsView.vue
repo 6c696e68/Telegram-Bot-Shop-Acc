@@ -20,6 +20,7 @@ interface Product {
   price: number
   emoji: string | null
   image_data: string | null
+  max_per_order: number
   sort_order: number
   is_visible: number
   product_type_name: string | null
@@ -49,6 +50,7 @@ interface ProductForm {
   price: number | null
   emoji: string
   image_data: string
+  max_per_order: number
   sort_order: number
   is_visible: number
 }
@@ -103,6 +105,7 @@ function emptyForm(): ProductForm {
     price: null,
     emoji: '',
     image_data: '',
+    max_per_order: 10,
     sort_order: 0,
     is_visible: 1,
   }
@@ -193,6 +196,7 @@ async function openEdit(product: Product): Promise<void> {
     price: product.price,
     emoji: product.emoji ?? '',
     image_data: product.image_data ?? '',
+    max_per_order: product.max_per_order ?? 10,
     sort_order: product.sort_order,
     is_visible: product.is_visible,
   }
@@ -210,6 +214,13 @@ function validateProduct(): string | null {
   if (name.length > 200) return 'Tên tối đa 200 ký tự'
   if (!Number.isInteger(form.value.price) || (form.value.price ?? 0) < 1 || (form.value.price ?? 0) > 999999999) {
     return 'Giá phải là số nguyên từ 1 đến 999999999'
+  }
+  if (
+    !Number.isInteger(form.value.max_per_order) ||
+    form.value.max_per_order < 1 ||
+    form.value.max_per_order > 50
+  ) {
+    return 'Số lượng tối đa mỗi đơn phải là số nguyên từ 1 đến 50'
   }
   if (form.value.description.length > 2000) return 'Mô tả tối đa 2000 ký tự'
   if (form.value.content.length > 5000) return 'Nội dung tối đa 5000 ký tự'
@@ -270,6 +281,7 @@ async function saveProduct(): Promise<void> {
       price: form.value.price,
       emoji: form.value.emoji.trim() || null,
       image_data: form.value.image_data.trim() || null,
+      max_per_order: form.value.max_per_order,
       sort_order: Number.isInteger(form.value.sort_order) ? form.value.sort_order : 0,
       is_visible: form.value.is_visible ? 1 : 0,
     }
@@ -518,6 +530,10 @@ onMounted(async () => {
           <label class="field-block">
             <span class="label">Thứ tự</span>
             <input v-model.number="form.sort_order" class="field" type="number" />
+          </label>
+          <label class="field-block">
+            <span class="label">SL tối đa / đơn</span>
+            <input v-model.number="form.max_per_order" class="field" type="number" min="1" max="50" />
           </label>
           <label class="check-row">
             <input v-model.number="form.is_visible" type="checkbox" :true-value="1" :false-value="0" />

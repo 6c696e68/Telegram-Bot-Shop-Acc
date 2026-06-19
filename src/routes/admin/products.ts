@@ -6,6 +6,7 @@ import type { DbProduct } from '../../types/db'
 import {
   normalizeTranslationFields,
   validatePrice,
+  validateMaxPerOrder,
   validateSupportedLang,
 } from '../../services/catalog-validation'
 import { writeAuditLog } from '../../middleware/audit'
@@ -161,14 +162,19 @@ productRoutes.post('/', async (c) => {
   if (nameErr) return c.json({ success: false, data: null, error: nameErr }, 400)
   const priceErr = validatePrice(body.price)
   if (priceErr) return c.json({ success: false, data: null, error: priceErr }, 400)
+  // max_per_order tuỳ chọn khi tạo — không truyền → mặc định 10 (DEFAULT của cột DB).
+  if (body.max_per_order !== undefined) {
+    const maxErr = validateMaxPerOrder(body.max_per_order)
+    if (maxErr) return c.json({ success: false, data: null, error: maxErr }, 400)
+  }
   const image = normalizeImage(body.image_data)
   if (image === 'invalid_image') return c.json({ success: false, data: null, error: 'invalid_image' }, 400)
 
   const now = new Date().toISOString()
   const insert = await c.env.DB.prepare(
     `INSERT INTO products
-       (product_type_id, name, description, content, price, emoji, image_data, sort_order, is_visible, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (product_type_id, name, description, content, price, emoji, image_data, max_per_order, sort_order, is_visible, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       productTypeId,
@@ -178,6 +184,7 @@ productRoutes.post('/', async (c) => {
       body.price,
       normalizeOptionalText(body.emoji),
       image ?? null,
+      body.max_per_order !== undefined ? Number(body.max_per_order) : 10,
       Number.isInteger(body.sort_order) ? Number(body.sort_order) : 0,
       body.is_visible === 0 ? 0 : 1,
       now,
@@ -240,6 +247,12 @@ productRoutes.put('/:id', async (c) => {
     if (err) return c.json({ success: false, data: null, error: err }, 400)
     updates.push('price = ?')
     values.push(body.price)
+  }
+  if (body.max_per_order !== undefined) {
+    const err = validateMaxPerOrder(body.max_per_order)
+    if (err) return c.json({ success: false, data: null, error: err }, 400)
+    updates.push('max_per_order = ?')
+    values.push(Number(body.max_per_order))
   }
   if (body.emoji !== undefined) {
     updates.push('emoji = ?')

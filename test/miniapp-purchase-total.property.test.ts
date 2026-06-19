@@ -177,6 +177,7 @@ describe('Property 7: Tổng tiền bằng giá nhân số lượng', () => {
             name: 'Netflix',
             description: 'mo ta',
             price,
+            maxPerOrder: 50,
           })
           await seedProductItems(env.DB, productId, quantity)
 

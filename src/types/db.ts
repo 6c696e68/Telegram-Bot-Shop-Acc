@@ -54,6 +54,8 @@ export interface DbProduct {
   emoji: string | null
   /** Ảnh minh hoạ: data URL (base64) hoặc URL HTTPS; null = chưa có (Mini App fallback emoji). */
   image_data: string | null
+  /** Trần số lượng cho mỗi lần mua (mặc định 10, 1..50). Áp dụng cho cả bot và Mini App. */
+  max_per_order: number
   sort_order: number
   is_visible: number // 0 | 1
   created_at: string

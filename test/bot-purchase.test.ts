@@ -17,11 +17,13 @@ import {
 const telegramApi = vi.hoisted(() => ({
   editOrSendMessage: vi.fn(),
   sendMessage: vi.fn(),
+  sendChunkedMessage: vi.fn(),
 }))
 
 vi.mock('../src/bot/telegram-api', () => ({
   editOrSendMessage: telegramApi.editOrSendMessage,
   sendMessage: telegramApi.sendMessage,
+  sendChunkedMessage: telegramApi.sendChunkedMessage,
   buildInlineKeyboard: (buttons: unknown) => ({ inline_keyboard: buttons }),
   buildBackButton: (callback_data: string) => [{ text: 'Back', callback_data }],
 }))
@@ -41,6 +43,7 @@ beforeEach(async () => {
   await resetThreeTierSchema(env.DB)
   telegramApi.editOrSendMessage.mockReset()
   telegramApi.sendMessage.mockReset()
+  telegramApi.sendChunkedMessage.mockReset()
 })
 
 describe('Bot purchase handlers', () => {
@@ -108,8 +111,8 @@ describe('Bot purchase handlers', () => {
 
     await handlePurchaseConfirm(env.DB, BOT_TOKEN, CHAT_ID, undefined, productId, 1, telegramId, 'vi', ctx)
 
-    expect(telegramApi.editOrSendMessage).toHaveBeenCalledTimes(1)
-    const text = String(telegramApi.editOrSendMessage.mock.calls[0][3])
+    expect(telegramApi.sendChunkedMessage).toHaveBeenCalledTimes(1)
+    const text = String(telegramApi.sendChunkedMessage.mock.calls[0][3])
     expect(text).toContain('Delivered AI product')
     expect(text).toContain('<code>item_')
     expect(text).toContain('Balance')

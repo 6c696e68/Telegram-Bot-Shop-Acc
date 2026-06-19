@@ -108,7 +108,8 @@
     "qty": "SL: {count}",
     "empty_title": "Chưa có đơn hàng",
     "empty_desc": "Bạn chưa mua sản phẩm nào. Hãy ghé Market nhé.",
-    "load_error": "Không tải được lịch sử đơn hàng. Vui lòng thử lại."
+    "load_error": "Không tải được lịch sử đơn hàng. Vui lòng thử lại.",
+    "load_more": "Xem thêm"
   },
   "orders": {
     "filter_all": "Tất cả",
@@ -125,6 +126,8 @@
     "detail": "Chi tiết",
     "credentials": "Thông tin đăng nhập",
     "copied": "Đã sao chép",
+    "copy_all": "Sao chép tất cả",
+    "copied_all": "Đã sao chép tất cả",
     "your_account": "Tài khoản của bạn",
     "not_found": "Không tìm thấy đơn hàng.",
     "load_error": "Không tải được chi tiết đơn hàng. Vui lòng thử lại."

@@ -8,6 +8,7 @@ import type { InlineKeyboardButton } from '../../types/telegram'
 import {
   editOrSendMessage,
   sendMessage,
+  sendChunkedMessage,
   buildInlineKeyboard,
   buildBackButton,
 } from '../telegram-api'
@@ -37,6 +38,7 @@ import {
 } from '../rate-limit'
 
 const PAGE_SIZE = 5
+/** Trần cứng hệ thống cho mỗi đơn — chặn trên của `products.max_per_order` (xem migration 0016). */
 const MAX_QTY = 50
 
 // --- Interfaces ---
@@ -59,6 +61,7 @@ interface ProductRow {
   content: string | null
   price: number
   emoji: string | null
+  max_per_order: number
   category_name: string
   category_emoji: string | null
   stock: number
@@ -103,6 +106,7 @@ async function loadVisibleProduct(db: D1Database, productId: number): Promise<Pr
   return db
     .prepare(
       `SELECT p.id, p.product_type_id, p.name, p.description, p.content, p.price, p.emoji,
+              p.max_per_order,
               pt.name AS category_name,
               pt.emoji AS category_emoji,
               COUNT(CASE WHEN pi.status = 'available' THEN 1 END) AS stock
@@ -348,6 +352,9 @@ export async function handleProductDetail(
   // Set session for free-text quantity input
   setSession(userId, 'purchase', 'quantity', { productId })
 
+  // Trần số lượng thực tế: cấu hình theo sản phẩm, kẹp dưới trần cứng + tồn kho.
+  const effectiveMax = Math.min(product.max_per_order, MAX_QTY, product.stock)
+
   // Build info text
   const description = productDescription ? `${escapeHtml(productDescription)}\n` : ''
   const text = [
@@ -358,11 +365,11 @@ export async function handleProductDetail(
     t(lang, 'shop.detail_stock', { stock: product.stock }),
     '',
     t(lang, 'shop.detail_choose_qty'),
-    t(lang, 'shop.detail_qty_hint', { max: Math.min(MAX_QTY, product.stock) }),
+    t(lang, 'shop.detail_qty_hint', { max: effectiveMax }),
   ].join('\n')
 
-  // Build qty grid 5×2 (rows of 5)
-  const maxGrid = Math.min(10, product.stock)
+  // Build qty grid 5×2 (rows of 5) — tối đa 10 nút nhanh, kẹp theo trần sản phẩm + tồn kho.
+  const maxGrid = Math.min(10, effectiveMax)
   const qtyButtons: InlineKeyboardButton[][] = []
   for (let i = 1; i <= maxGrid; i += 5) {
     const row: InlineKeyboardButton[] = []
@@ -398,27 +405,30 @@ export async function handleQuantitySelect(
   lang: Lang,
   ctx: CurrencyContext
 ): Promise<void> {
-  // Validate quantity
-  if (!Number.isInteger(quantity) || quantity <= 0 || quantity > MAX_QTY) {
-    await editOrSendMessage(
-      botToken,
-      chatId,
-        messageId,
-        t(lang, 'shop.qty_invalid', { max: MAX_QTY }),
-        {
-          reply_markup: buildInlineKeyboard([buildBackButton(`prod:${productId}`, lang)]),
-        }
-      )
-    return
-  }
-
-  // Query product price + available stock
+  // Query product price + available stock (cần để biết trần số lượng theo sản phẩm)
   const product = await loadVisibleProduct(db, productId)
 
   if (!product) {
     await editOrSendMessage(botToken, chatId, messageId, t(lang, 'shop.type_not_found'), {
       reply_markup: buildInlineKeyboard([buildBackButton('cat:list', lang)]),
     })
+    return
+  }
+
+  // Trần số lượng/đơn theo cấu hình sản phẩm, kẹp dưới trần cứng hệ thống.
+  const maxPerOrder = Math.min(product.max_per_order, MAX_QTY)
+
+  // Validate quantity: integer dương, không vượt trần sản phẩm.
+  if (!Number.isInteger(quantity) || quantity <= 0 || quantity > maxPerOrder) {
+    await editOrSendMessage(
+      botToken,
+      chatId,
+      messageId,
+      t(lang, 'shop.qty_invalid', { max: maxPerOrder }),
+      {
+        reply_markup: buildInlineKeyboard([buildBackButton(`prod:${productId}`, lang)]),
+      }
+    )
     return
   }
 
@@ -539,6 +549,21 @@ export async function handlePurchaseConfirm(
   const displayEmoji = product.emoji ?? product.category_emoji
   const totalAmount = product.price * quantity
 
+  // Guard server-side: chặn vượt trần số lượng/đơn của sản phẩm (phòng callback bị giả mạo).
+  const maxPerOrder = Math.min(product.max_per_order, MAX_QTY)
+  if (!Number.isInteger(quantity) || quantity <= 0 || quantity > maxPerOrder) {
+    await editOrSendMessage(
+      botToken,
+      chatId,
+      messageId,
+      t(lang, 'shop.qty_invalid', { max: maxPerOrder }),
+      {
+        reply_markup: buildInlineKeyboard([buildBackButton(`prod:${product.id}`, lang)]),
+      }
+    )
+    return
+  }
+
   // Execute purchase
   const result = await transactionService.executePurchase(
     db,
@@ -643,7 +668,8 @@ export async function handlePurchaseConfirm(
     ],
   ]
 
-  await editOrSendMessage(botToken, chatId, messageId, contentText, {
+  // Giao hàng có thể vượt 4096 ký tự khi mua nhiều account → chia nhỏ tin nhắn (chunk).
+  await sendChunkedMessage(botToken, chatId, messageId, contentText, {
     parse_mode: 'HTML',
     reply_markup: buildInlineKeyboard(successButtons),
   })
@@ -667,8 +693,8 @@ export async function handlePurchaseTextInput(
 ): Promise<void> {
   const qty = parseInt(text, 10)
 
-  // Validate: integer, 1-50
-  if (isNaN(qty) || !Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) {
+  // Validate cơ bản: số nguyên dương. Trần theo sản phẩm được kiểm ở handleQuantitySelect.
+  if (isNaN(qty) || !Number.isInteger(qty) || qty <= 0) {
     await sendMessage(botToken, chatId, t(lang, 'shop.qty_invalid_input', { max: MAX_QTY }))
     return
   }

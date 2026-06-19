@@ -25,7 +25,13 @@ const { t } = useI18n()
 
 const orders = ref<OrderListItemDto[]>([])
 const loaded = ref(false)
+const loadingMore = ref(false)
+const hasMore = ref(false)
+const page = ref(1)
 const filter = ref<'all' | 'completed' | 'refunded'>('all')
+
+/** Số đơn mỗi trang — khớp DEFAULT_ORDERS_LIMIT của API. */
+const PAGE_SIZE = 20
 
 const filterOptions = computed(() => [
   { value: 'all', label: t('orders.filter_all') },
@@ -42,14 +48,40 @@ function openDetail(order: OrderListItemDto): void {
   router.push({ name: 'order-detail', params: { id: String(order.id) } })
 }
 
+function fetchPage(p: number): Promise<OrderListItemDto[]> {
+  return get<OrderListItemDto[]>(`/orders?page=${p}&limit=${PAGE_SIZE}`)
+}
+
+/** Tải trang đầu (mới nhất trước). hasMore suy ra từ số lượng trả về = đầy trang. */
 async function load(): Promise<void> {
   try {
-    orders.value = await ui.withLoading(get<OrderListItemDto[]>('/orders'))
+    const batch = await ui.withLoading(fetchPage(1))
+    orders.value = batch
+    page.value = 1
+    hasMore.value = batch.length === PAGE_SIZE
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return
     ui.toast(t('history.load_error'), 'error')
   } finally {
     loaded.value = true
+  }
+}
+
+/** Tải thêm trang kế và nối vào danh sách để xem hết lịch sử mua hàng. */
+async function loadMore(): Promise<void> {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  try {
+    const next = page.value + 1
+    const batch = await fetchPage(next)
+    orders.value = [...orders.value, ...batch]
+    page.value = next
+    hasMore.value = batch.length === PAGE_SIZE
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return
+    ui.toast(t('history.load_error'), 'error')
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -84,8 +116,19 @@ onMounted(() => {
         />
       </section>
 
+      <div v-if="hasMore" class="flex justify-center pt-2">
+        <button
+          type="button"
+          class="rounded-xl border border-outline-variant/30 bg-surface-container-high px-5 py-2.5 text-[14px] font-semibold text-on-surface transition-colors hover:bg-surface-container-highest disabled:opacity-50"
+          :disabled="loadingMore"
+          @click="loadMore"
+        >
+          {{ $t('history.load_more') }}
+        </button>
+      </div>
+
       <EmptyState
-        v-else-if="loaded"
+        v-else-if="loaded && !filtered.length"
         :icon="ReceiptText"
         :title="filter === 'all' ? $t('history.empty_title') : $t('orders.filter_empty_title')"
         :description="filter === 'all' ? $t('history.empty_desc') : $t('orders.filter_empty_desc')"

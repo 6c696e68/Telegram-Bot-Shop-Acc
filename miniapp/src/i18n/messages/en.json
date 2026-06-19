@@ -108,7 +108,8 @@
     "qty": "Qty: {count}",
     "empty_title": "No orders",
     "empty_desc": "You have not bought anything yet. Visit the Market.",
-    "load_error": "Could not load order history. Please try again."
+    "load_error": "Could not load order history. Please try again.",
+    "load_more": "Load more"
   },
   "orders": {
     "filter_all": "All",
@@ -125,6 +126,8 @@
     "detail": "Details",
     "credentials": "Login details",
     "copied": "Copied",
+    "copy_all": "Copy all",
+    "copied_all": "Copied all",
     "your_account": "Your account",
     "not_found": "Order not found.",
     "load_error": "Could not load order details. Please try again."

@@ -35,6 +35,7 @@ export const THREE_TIER_SCHEMA_STATEMENTS = [
     price INTEGER NOT NULL CHECK(price >= 1 AND price <= 999999999),
     emoji TEXT,
     image_data TEXT,
+    max_per_order INTEGER NOT NULL DEFAULT 10 CHECK(max_per_order >= 1 AND max_per_order <= 50),
     sort_order INTEGER NOT NULL DEFAULT 0,
     is_visible INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -244,13 +245,14 @@ export async function seedPricedProduct(
     sortOrder?: number
     emoji?: string | null
     imageData?: string | null
+    maxPerOrder?: number
   }
 ): Promise<number> {
   const row = await db
     .prepare(
       `INSERT INTO products
-         (product_type_id, name, description, content, price, emoji, image_data, sort_order, is_visible)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (product_type_id, name, description, content, price, emoji, image_data, max_per_order, sort_order, is_visible)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING id`
     )
     .bind(
@@ -261,6 +263,7 @@ export async function seedPricedProduct(
       params.price,
       params.emoji ?? null,
       params.imageData ?? null,
+      params.maxPerOrder ?? 10,
       params.sortOrder ?? 0,
       params.isVisible === false ? 0 : 1
     )
