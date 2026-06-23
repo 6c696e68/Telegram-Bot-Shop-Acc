@@ -37,8 +37,8 @@
     background-color: #10131b; /* surface / background */
     color: #e0e2ed; /* on-background */
     font-family: 'Inter', -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
-    font-size: 16px;
-    line-height: 1.5;
+    font-size: 15px;
+    line-height: 1.45;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -87,10 +87,10 @@
     transform: scale(0.97);
   }
 
-  /* Target chạm tối thiểu kiểu iOS HIG (>= 44px). */
+  /* Target chạm tối thiểu (compact) — vẫn đủ chạm thoải mái trên mobile. */
   .tap-target {
-    min-height: 44px;
-    min-width: 44px;
+    min-height: 40px;
+    min-width: 40px;
   }
 }
 

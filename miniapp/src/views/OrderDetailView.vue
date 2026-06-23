@@ -64,31 +64,31 @@ onUnmounted(() => {
 
     <main
       v-if="order"
-      class="mx-auto flex w-full max-w-md flex-col gap-stack-lg px-gutter pb-10 pt-[calc(56px+var(--safe-top))]"
+      class="mx-auto flex w-full max-w-md flex-col gap-stack-lg px-gutter pb-10 pt-[calc(48px+var(--safe-top))]"
     >
       <!-- Tóm tắt -->
-      <header class="mt-4 flex flex-col items-center gap-3 text-center">
+      <header class="mt-3 flex flex-col items-center gap-3 text-center">
         <span
-          class="flex h-20 w-20 items-center justify-center rounded-2xl text-4xl leading-none"
+          class="flex h-16 w-16 items-center justify-center rounded-2xl text-3xl leading-none"
           :style="{ backgroundColor: `${tileColor}1a`, color: tileColor }"
           aria-hidden="true"
         >
           {{ glyph }}
         </span>
-        <h1 class="text-[22px] font-semibold text-on-surface">{{ order.product_name }}</h1>
-        <p class="text-[34px] font-bold tabular-nums text-primary">{{ order.total_display }}</p>
+        <h1 class="text-[20px] font-semibold text-on-surface">{{ order.product_name }}</h1>
+        <p class="text-[28px] font-bold tabular-nums text-primary">{{ order.total_display }}</p>
         <div
-          class="flex items-center gap-1 rounded-full px-3 py-1 text-[12px] font-bold uppercase tracking-wider"
+          class="flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider"
           :class="completed ? 'bg-tertiary-container/30 text-tertiary' : 'bg-surface-container-highest text-on-surface-variant'"
         >
-          <component :is="completed ? CircleCheck : Undo2" :size="13" :stroke-width="2.5" aria-hidden="true" />
+          <component :is="completed ? CircleCheck : Undo2" :size="12" :stroke-width="2.5" aria-hidden="true" />
           {{ $t(`status.${order.status}`) }}
         </div>
       </header>
 
       <!-- Meta -->
-      <section class="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4">
-        <dl class="flex flex-col gap-3 text-[15px]">
+      <section class="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-3">
+        <dl class="flex flex-col gap-2.5 text-[14px]">
           <div class="flex items-center justify-between">
             <dt class="text-on-surface-variant">{{ $t('order.quantity') }}</dt>
             <dd class="tabular-nums text-on-surface">{{ order.quantity }}</dd>

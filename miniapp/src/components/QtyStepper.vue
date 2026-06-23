@@ -42,24 +42,24 @@ function increment(): void {
   >
     <button
       type="button"
-      class="flex h-10 w-10 items-center justify-center rounded-full text-on-surface transition-transform active:scale-90 disabled:opacity-30"
+      class="flex h-9 w-9 items-center justify-center rounded-full text-on-surface transition-transform active:scale-90 disabled:opacity-30"
       :disabled="!canDecrement"
       :aria-label="$t('product.qty_decrease')"
       @click="decrement"
     >
-      <Minus :size="20" :stroke-width="2.25" aria-hidden="true" />
+      <Minus :size="18" :stroke-width="2.25" aria-hidden="true" />
     </button>
-    <span class="w-8 text-center text-[16px] font-semibold tabular-nums text-on-surface">
+    <span class="w-7 text-center text-[15px] font-semibold tabular-nums text-on-surface">
       {{ clamp(quantity) }}
     </span>
     <button
       type="button"
-      class="flex h-10 w-10 items-center justify-center rounded-full text-on-surface transition-transform active:scale-90 disabled:opacity-30"
+      class="flex h-9 w-9 items-center justify-center rounded-full text-on-surface transition-transform active:scale-90 disabled:opacity-30"
       :disabled="!canIncrement"
       :aria-label="$t('product.qty_increase')"
       @click="increment"
     >
-      <Plus :size="20" :stroke-width="2.25" aria-hidden="true" />
+      <Plus :size="18" :stroke-width="2.25" aria-hidden="true" />
     </button>
   </div>
 </template>

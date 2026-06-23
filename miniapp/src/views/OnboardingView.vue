@@ -41,21 +41,21 @@ async function choose(region: 'vietnam' | 'international'): Promise<void> {
 
 <template>
   <main
-    class="flex min-h-screen flex-col justify-center gap-8 px-container-margin py-10"
-    :style="{ paddingTop: 'calc(40px + var(--safe-top))', paddingBottom: 'calc(40px + var(--safe-bottom))' }"
+    class="flex min-h-screen flex-col justify-center gap-6 px-container-margin py-10"
+    :style="{ paddingTop: 'calc(32px + var(--safe-top))', paddingBottom: 'calc(32px + var(--safe-bottom))' }"
   >
-    <header class="flex flex-col items-center gap-4 text-center">
+    <header class="flex flex-col items-center gap-3 text-center">
       <span
-        class="flex h-20 w-20 items-center justify-center rounded-[24px] bg-primary-container/20 text-primary"
+        class="flex h-16 w-16 items-center justify-center rounded-[20px] bg-primary-container/20 text-primary"
         aria-hidden="true"
       >
-        <Store :size="40" :stroke-width="2" />
+        <Store :size="32" :stroke-width="2" />
       </span>
-      <h1 class="text-[28px] font-bold text-on-surface">{{ $t('onboarding.title') }}</h1>
-      <p class="max-w-xs text-[16px] text-on-surface-variant">{{ $t('onboarding.subtitle') }}</p>
+      <h1 class="text-[24px] font-bold text-on-surface">{{ $t('onboarding.title') }}</h1>
+      <p class="max-w-xs text-[15px] text-on-surface-variant">{{ $t('onboarding.subtitle') }}</p>
     </header>
 
-    <div class="glass-card flex flex-col gap-3 rounded-2xl p-5">
+    <div class="glass-card flex flex-col gap-3 rounded-2xl p-4">
       <GlassButton block :disabled="submitting" @click="choose('vietnam')">
         {{ $t('onboarding.region_vietnam') }}
       </GlassButton>

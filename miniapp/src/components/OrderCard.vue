@@ -27,23 +27,23 @@ const statusLabel = computed(() => t(`status.${props.order.status}`))
 
 <template>
   <article
-    class="flex flex-col overflow-hidden rounded-[20px] border border-outline-variant/20 bg-surface shadow-sm"
+    class="flex flex-col overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface shadow-sm"
   >
     <!-- Header -->
     <div
-      class="flex items-center justify-between border-b border-surface-container-highest bg-surface-bright px-4 py-3"
+      class="flex items-center justify-between border-b border-surface-container-highest bg-surface-bright px-3 py-2.5"
     >
       <div class="flex items-center gap-2">
-        <span class="text-[14px] font-semibold text-on-surface">#{{ order.id }}</span>
-        <span class="text-[13px] text-on-surface-variant">· {{ $d(new Date(order.created_at), 'short') }}</span>
+        <span class="text-[13px] font-semibold text-on-surface">#{{ order.id }}</span>
+        <span class="text-[12px] text-on-surface-variant">· {{ $d(new Date(order.created_at), 'short') }}</span>
       </div>
       <div
-        class="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"
+        class="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
         :class="completed ? 'bg-tertiary-container/30 text-tertiary' : 'bg-surface-container-highest text-on-surface-variant'"
       >
         <component
           :is="completed ? CircleCheck : Undo2"
-          :size="12"
+          :size="11"
           :stroke-width="2.5"
           aria-hidden="true"
         />
@@ -52,39 +52,39 @@ const statusLabel = computed(() => t(`status.${props.order.status}`))
     </div>
 
     <!-- Thân -->
-    <div class="flex items-start gap-3 px-4 py-4">
+    <div class="flex items-start gap-3 px-3 py-3">
       <span
-        class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl leading-none"
+        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl leading-none"
         :style="{ backgroundColor: `${tileColor}1a`, color: tileColor }"
         aria-hidden="true"
       >
         {{ glyph }}
       </span>
       <div class="flex-1">
-        <h3 class="text-[16px] font-semibold leading-tight text-on-surface">{{ order.product_name }}</h3>
-        <p class="mt-1 text-[14px] text-on-surface-variant">
+        <h3 class="text-[15px] font-semibold leading-tight text-on-surface">{{ order.product_name }}</h3>
+        <p class="mt-1 text-[13px] text-on-surface-variant">
           {{ $t('history.qty', { count: order.quantity }) }} · {{ order.total_display }}
         </p>
       </div>
     </div>
 
     <!-- Footer -->
-    <div class="flex gap-3 border-t border-surface-container-highest bg-surface-bright px-4 py-3">
+    <div class="flex gap-2 border-t border-surface-container-highest bg-surface-bright px-3 py-2.5">
       <button
         type="button"
-        class="flex flex-1 items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-high py-2 text-[14px] font-semibold text-on-surface transition-colors hover:bg-surface-container-highest"
+        class="flex flex-1 items-center justify-center gap-2 rounded-lg border border-outline-variant/30 bg-surface-container-high py-2 text-[13px] font-semibold text-on-surface transition-colors hover:bg-surface-container-highest"
         @click="$emit('support')"
       >
-        <LifeBuoy :size="18" :stroke-width="2" aria-hidden="true" />
+        <LifeBuoy :size="16" :stroke-width="2" aria-hidden="true" />
         {{ $t('order.support') }}
       </button>
       <button
         type="button"
-        class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-2 text-[14px] font-semibold text-on-primary transition-opacity hover:opacity-90"
+        class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2 text-[13px] font-semibold text-on-primary transition-opacity hover:opacity-90"
         @click="$emit('detail')"
       >
         {{ $t('order.detail') }}
-        <ChevronRight :size="18" :stroke-width="2" aria-hidden="true" />
+        <ChevronRight :size="16" :stroke-width="2" aria-hidden="true" />
       </button>
     </div>
   </article>

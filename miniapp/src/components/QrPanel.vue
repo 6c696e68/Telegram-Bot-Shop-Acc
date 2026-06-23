@@ -35,12 +35,12 @@ async function copy(field: string, value: string): Promise<void> {
 </script>
 
 <template>
-  <div class="glass-card flex flex-col gap-4 rounded-xl p-5">
-    <div class="mx-auto rounded-xl bg-white p-3">
-      <img :src="qrUrl" :alt="$t('deposit.scan_qr')" class="block h-56 w-56 object-contain" />
+  <div class="glass-card flex flex-col gap-3 rounded-xl p-4">
+    <div class="mx-auto rounded-xl bg-white p-2.5">
+      <img :src="qrUrl" :alt="$t('deposit.scan_qr')" class="block h-48 w-48 object-contain" />
     </div>
 
-    <div class="flex flex-col gap-1 text-[15px]">
+    <div class="flex flex-col gap-1 text-[14px]">
       <div class="flex items-center justify-between gap-3 py-1">
         <span class="text-on-surface-variant">{{ $t('qr.bank') }}</span>
         <span class="text-on-surface">{{ bankName }}</span>

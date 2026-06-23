@@ -280,13 +280,13 @@ onUnmounted(() => {
   <div>
     <TopAppBar :title="$t('deposit.title')" back />
 
-    <main class="mx-auto flex max-w-md flex-col gap-5 px-gutter pb-10 pt-[calc(56px+var(--safe-top))]">
+    <main class="mx-auto flex max-w-md flex-col gap-4 px-gutter pb-10 pt-[calc(48px+var(--safe-top))]">
       <template v-if="!created">
         <!-- Có phương thức khả dụng cho vùng → form nạp; không có → empty-state (R8.3). -->
         <template v-if="methods.length">
         <!-- Phương thức nạp: chọn khi >1, hiển thị cố định khi chỉ có 1 -->
-        <section class="mt-4 flex flex-col gap-2">
-          <h2 class="px-1 font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+        <section class="mt-3 flex flex-col gap-2">
+          <h2 class="px-1 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">
             {{ $t('deposit.method_label') }}
           </h2>
           <SegmentedControl
@@ -297,16 +297,16 @@ onUnmounted(() => {
           />
           <div
             v-else
-            class="glass-card flex items-center gap-4 rounded-xl border border-primary/50 p-4"
+            class="glass-card flex items-center gap-3 rounded-xl border border-primary/50 p-3"
           >
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-container/20 text-primary">
-              <component :is="methodIcon" :size="22" :stroke-width="2" aria-hidden="true" />
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-container/20 text-primary">
+              <component :is="methodIcon" :size="20" :stroke-width="2" aria-hidden="true" />
             </div>
             <div class="flex-1">
-              <h4 class="text-[16px] text-on-surface">
+              <h4 class="text-[15px] text-on-surface">
                 {{ $t(`deposit.method_${selectedMethod}`) }}
               </h4>
-              <p class="font-mono text-[12px] text-on-surface-variant">
+              <p class="font-mono text-[11px] text-on-surface-variant">
                 {{ $t(`deposit.method_${selectedMethod}_desc`) }}
               </p>
             </div>
@@ -315,12 +315,12 @@ onUnmounted(() => {
 
         <!-- SePay: grid mệnh giá -->
         <section v-if="!isCrypto" class="flex flex-col gap-3">
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-2 gap-2.5">
             <button
               v-for="preset in PRESET_AMOUNTS"
               :key="preset"
               type="button"
-              class="rounded-xl px-4 py-3 text-[16px] font-semibold tabular-nums transition-transform active:scale-[0.97]"
+              class="rounded-xl px-4 py-2.5 text-[15px] font-semibold tabular-nums transition-transform active:scale-[0.97]"
               :class="amount === preset ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface'"
               :aria-pressed="amount === preset"
               @click="selectPreset(preset)"
@@ -332,21 +332,21 @@ onUnmounted(() => {
 
         <!-- Ô nhập số tiền -->
         <section class="flex flex-col gap-2">
-          <h2 class="px-1 font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+          <h2 class="px-1 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">
             {{ isCrypto ? $t('deposit.amount_usdt') : $t('deposit.amount_vnd') }}
           </h2>
-          <div class="flex items-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-high px-4 py-3">
+          <div class="flex items-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-high px-4 py-2.5">
             <input
               :value="amountInput"
               type="text"
               :inputmode="isCrypto ? 'decimal' : 'numeric'"
               :placeholder="$t('deposit.amount_placeholder')"
-              class="w-full bg-transparent text-[22px] font-semibold tabular-nums text-on-surface outline-none placeholder:text-outline"
+              class="w-full bg-transparent text-[20px] font-semibold tabular-nums text-on-surface outline-none placeholder:text-outline"
               @input="onAmountInput"
             />
-            <span class="text-[22px] text-on-surface-variant" aria-hidden="true">{{ isCrypto ? 'USDT' : 'đ' }}</span>
+            <span class="text-[20px] text-on-surface-variant" aria-hidden="true">{{ isCrypto ? 'USDT' : 'đ' }}</span>
           </div>
-          <p v-if="isCrypto && estimatedVndDisplay" class="px-1 text-[13px] tabular-nums text-on-surface-variant">
+          <p v-if="isCrypto && estimatedVndDisplay" class="px-1 text-[12px] tabular-nums text-on-surface-variant">
             {{ $t('deposit.approx_vnd', { vnd: estimatedVndDisplay }) }}
           </p>
         </section>
@@ -357,47 +357,47 @@ onUnmounted(() => {
         </template>
 
         <!-- Không phương thức nào khả dụng cho vùng → thông báo thay vì form SePay vỡ -->
-        <div v-else class="mt-10 flex flex-col items-center gap-3 text-center">
+        <div v-else class="mt-8 flex flex-col items-center gap-3 text-center">
           <span
-            class="flex h-16 w-16 items-center justify-center rounded-full bg-surface-container text-on-surface-variant"
+            class="flex h-14 w-14 items-center justify-center rounded-full bg-surface-container text-on-surface-variant"
             aria-hidden="true"
           >
-            <Wallet :size="30" :stroke-width="1.75" />
+            <Wallet :size="26" :stroke-width="1.75" />
           </span>
-          <h2 class="text-[18px] font-semibold text-on-surface">{{ $t('deposit.no_methods_title') }}</h2>
-          <p class="max-w-xs text-[15px] text-on-surface-variant">{{ $t('deposit.no_methods_desc') }}</p>
+          <h2 class="text-[16px] font-semibold text-on-surface">{{ $t('deposit.no_methods_title') }}</h2>
+          <p class="max-w-xs text-[14px] text-on-surface-variant">{{ $t('deposit.no_methods_desc') }}</p>
         </div>
       </template>
 
       <!-- Sau khi tạo -->
       <template v-else>
-        <div class="mt-4">
+        <div class="mt-3">
           <div
             v-if="status === 'pending'"
-            class="flex flex-col gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4"
+            class="flex flex-col gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-3"
           >
             <div class="flex items-center gap-3">
               <span class="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-hidden="true" />
-              <span class="text-[16px] font-semibold text-on-surface">{{ $t('deposit.waiting') }}</span>
+              <span class="text-[15px] font-semibold text-on-surface">{{ $t('deposit.waiting') }}</span>
             </div>
-            <p v-if="createdCrypto" class="text-[13px] tabular-nums text-on-surface-variant">
+            <p v-if="createdCrypto" class="text-[12px] tabular-nums text-on-surface-variant">
               {{ $t('deposit.approx_vnd', { vnd: createdCrypto.credit_vnd_display }) }}
             </p>
           </div>
 
           <div
             v-else-if="status === 'completed'"
-            class="flex flex-col items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 text-center"
+            class="flex flex-col items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-5 text-center"
           >
-            <CircleCheck :size="40" :stroke-width="1.75" class="text-tertiary" aria-hidden="true" />
-            <h2 class="text-[18px] font-semibold text-on-surface">{{ $t('deposit.success') }}</h2>
+            <CircleCheck :size="34" :stroke-width="1.75" class="text-tertiary" aria-hidden="true" />
+            <h2 class="text-[16px] font-semibold text-on-surface">{{ $t('deposit.success') }}</h2>
           </div>
 
           <div
             v-else-if="status === 'cancelled' || status === 'expired'"
-            class="flex flex-col items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 text-center"
+            class="flex flex-col items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-5 text-center"
           >
-            <h2 class="text-[18px] font-semibold text-on-surface">
+            <h2 class="text-[16px] font-semibold text-on-surface">
               {{ status === 'cancelled' ? $t('deposit.cancelled') : $t('deposit.expired') }}
             </h2>
           </div>

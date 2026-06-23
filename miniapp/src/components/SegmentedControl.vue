@@ -31,7 +31,7 @@ function select(value: string, current: string): void {
       type="button"
       role="tab"
       :aria-selected="modelValue === opt.value"
-      class="flex min-h-[44px] flex-1 items-center justify-center rounded-lg px-2 py-1.5 text-center text-[13px] font-medium leading-tight transition-colors"
+      class="flex min-h-[38px] flex-1 items-center justify-center rounded-lg px-2 py-1.5 text-center text-[13px] font-medium leading-tight transition-colors"
       :class="
         modelValue === opt.value
           ? 'border border-outline-variant/10 bg-surface font-semibold text-on-surface shadow-sm'

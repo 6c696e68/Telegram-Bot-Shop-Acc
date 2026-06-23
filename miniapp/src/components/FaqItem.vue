@@ -22,13 +22,13 @@ function toggle(): void {
   <div>
     <button
       type="button"
-      class="flex w-full items-center justify-between px-4 py-4 text-left transition-colors hover:bg-surface-container-lowest/50"
+      class="flex w-full items-center justify-between px-3.5 py-3 text-left transition-colors hover:bg-surface-container-lowest/50"
       :aria-expanded="open"
       @click="toggle"
     >
-      <span class="pr-3 text-[16px] font-medium text-on-surface">{{ question }}</span>
+      <span class="pr-3 text-[15px] font-medium text-on-surface">{{ question }}</span>
       <ChevronDown
-        :size="20"
+        :size="18"
         :stroke-width="2"
         class="shrink-0 text-outline transition-transform duration-300"
         :class="open ? 'rotate-180' : ''"
@@ -36,10 +36,10 @@ function toggle(): void {
       />
     </button>
     <div
-      class="overflow-hidden px-4 transition-all duration-300 ease-ios"
+      class="overflow-hidden px-3.5 transition-all duration-300 ease-ios"
       :style="{ maxHeight: open ? '320px' : '0px', opacity: open ? 1 : 0 }"
     >
-      <p class="pb-4 text-[16px] leading-relaxed text-on-surface-variant">{{ answer }}</p>
+      <p class="pb-3 text-[14px] leading-relaxed text-on-surface-variant">{{ answer }}</p>
     </div>
   </div>
 </template>

@@ -44,7 +44,7 @@ function onClick(): void {
     @click="onClick"
   >
     <!-- Header: ảnh thật hoặc fallback gradient + glyph -->
-    <div class="relative h-28 w-full overflow-hidden bg-surface-container">
+    <div class="relative h-24 w-full overflow-hidden bg-surface-container">
       <img
         v-if="showImage"
         :src="imageUrl as string"
@@ -59,7 +59,7 @@ function onClick(): void {
         :style="{ backgroundImage: tileGradient(id) }"
       >
         <span
-          class="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl leading-none"
+          class="flex h-12 w-12 items-center justify-center rounded-2xl text-2xl leading-none"
           :style="{ backgroundColor: tileTint(id), color: '#e0e2ed' }"
           aria-hidden="true"
         >
@@ -72,13 +72,13 @@ function onClick(): void {
     </div>
 
     <!-- Body: tên + giá -->
-    <div class="flex flex-1 flex-col justify-between p-3">
-      <h4 class="line-clamp-2 text-[15px] font-medium leading-snug text-on-surface">
+    <div class="flex flex-1 flex-col justify-between p-2.5">
+      <h4 class="line-clamp-2 text-[14px] font-medium leading-snug text-on-surface">
         {{ name }}
       </h4>
-      <div class="mt-3 flex items-baseline gap-1" :class="inStock ? '' : 'opacity-50'">
+      <div class="mt-2 flex items-baseline gap-1" :class="inStock ? '' : 'opacity-50'">
         <span
-          class="text-[20px] font-bold tracking-tight tabular-nums"
+          class="text-[18px] font-bold tracking-tight tabular-nums"
           :class="inStock ? 'text-primary' : 'text-on-surface-variant'"
         >
           {{ priceDisplay }}

@@ -21,7 +21,7 @@ withDefaults(
     class="rounded-xl"
     :class="[
       glass ? 'glass-card' : 'bg-surface-container-lowest border border-outline-variant/20',
-      padded ? 'p-4' : '',
+      padded ? 'p-3' : '',
     ]"
   >
     <slot />

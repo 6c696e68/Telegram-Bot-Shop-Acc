@@ -137,26 +137,26 @@ watch(selectedCategoryId, (categoryId) => {
       </template>
     </TopAppBar>
 
-    <main class="px-gutter pt-[calc(56px+var(--safe-top))]">
+    <main class="px-gutter pt-[calc(48px+var(--safe-top))]">
       <!-- Số dư nhanh -->
-      <div class="flex items-center justify-between pb-1 pt-4">
-        <span class="text-[13px] uppercase tracking-wider text-on-surface-variant">
+      <div class="flex items-center justify-between pb-1 pt-3">
+        <span class="text-[12px] uppercase tracking-wider text-on-surface-variant">
           {{ $t('account.balance') }}
         </span>
-        <span class="text-[15px] font-semibold tabular-nums text-primary">
+        <span class="text-[14px] font-semibold tabular-nums text-primary">
           {{ user.state.balanceDisplay || '—' }}
         </span>
       </div>
 
       <!-- Bộ lọc danh mục -->
-      <div v-if="!categoriesLoaded" class="flex gap-2 overflow-x-hidden py-3">
+      <div v-if="!categoriesLoaded" class="flex gap-2 overflow-x-hidden py-2.5">
         <div
           v-for="n in 4"
           :key="n"
-          class="h-10 w-28 shrink-0 animate-shimmer rounded-full bg-surface-container-high"
+          class="h-9 w-24 shrink-0 animate-shimmer rounded-full bg-surface-container-high"
         ></div>
       </div>
-      <div v-else-if="categories.length" class="py-3">
+      <div v-else-if="categories.length" class="py-2.5">
         <div
           class="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 scrollbar-hide"
           role="tablist"
@@ -168,7 +168,7 @@ watch(selectedCategoryId, (categoryId) => {
             type="button"
             role="tab"
             :aria-selected="selectedCategoryId === category.id"
-            class="flex h-10 shrink-0 snap-start items-center gap-2 rounded-full border px-3 text-[14px] font-medium transition-colors"
+            class="flex h-9 shrink-0 snap-start items-center gap-2 rounded-full border px-3 text-[13px] font-medium transition-colors"
             :class="
               selectedCategoryId === category.id
                 ? 'border-primary bg-primary text-on-primary'
@@ -192,23 +192,23 @@ watch(selectedCategoryId, (categoryId) => {
       </div>
 
       <!-- Ô tìm kiếm -->
-      <div class="pb-2 pt-2">
+      <div class="pb-2 pt-1">
         <div
           class="flex items-center rounded-[10px] border border-transparent bg-surface-container-high px-3 py-2 transition-colors focus-within:border-primary"
         >
-          <Search :size="20" :stroke-width="2" class="shrink-0 text-outline" aria-hidden="true" />
+          <Search :size="18" :stroke-width="2" class="shrink-0 text-outline" aria-hidden="true" />
           <input
             v-model="query"
             type="text"
             :placeholder="$t('shop.search_placeholder')"
             :aria-label="$t('shop.search_placeholder')"
-            class="ml-2 w-full bg-transparent text-[16px] text-on-surface outline-none placeholder:text-outline"
+            class="ml-2 w-full bg-transparent text-[15px] text-on-surface outline-none placeholder:text-outline"
           />
         </div>
       </div>
 
       <!-- Banner ảnh (bo tròn, trong lề) -->
-      <div v-if="banners.length" class="py-3">
+      <div v-if="banners.length" class="py-2.5">
         <div class="flex snap-x snap-mandatory gap-3 overflow-x-auto scrollbar-hide">
           <button
             v-for="banner in banners"
@@ -224,8 +224,8 @@ watch(selectedCategoryId, (categoryId) => {
       </div>
 
       <!-- Tiêu đề khu sản phẩm -->
-      <div class="mb-4 mt-2 flex items-end justify-between">
-        <h3 class="text-[20px] font-bold tracking-tight text-on-surface">
+      <div class="mb-3 mt-1 flex items-end justify-between">
+        <h3 class="text-[18px] font-bold tracking-tight text-on-surface">
           {{ selectedCategory?.name || $t('shop.featured') }}
         </h3>
       </div>
@@ -237,8 +237,8 @@ watch(selectedCategoryId, (categoryId) => {
           :key="n"
           class="flex flex-col overflow-hidden rounded-xl bg-surface-container-lowest ring-1 ring-outline-variant/20"
         >
-          <div class="h-28 animate-shimmer bg-surface-container-high"></div>
-          <div class="flex flex-col gap-3 p-3">
+          <div class="h-24 animate-shimmer bg-surface-container-high"></div>
+          <div class="flex flex-col gap-2.5 p-2.5">
             <div class="space-y-2">
               <div class="h-4 w-3/4 animate-shimmer rounded bg-surface-container-high"></div>
               <div class="h-4 w-1/2 animate-shimmer rounded bg-surface-container-high"></div>

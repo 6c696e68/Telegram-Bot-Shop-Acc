@@ -134,35 +134,35 @@ onUnmounted(() => {
 
     <main
       v-if="detail"
-      class="mx-auto w-full max-w-md px-container-margin pb-32 pt-[calc(56px+var(--safe-top))]"
+      class="mx-auto w-full max-w-md px-container-margin pb-28 pt-[calc(48px+var(--safe-top))]"
     >
       <!-- ===== Trạng thái thành công ===== -->
       <template v-if="result">
-        <div class="mt-6 flex flex-col items-center gap-3 text-center">
+        <div class="mt-4 flex flex-col items-center gap-3 text-center">
           <span
-            class="flex h-20 w-20 items-center justify-center rounded-full bg-tertiary-container/20 text-tertiary"
+            class="flex h-16 w-16 items-center justify-center rounded-full bg-tertiary-container/20 text-tertiary"
             aria-hidden="true"
           >
-            <CircleCheck :size="44" :stroke-width="1.75" />
+            <CircleCheck :size="36" :stroke-width="1.75" />
           </span>
-          <h2 class="text-[22px] font-semibold text-on-surface">{{ $t('checkout.success_title') }}</h2>
-          <p class="text-[15px] text-on-surface-variant">
+          <h2 class="text-[20px] font-semibold text-on-surface">{{ $t('checkout.success_title') }}</h2>
+          <p class="text-[14px] text-on-surface-variant">
             {{ $t('product.success_sub', { quantity: result.quantity, name: detail.name }) }}
           </p>
         </div>
 
-        <div class="mt-6">
+        <div class="mt-4">
           <CredentialBlock :contents="result.contents" />
         </div>
 
-        <div class="mt-4 flex items-center justify-between rounded-xl bg-surface-container-low p-4">
-          <span class="text-[15px] text-on-surface-variant">{{ $t('product.remaining_balance') }}</span>
-          <span class="text-[18px] font-semibold tabular-nums text-primary">
+        <div class="mt-3 flex items-center justify-between rounded-xl bg-surface-container-low p-3">
+          <span class="text-[14px] text-on-surface-variant">{{ $t('product.remaining_balance') }}</span>
+          <span class="text-[17px] font-semibold tabular-nums text-primary">
             {{ result.new_balance_display }}
           </span>
         </div>
 
-        <div class="mt-6 flex flex-col gap-3">
+        <div class="mt-5 flex flex-col gap-3">
           <GlassButton block @click="router.push({ name: 'orders' })">
             {{ $t('checkout.view_orders') }}
           </GlassButton>
@@ -175,48 +175,48 @@ onUnmounted(() => {
       <!-- ===== Trạng thái xác nhận ===== -->
       <template v-else>
         <!-- Tóm tắt đơn -->
-        <section class="glass-card mb-stack-lg mt-6 rounded-xl p-stack-md shadow-lg">
-          <div class="flex items-start gap-4">
+        <section class="glass-card mb-stack-lg mt-5 rounded-xl p-stack-md shadow-lg">
+          <div class="flex items-start gap-3">
             <div
-              class="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container"
+              class="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container"
               :style="showImage ? {} : { backgroundImage: tileGradient(detail.id) }"
             >
               <img v-if="showImage" :src="detail.image_url as string" :alt="detail.name" class="h-full w-full object-cover" @error="imgError = true" />
-              <span v-else class="text-3xl leading-none" :style="{ color: '#e0e2ed' }" aria-hidden="true">{{ glyph }}</span>
+              <span v-else class="text-2xl leading-none" :style="{ color: '#e0e2ed' }" aria-hidden="true">{{ glyph }}</span>
             </div>
             <div class="flex-1">
-              <h2 class="mb-1 text-[16px] font-semibold text-on-surface">{{ detail.name }}</h2>
-              <p class="mb-2 font-mono text-[12px] text-on-surface-variant">
+              <h2 class="mb-1 text-[15px] font-semibold text-on-surface">{{ detail.name }}</h2>
+              <p class="mb-2 font-mono text-[11px] text-on-surface-variant">
                 {{ $t('checkout.unit_price', { price: detail.price_display }) }}
               </p>
               <div class="mt-2 flex items-center justify-between">
-                <span class="font-mono text-[12px] text-outline">
+                <span class="font-mono text-[11px] text-outline">
                   {{ $t('checkout.quantity', { count: quantity }) }}
                 </span>
               </div>
             </div>
           </div>
-          <div class="mt-4 flex items-center justify-between border-t border-outline-variant/20 pt-4">
-            <span class="text-[16px] text-on-surface-variant">{{ $t('checkout.total') }}</span>
-            <span class="text-[28px] font-semibold text-primary">{{ totalDisplay }}</span>
+          <div class="mt-3 flex items-center justify-between border-t border-outline-variant/20 pt-3">
+            <span class="text-[15px] text-on-surface-variant">{{ $t('checkout.total') }}</span>
+            <span class="text-[24px] font-semibold text-primary">{{ totalDisplay }}</span>
           </div>
         </section>
 
         <!-- Phương thức: số dư ví -->
         <section>
-          <h3 class="mb-stack-sm ml-1 font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+          <h3 class="mb-stack-sm ml-1 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">
             {{ $t('checkout.method_label') }}
           </h3>
           <div
-            class="glass-card flex items-center gap-4 rounded-xl border p-4"
+            class="glass-card flex items-center gap-3 rounded-xl border p-3"
             :class="insufficient ? 'border-error/50' : 'border-primary/50'"
           >
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-container/20 text-primary">
-              <Wallet :size="22" :stroke-width="2" aria-hidden="true" />
+            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-container/20 text-primary">
+              <Wallet :size="20" :stroke-width="2" aria-hidden="true" />
             </div>
             <div class="flex-1">
-              <h4 class="text-[16px] text-on-surface">{{ $t('checkout.method_wallet') }}</h4>
-              <p class="font-mono text-[12px]" :class="insufficient ? 'text-error' : 'text-on-surface-variant'">
+              <h4 class="text-[15px] text-on-surface">{{ $t('checkout.method_wallet') }}</h4>
+              <p class="font-mono text-[11px]" :class="insufficient ? 'text-error' : 'text-on-surface-variant'">
                 {{ $t('checkout.balance', { balance: user.state.balanceDisplay }) }}
               </p>
             </div>
@@ -225,14 +225,14 @@ onUnmounted(() => {
           <!-- Cảnh báo thiếu số dư + nạp tiền -->
           <div
             v-if="insufficient"
-            class="mt-3 flex items-start gap-3 rounded-xl bg-error-container/20 p-4"
+            class="mt-3 flex items-start gap-3 rounded-xl bg-error-container/20 p-3"
           >
-            <TriangleAlert :size="20" :stroke-width="2" class="mt-0.5 shrink-0 text-error" aria-hidden="true" />
+            <TriangleAlert :size="18" :stroke-width="2" class="mt-0.5 shrink-0 text-error" aria-hidden="true" />
             <div class="flex-1">
-              <p class="text-[15px] text-on-error-container">{{ $t('checkout.insufficient') }}</p>
+              <p class="text-[14px] text-on-error-container">{{ $t('checkout.insufficient') }}</p>
               <button
                 type="button"
-                class="mt-2 text-[15px] font-semibold text-primary hover:underline"
+                class="mt-2 text-[14px] font-semibold text-primary hover:underline"
                 @click="router.push({ name: 'deposit' })"
               >
                 {{ $t('checkout.go_deposit') }}
@@ -241,28 +241,28 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <p class="mt-4 text-center font-mono text-[12px] text-outline">{{ $t('checkout.secure_note') }}</p>
+        <p class="mt-3 text-center font-mono text-[11px] text-outline">{{ $t('checkout.secure_note') }}</p>
       </template>
     </main>
 
     <!-- Bottom action: xác nhận thanh toán (đồng nhất style với BottomNav ở Market) -->
     <div
       v-if="detail && !result"
-      class="glass-panel fixed bottom-0 left-0 right-0 z-[60] mx-4 rounded-full p-2 shadow-lg"
+      class="glass-panel fixed bottom-0 left-0 right-0 z-[60] mx-3 rounded-full p-2 shadow-lg"
       :style="{
-        bottom: 'calc(16px + var(--safe-bottom))',
-        marginLeft: 'calc(16px + var(--safe-left))',
-        marginRight: 'calc(16px + var(--safe-right))',
+        bottom: 'calc(12px + var(--safe-bottom))',
+        marginLeft: 'calc(12px + var(--safe-left))',
+        marginRight: 'calc(12px + var(--safe-right))',
       }"
     >
       <button
         type="button"
-        class="btn-gradient btn-press flex h-12 w-full items-center justify-center gap-2 rounded-full px-4 text-[16px] font-semibold text-on-primary shadow-md disabled:opacity-40"
+        class="btn-gradient btn-press flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-[15px] font-semibold text-on-primary shadow-md disabled:opacity-40"
         :disabled="submitting || insufficient"
         @click="confirm"
       >
         <span>{{ $t('checkout.confirm') }}</span>
-        <Lock :size="20" :stroke-width="2" aria-hidden="true" />
+        <Lock :size="18" :stroke-width="2" aria-hidden="true" />
       </button>
     </div>
   </div>

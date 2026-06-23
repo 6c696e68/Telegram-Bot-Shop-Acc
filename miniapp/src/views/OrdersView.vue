@@ -95,10 +95,10 @@ onMounted(() => {
     <TopAppBar :title="$t('app.store_name')" />
 
     <main
-      class="mx-auto max-w-2xl space-y-container-margin px-gutter pt-[calc(56px+var(--safe-top))]"
+      class="mx-auto max-w-2xl space-y-container-margin px-gutter pt-[calc(48px+var(--safe-top))]"
     >
-      <section class="space-y-4 pt-4">
-        <h2 class="text-[28px] font-bold text-on-background">{{ $t('history.title') }}</h2>
+      <section class="space-y-3 pt-3">
+        <h2 class="text-[24px] font-bold text-on-background">{{ $t('history.title') }}</h2>
         <SegmentedControl
           :model-value="filter"
           :options="filterOptions"
@@ -106,7 +106,7 @@ onMounted(() => {
         />
       </section>
 
-      <section v-if="filtered.length" class="space-y-4">
+      <section v-if="filtered.length" class="space-y-3">
         <OrderCard
           v-for="order in filtered"
           :key="order.id"
@@ -119,7 +119,7 @@ onMounted(() => {
       <div v-if="hasMore" class="flex justify-center pt-2">
         <button
           type="button"
-          class="rounded-xl border border-outline-variant/30 bg-surface-container-high px-5 py-2.5 text-[14px] font-semibold text-on-surface transition-colors hover:bg-surface-container-highest disabled:opacity-50"
+          class="rounded-xl border border-outline-variant/30 bg-surface-container-high px-5 py-2 text-[13px] font-semibold text-on-surface transition-colors hover:bg-surface-container-highest disabled:opacity-50"
           :disabled="loadingMore"
           @click="loadMore"
         >

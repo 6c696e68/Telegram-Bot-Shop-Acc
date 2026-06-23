@@ -83,25 +83,25 @@ onMounted(async () => {
     <TopAppBar :title="$t('account.title')" />
 
     <main
-      class="mx-auto flex max-w-2xl flex-col gap-stack-lg px-gutter pt-[calc(56px+var(--safe-top))]"
+      class="mx-auto flex max-w-2xl flex-col gap-stack-lg px-gutter pt-[calc(48px+var(--safe-top))]"
     >
       <!-- Thẻ số dư -->
-      <section class="pt-4">
-        <div class="glass-card flex flex-col gap-4 rounded-2xl p-5 shadow-lg">
+      <section class="pt-3">
+        <div class="glass-card flex flex-col gap-3 rounded-2xl p-4 shadow-lg">
           <div>
-            <p class="font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+            <p class="font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">
               {{ $t('account.balance') }}
             </p>
-            <p class="mt-1 text-[34px] font-bold tabular-nums text-primary">
+            <p class="mt-1 text-[28px] font-bold tabular-nums text-primary">
               {{ state.balanceDisplay || '—' }}
             </p>
           </div>
           <button
             type="button"
-            class="btn-gradient btn-press flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-[16px] font-semibold text-on-primary shadow-md"
+            class="btn-gradient btn-press flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-[15px] font-semibold text-on-primary shadow-md"
             @click="router.push({ name: 'deposit' })"
           >
-            <Plus :size="20" :stroke-width="2.4" aria-hidden="true" />
+            <Plus :size="18" :stroke-width="2.4" aria-hidden="true" />
             {{ $t('home.deposit') }}
           </button>
         </div>
@@ -109,18 +109,18 @@ onMounted(async () => {
 
       <!-- Định danh -->
       <section class="flex flex-col gap-2">
-        <h3 class="px-2 font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+        <h3 class="px-2 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">
           {{ $t('account.identity') }}
         </h3>
         <div class="divide-y divide-outline-variant/20 overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-lowest">
           <div
             v-for="row in identityRows"
             :key="row.key"
-            class="flex items-center justify-between gap-3 px-4 py-3.5"
+            class="flex items-center justify-between gap-3 px-4 py-3"
           >
-            <span class="text-[16px] text-on-surface">{{ row.label }}</span>
+            <span class="text-[15px] text-on-surface">{{ row.label }}</span>
             <span
-              class="truncate text-right text-[15px] text-on-surface-variant"
+              class="truncate text-right text-[14px] text-on-surface-variant"
               :class="row.mono ? 'font-mono tabular-nums' : ''"
             >
               {{ row.value }}
@@ -131,7 +131,7 @@ onMounted(async () => {
 
       <!-- Khu vực -->
       <section class="flex flex-col gap-2">
-        <h3 class="px-2 font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+        <h3 class="px-2 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">
           {{ $t('settings.region') }}
         </h3>
         <div class="divide-y divide-outline-variant/20 overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-lowest">
@@ -139,13 +139,13 @@ onMounted(async () => {
             v-for="r in regions"
             :key="r"
             type="button"
-            class="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-surface-container"
+            class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-container"
             @click="chooseRegion(r)"
           >
-            <span class="text-[16px] text-on-surface">{{ $t(`settings.region_${r}`) }}</span>
+            <span class="text-[15px] text-on-surface">{{ $t(`settings.region_${r}`) }}</span>
             <Check
               v-if="state.region === r"
-              :size="20"
+              :size="18"
               :stroke-width="2.4"
               class="shrink-0 text-primary"
               aria-hidden="true"
@@ -156,7 +156,7 @@ onMounted(async () => {
 
       <!-- Ngôn ngữ -->
       <section class="flex flex-col gap-2">
-        <h3 class="px-2 font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+        <h3 class="px-2 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">
           {{ $t('settings.language') }}
         </h3>
         <div class="divide-y divide-outline-variant/20 overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-lowest">
@@ -164,13 +164,13 @@ onMounted(async () => {
             v-for="l in AVAILABLE_LOCALES"
             :key="l"
             type="button"
-            class="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-surface-container"
+            class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-container"
             @click="chooseLanguage(l)"
           >
-            <span class="text-[16px] text-on-surface">{{ $t(`settings.language_${l}`) }}</span>
+            <span class="text-[15px] text-on-surface">{{ $t(`settings.language_${l}`) }}</span>
             <Check
               v-if="state.language === l"
-              :size="20"
+              :size="18"
               :stroke-width="2.4"
               class="shrink-0 text-primary"
               aria-hidden="true"
@@ -183,11 +183,11 @@ onMounted(async () => {
       <section class="flex flex-col gap-2 pb-2">
         <button
           type="button"
-          class="flex w-full items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest px-4 py-3.5 text-left transition-colors hover:bg-surface-container"
+          class="flex w-full items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-left transition-colors hover:bg-surface-container"
           @click="router.push({ name: 'orders' })"
         >
-          <span class="text-[16px] text-on-surface">{{ $t('history.title') }}</span>
-          <ChevronRight :size="20" :stroke-width="2" class="shrink-0 text-outline" aria-hidden="true" />
+          <span class="text-[15px] text-on-surface">{{ $t('history.title') }}</span>
+          <ChevronRight :size="18" :stroke-width="2" class="shrink-0 text-outline" aria-hidden="true" />
         </button>
       </section>
     </main>

@@ -23,9 +23,11 @@ const configRoutes = new Hono<ConfigEnv>()
  * thật ra response (kể cả cho admin đã đăng nhập) để tránh lộ secret ra client; chỉ
  * báo "đã đặt hay chưa" qua `secrets_set`. PUT bỏ qua giá trị rỗng cho các key này
  * (rỗng = giữ nguyên — vì GET luôn mask thành rỗng, lưu form sẽ không vô tình xoá secret).
+ *
+ * Lưu ý: `sepay_api_key` cố ý KHÔNG nằm ở đây — admin xem/sửa trực tiếp trên CMS
+ * (giống `crypto_pay_api_token`), CMS chỉ ẩn/hiện bằng input type password.
  */
 const SECRET_CONFIG_KEYS = new Set([
-  'sepay_api_key',
   'payos_api_key',
   'payos_checksum_key',
 ])
@@ -65,6 +67,7 @@ configRoutes.get('/', async (c) => {
     bank_owner: c.env.BANK_OWNER,
     admin_ids: c.env.ADMIN_IDS,
     crypto_pay_api_token: c.env.CRYPTO_PAY_API_TOKEN,
+    sepay_api_key: c.env.SEPAY_API_KEY,
     payos_client_id: c.env.PAYOS_CLIENT_ID,
     bot_token: c.env.BOT_TOKEN,
     telegram_secret_token: c.env.TELEGRAM_SECRET_TOKEN,
@@ -78,7 +81,6 @@ configRoutes.get('/', async (c) => {
 
   // Secret coi như "đã đặt" nếu có ở DB hoặc env (không lộ giá trị, chỉ cờ boolean).
   const secretEnv: Record<string, string | undefined> = {
-    sepay_api_key: c.env.SEPAY_API_KEY,
     payos_api_key: c.env.PAYOS_API_KEY,
     payos_checksum_key: c.env.PAYOS_CHECKSUM_KEY,
   }

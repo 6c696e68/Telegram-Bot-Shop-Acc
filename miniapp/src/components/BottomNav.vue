@@ -40,11 +40,11 @@ function go(name: Tab['name']): void {
 
 <template>
   <nav
-    class="glass-panel fixed bottom-0 left-0 right-0 z-50 mx-4 flex h-16 items-center justify-around rounded-full px-2 shadow-lg"
+    class="glass-panel fixed bottom-0 left-0 right-0 z-50 mx-3 flex h-14 items-center justify-around rounded-full px-2 shadow-lg"
     :style="{
-      bottom: 'calc(16px + var(--safe-bottom))',
-      marginLeft: 'calc(16px + var(--safe-left))',
-      marginRight: 'calc(16px + var(--safe-right))',
+      bottom: 'calc(12px + var(--safe-bottom))',
+      marginLeft: 'calc(12px + var(--safe-left))',
+      marginRight: 'calc(12px + var(--safe-right))',
     }"
     :aria-label="$t('nav.label')"
   >
@@ -52,7 +52,7 @@ function go(name: Tab['name']): void {
       v-for="tab in tabs"
       :key="tab.name"
       type="button"
-      class="flex h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-full transition-all duration-200 active:scale-95"
+      class="flex h-11 flex-1 flex-col items-center justify-center gap-0.5 rounded-full transition-all duration-200 active:scale-95"
       :class="
         activeName === tab.name
           ? 'bg-primary/10 text-primary'
@@ -64,12 +64,12 @@ function go(name: Tab['name']): void {
     >
       <component
         :is="tab.icon"
-        :size="24"
+        :size="21"
         :stroke-width="activeName === tab.name ? 2.4 : 1.9"
         aria-hidden="true"
       />
       <span
-        class="text-[10px] uppercase tracking-wider"
+        class="text-[9px] uppercase tracking-wider"
         :class="activeName === tab.name ? 'font-bold' : 'font-medium'"
       >
         {{ $t(tab.labelKey) }}

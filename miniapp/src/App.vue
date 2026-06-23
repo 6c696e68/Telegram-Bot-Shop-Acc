@@ -40,8 +40,8 @@ const showTab = computed(() => route.meta.tab === true)
   box-sizing: border-box;
 }
 
-/* Đệm đáy để nội dung không bị thanh nav nổi che (nav cao 64px + cách mép 16px + safe). */
+/* Đệm đáy để nội dung không bị thanh nav nổi che (nav cao 56px + cách mép 12px + safe). */
 .pb-tabbar {
-  padding-bottom: calc(64px + 16px + 16px + var(--safe-bottom));
+  padding-bottom: calc(56px + 12px + 12px + var(--safe-bottom));
 }
 </style>
